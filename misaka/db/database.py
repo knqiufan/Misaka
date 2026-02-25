@@ -1,0 +1,226 @@
+"""
+Database abstraction layer for Misaka.
+
+Defines the ``DatabaseBackend`` abstract base class and a factory function
+that selects the appropriate backend based on platform.
+"""
+
+from __future__ import annotations
+
+import logging
+from abc import ABC, abstractmethod
+from typing import Any
+
+from misaka.db.models import (
+    ApiProvider,
+    ChatSession,
+    Message,
+    TaskItem,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class DatabaseBackend(ABC):
+    """Abstract interface for database operations.
+
+    All CRUD operations required by the application are declared here.
+    Implementations: :class:`~misaka.db.sqlite_backend.SQLiteBackend`,
+    :class:`~misaka.db.seekdb_backend.SeekDBBackend`.
+    """
+
+    # ----- Lifecycle -----
+
+    @abstractmethod
+    def initialize(self) -> None:
+        """Create tables/collections and run migrations."""
+
+    @abstractmethod
+    def close(self) -> None:
+        """Close the database connection gracefully."""
+
+    # ----- Sessions -----
+
+    @abstractmethod
+    def get_all_sessions(self) -> list[ChatSession]:
+        """Return all sessions ordered by updated_at descending."""
+
+    @abstractmethod
+    def get_session(self, session_id: str) -> ChatSession | None:
+        """Return a single session by ID, or None."""
+
+    @abstractmethod
+    def create_session(
+        self,
+        title: str = "New Chat",
+        model: str = "",
+        system_prompt: str = "",
+        working_directory: str = "",
+        mode: str = "code",
+    ) -> ChatSession:
+        """Create and return a new chat session."""
+
+    @abstractmethod
+    def update_session_title(self, session_id: str, title: str) -> None:
+        """Update a session's title."""
+
+    @abstractmethod
+    def update_session_timestamp(self, session_id: str) -> None:
+        """Touch the session's updated_at to now."""
+
+    @abstractmethod
+    def update_sdk_session_id(self, session_id: str, sdk_session_id: str) -> None:
+        """Store the Claude SDK session ID for resume."""
+
+    @abstractmethod
+    def update_session_working_directory(self, session_id: str, working_directory: str) -> None:
+        """Update the session's working directory and project name."""
+
+    @abstractmethod
+    def update_session_mode(self, session_id: str, mode: str) -> None:
+        """Update the session's mode (code/plan/ask)."""
+
+    @abstractmethod
+    def update_session_model(self, session_id: str, model: str) -> None:
+        """Update the session's model identifier."""
+
+    @abstractmethod
+    def update_session_status(self, session_id: str, status: str) -> None:
+        """Update the session's status (active/archived)."""
+
+    @abstractmethod
+    def delete_session(self, session_id: str) -> bool:
+        """Delete a session and all its messages/tasks. Return True if deleted."""
+
+    # ----- Messages -----
+
+    @abstractmethod
+    def get_messages(
+        self,
+        session_id: str,
+        limit: int = 100,
+        before_rowid: int | None = None,
+    ) -> tuple[list[Message], bool]:
+        """Return messages for a session with cursor-based pagination.
+
+        Returns ``(messages, has_more)`` where messages are in chronological
+        order and ``has_more`` indicates whether older messages exist.
+        """
+
+    @abstractmethod
+    def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        token_usage: str | None = None,
+    ) -> Message:
+        """Insert a message and update the session timestamp."""
+
+    @abstractmethod
+    def clear_session_messages(self, session_id: str) -> None:
+        """Delete all messages for a session and reset its SDK session ID."""
+
+    # ----- Settings -----
+
+    @abstractmethod
+    def get_setting(self, key: str) -> str | None:
+        """Return a setting value by key, or None."""
+
+    @abstractmethod
+    def set_setting(self, key: str, value: str) -> None:
+        """Insert or update a setting."""
+
+    @abstractmethod
+    def get_all_settings(self) -> dict[str, str]:
+        """Return all settings as a dict."""
+
+    # ----- Tasks -----
+
+    @abstractmethod
+    def get_tasks_by_session(self, session_id: str) -> list[TaskItem]:
+        """Return tasks for a session ordered by created_at ascending."""
+
+    @abstractmethod
+    def get_task(self, task_id: str) -> TaskItem | None:
+        """Return a task by ID, or None."""
+
+    @abstractmethod
+    def create_task(self, session_id: str, title: str, description: str | None = None) -> TaskItem:
+        """Create and return a new task."""
+
+    @abstractmethod
+    def update_task(self, task_id: str, **kwargs: Any) -> TaskItem | None:
+        """Update task fields (title, status, description). Return updated task."""
+
+    @abstractmethod
+    def delete_task(self, task_id: str) -> bool:
+        """Delete a task. Return True if deleted."""
+
+    # ----- API Providers -----
+
+    @abstractmethod
+    def get_all_providers(self) -> list[ApiProvider]:
+        """Return all providers ordered by sort_order."""
+
+    @abstractmethod
+    def get_provider(self, provider_id: str) -> ApiProvider | None:
+        """Return a provider by ID, or None."""
+
+    @abstractmethod
+    def get_active_provider(self) -> ApiProvider | None:
+        """Return the currently active provider, or None."""
+
+    @abstractmethod
+    def create_provider(self, name: str, **kwargs: Any) -> ApiProvider:
+        """Create and return a new API provider."""
+
+    @abstractmethod
+    def update_provider(self, provider_id: str, **kwargs: Any) -> ApiProvider | None:
+        """Update provider fields. Return updated provider."""
+
+    @abstractmethod
+    def delete_provider(self, provider_id: str) -> bool:
+        """Delete a provider. Return True if deleted."""
+
+    @abstractmethod
+    def activate_provider(self, provider_id: str) -> bool:
+        """Set a provider as active (deactivating all others). Return True if found."""
+
+    @abstractmethod
+    def deactivate_all_providers(self) -> None:
+        """Deactivate all providers."""
+
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
+
+def create_database(db_path: str | None = None) -> DatabaseBackend:
+    """Create the appropriate database backend for the current platform.
+
+    On Linux and macOS, attempts to use SeekDB in embedded mode.
+    Falls back to SQLite on Windows or if SeekDB is unavailable.
+
+    Args:
+        db_path: Override path to the database file. If None, uses the
+            default from :mod:`misaka.config`.
+    """
+    from misaka.config import DB_PATH, IS_WINDOWS
+
+    path = db_path or str(DB_PATH)
+
+    if not IS_WINDOWS:
+        try:
+            from misaka.db.seekdb_backend import SeekDBBackend
+            backend = SeekDBBackend(path)
+            logger.info("Using SeekDB backend (embedded mode)")
+            return backend
+        except ImportError:
+            logger.info("pyseekdb not installed, falling back to SQLite")
+        except Exception as exc:
+            logger.warning("SeekDB initialization failed, falling back to SQLite: %s", exc)
+
+    from misaka.db.sqlite_backend import SQLiteBackend
+    logger.info("Using SQLite backend at %s", path)
+    return SQLiteBackend(path)

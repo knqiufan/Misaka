@@ -1,0 +1,501 @@
+"""
+SQLite database backend for Misaka.
+
+Uses Python's built-in ``sqlite3`` module with WAL mode.
+Compatible with the original TypeScript schema for data migration.
+"""
+
+from __future__ import annotations
+
+import os
+import secrets
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from misaka.db.database import DatabaseBackend
+from misaka.db.models import ApiProvider, ChatSession, Message, TaskItem
+
+
+def _now() -> str:
+    """Return the current UTC datetime as an ISO string without microseconds."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _generate_id() -> str:
+    """Generate a 32-character hex ID (same as crypto.randomBytes(16).toString('hex'))."""
+    return secrets.token_hex(16)
+
+
+def _row_to_session(row: sqlite3.Row) -> ChatSession:
+    return ChatSession(
+        id=row["id"],
+        title=row["title"],
+        model=row["model"],
+        system_prompt=row["system_prompt"],
+        working_directory=row["working_directory"],
+        project_name=row["project_name"],
+        sdk_session_id=row["sdk_session_id"],
+        status=row["status"],
+        mode=row["mode"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _row_to_message(row: sqlite3.Row) -> Message:
+    return Message(
+        id=row["id"],
+        session_id=row["session_id"],
+        role=row["role"],
+        content=row["content"],
+        created_at=row["created_at"],
+        token_usage=row["token_usage"],
+        _rowid=row["_rowid"] if "_rowid" in row.keys() else None,
+    )
+
+
+def _row_to_task(row: sqlite3.Row) -> TaskItem:
+    return TaskItem(
+        id=row["id"],
+        session_id=row["session_id"],
+        title=row["title"],
+        status=row["status"],
+        description=row["description"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _row_to_provider(row: sqlite3.Row) -> ApiProvider:
+    return ApiProvider(
+        id=row["id"],
+        name=row["name"],
+        provider_type=row["provider_type"],
+        base_url=row["base_url"],
+        api_key=row["api_key"],
+        is_active=row["is_active"],
+        sort_order=row["sort_order"],
+        extra_env=row["extra_env"],
+        notes=row["notes"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+class SQLiteBackend(DatabaseBackend):
+    """SQLite-based persistence backend."""
+
+    def __init__(self, db_path: str) -> None:
+        self._db_path = db_path
+        self._conn: sqlite3.Connection | None = None
+
+    def _get_conn(self) -> sqlite3.Connection:
+        if self._conn is None:
+            # Ensure parent directory exists
+            Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+            self._conn = sqlite3.connect(self._db_path)
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute("PRAGMA journal_mode = WAL")
+            self._conn.execute("PRAGMA foreign_keys = ON")
+        return self._conn
+
+    # ----- Lifecycle -----
+
+    def initialize(self) -> None:
+        conn = self._get_conn()
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL DEFAULT 'New Chat',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                model TEXT NOT NULL DEFAULT '',
+                system_prompt TEXT NOT NULL DEFAULT '',
+                working_directory TEXT NOT NULL DEFAULT '',
+                sdk_session_id TEXT NOT NULL DEFAULT '',
+                project_name TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'active',
+                mode TEXT NOT NULL DEFAULT 'code'
+            );
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                token_usage TEXT,
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending', 'in_progress', 'completed', 'failed')),
+                description TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS api_providers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                provider_type TEXT NOT NULL DEFAULT 'anthropic',
+                base_url TEXT NOT NULL DEFAULT '',
+                api_key TEXT NOT NULL DEFAULT '',
+                is_active INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                extra_env TEXT NOT NULL DEFAULT '{}',
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
+            CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+            CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON chat_sessions(updated_at);
+            CREATE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id);
+        """)
+        conn.commit()
+
+    def close(self) -> None:
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+
+    # ----- Sessions -----
+
+    def get_all_sessions(self) -> list[ChatSession]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM chat_sessions ORDER BY updated_at DESC"
+        ).fetchall()
+        return [_row_to_session(r) for r in rows]
+
+    def get_session(self, session_id: str) -> ChatSession | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM chat_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        return _row_to_session(row) if row else None
+
+    def create_session(
+        self,
+        title: str = "New Chat",
+        model: str = "",
+        system_prompt: str = "",
+        working_directory: str = "",
+        mode: str = "code",
+    ) -> ChatSession:
+        conn = self._get_conn()
+        sid = _generate_id()
+        now = _now()
+        project_name = os.path.basename(working_directory) if working_directory else ""
+        conn.execute(
+            """INSERT INTO chat_sessions
+               (id, title, created_at, updated_at, model, system_prompt,
+                working_directory, sdk_session_id, project_name, status, mode)
+               VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 'active', ?)""",
+            (sid, title, now, now, model, system_prompt, working_directory, project_name, mode),
+        )
+        conn.commit()
+        return self.get_session(sid)  # type: ignore[return-value]
+
+    def update_session_title(self, session_id: str, title: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE chat_sessions SET title = ? WHERE id = ?", (title, session_id)
+        )
+        conn.commit()
+
+    def update_session_timestamp(self, session_id: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE chat_sessions SET updated_at = ? WHERE id = ?", (_now(), session_id)
+        )
+        conn.commit()
+
+    def update_sdk_session_id(self, session_id: str, sdk_session_id: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE chat_sessions SET sdk_session_id = ? WHERE id = ?",
+            (sdk_session_id, session_id),
+        )
+        conn.commit()
+
+    def update_session_working_directory(self, session_id: str, working_directory: str) -> None:
+        conn = self._get_conn()
+        project_name = os.path.basename(working_directory) if working_directory else ""
+        conn.execute(
+            "UPDATE chat_sessions SET working_directory = ?, project_name = ? WHERE id = ?",
+            (working_directory, project_name, session_id),
+        )
+        conn.commit()
+
+    def update_session_mode(self, session_id: str, mode: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE chat_sessions SET mode = ? WHERE id = ?", (mode, session_id)
+        )
+        conn.commit()
+
+    def update_session_model(self, session_id: str, model: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE chat_sessions SET model = ? WHERE id = ?", (model, session_id)
+        )
+        conn.commit()
+
+    def update_session_status(self, session_id: str, status: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE chat_sessions SET status = ? WHERE id = ?", (status, session_id)
+        )
+        conn.commit()
+
+    def delete_session(self, session_id: str) -> bool:
+        conn = self._get_conn()
+        cursor = conn.execute(
+            "DELETE FROM chat_sessions WHERE id = ?", (session_id,)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+    # ----- Messages -----
+
+    def get_messages(
+        self,
+        session_id: str,
+        limit: int = 100,
+        before_rowid: int | None = None,
+    ) -> tuple[list[Message], bool]:
+        conn = self._get_conn()
+        if before_rowid is not None:
+            rows = conn.execute(
+                """SELECT *, rowid as _rowid FROM messages
+                   WHERE session_id = ? AND rowid < ?
+                   ORDER BY rowid DESC LIMIT ?""",
+                (session_id, before_rowid, limit + 1),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT *, rowid as _rowid FROM messages
+                   WHERE session_id = ?
+                   ORDER BY rowid DESC LIMIT ?""",
+                (session_id, limit + 1),
+            ).fetchall()
+
+        has_more = len(rows) > limit
+        if has_more:
+            rows = rows[:limit]
+        rows.reverse()  # chronological order
+        return [_row_to_message(r) for r in rows], has_more
+
+    def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        token_usage: str | None = None,
+    ) -> Message:
+        conn = self._get_conn()
+        mid = _generate_id()
+        now = _now()
+        conn.execute(
+            """INSERT INTO messages (id, session_id, role, content, created_at, token_usage)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (mid, session_id, role, content, now, token_usage),
+        )
+        self.update_session_timestamp(session_id)
+        conn.commit()
+        row = conn.execute(
+            "SELECT *, rowid as _rowid FROM messages WHERE id = ?", (mid,)
+        ).fetchone()
+        return _row_to_message(row)
+
+    def clear_session_messages(self, session_id: str) -> None:
+        conn = self._get_conn()
+        conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        conn.execute(
+            "UPDATE chat_sessions SET sdk_session_id = '' WHERE id = ?", (session_id,)
+        )
+        conn.commit()
+
+    # ----- Settings -----
+
+    def get_setting(self, key: str) -> str | None:
+        conn = self._get_conn()
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_setting(self, key: str, value: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO settings (key, value) VALUES (?, ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+            (key, value),
+        )
+        conn.commit()
+
+    def get_all_settings(self) -> dict[str, str]:
+        conn = self._get_conn()
+        rows = conn.execute("SELECT key, value FROM settings").fetchall()
+        return {row["key"]: row["value"] for row in rows}
+
+    # ----- Tasks -----
+
+    def get_tasks_by_session(self, session_id: str) -> list[TaskItem]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM tasks WHERE session_id = ? ORDER BY created_at ASC",
+            (session_id,),
+        ).fetchall()
+        return [_row_to_task(r) for r in rows]
+
+    def get_task(self, task_id: str) -> TaskItem | None:
+        conn = self._get_conn()
+        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        return _row_to_task(row) if row else None
+
+    def create_task(self, session_id: str, title: str, description: str | None = None) -> TaskItem:
+        conn = self._get_conn()
+        tid = _generate_id()
+        now = _now()
+        conn.execute(
+            """INSERT INTO tasks (id, session_id, title, status, description, created_at, updated_at)
+               VALUES (?, ?, ?, 'pending', ?, ?, ?)""",
+            (tid, session_id, title, description, now, now),
+        )
+        conn.commit()
+        return self.get_task(tid)  # type: ignore[return-value]
+
+    def update_task(self, task_id: str, **kwargs: Any) -> TaskItem | None:
+        existing = self.get_task(task_id)
+        if not existing:
+            return None
+        conn = self._get_conn()
+        now = _now()
+        title = kwargs.get("title", existing.title)
+        status = kwargs.get("status", existing.status)
+        description = kwargs.get("description", existing.description)
+        conn.execute(
+            "UPDATE tasks SET title = ?, status = ?, description = ?, updated_at = ? WHERE id = ?",
+            (title, status, description, now, task_id),
+        )
+        conn.commit()
+        return self.get_task(task_id)
+
+    def delete_task(self, task_id: str) -> bool:
+        conn = self._get_conn()
+        cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    # ----- API Providers -----
+
+    def get_all_providers(self) -> list[ApiProvider]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM api_providers ORDER BY sort_order ASC, created_at ASC"
+        ).fetchall()
+        return [_row_to_provider(r) for r in rows]
+
+    def get_provider(self, provider_id: str) -> ApiProvider | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM api_providers WHERE id = ?", (provider_id,)
+        ).fetchone()
+        return _row_to_provider(row) if row else None
+
+    def get_active_provider(self) -> ApiProvider | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM api_providers WHERE is_active = 1 LIMIT 1"
+        ).fetchone()
+        return _row_to_provider(row) if row else None
+
+    def create_provider(self, name: str, **kwargs: Any) -> ApiProvider:
+        conn = self._get_conn()
+        pid = _generate_id()
+        now = _now()
+        max_row = conn.execute(
+            "SELECT MAX(sort_order) as max_order FROM api_providers"
+        ).fetchone()
+        sort_order = (max_row["max_order"] or -1) + 1 if max_row else 0
+        conn.execute(
+            """INSERT INTO api_providers
+               (id, name, provider_type, base_url, api_key, is_active,
+                sort_order, extra_env, notes, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
+            (
+                pid,
+                name,
+                kwargs.get("provider_type", "anthropic"),
+                kwargs.get("base_url", ""),
+                kwargs.get("api_key", ""),
+                sort_order,
+                kwargs.get("extra_env", "{}"),
+                kwargs.get("notes", ""),
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        return self.get_provider(pid)  # type: ignore[return-value]
+
+    def update_provider(self, provider_id: str, **kwargs: Any) -> ApiProvider | None:
+        existing = self.get_provider(provider_id)
+        if not existing:
+            return None
+        conn = self._get_conn()
+        now = _now()
+        conn.execute(
+            """UPDATE api_providers
+               SET name = ?, provider_type = ?, base_url = ?, api_key = ?,
+                   extra_env = ?, notes = ?, sort_order = ?, updated_at = ?
+               WHERE id = ?""",
+            (
+                kwargs.get("name", existing.name),
+                kwargs.get("provider_type", existing.provider_type),
+                kwargs.get("base_url", existing.base_url),
+                kwargs.get("api_key", existing.api_key),
+                kwargs.get("extra_env", existing.extra_env),
+                kwargs.get("notes", existing.notes),
+                kwargs.get("sort_order", existing.sort_order),
+                now,
+                provider_id,
+            ),
+        )
+        conn.commit()
+        return self.get_provider(provider_id)
+
+    def delete_provider(self, provider_id: str) -> bool:
+        conn = self._get_conn()
+        cursor = conn.execute("DELETE FROM api_providers WHERE id = ?", (provider_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def activate_provider(self, provider_id: str) -> bool:
+        existing = self.get_provider(provider_id)
+        if not existing:
+            return False
+        conn = self._get_conn()
+        conn.execute("UPDATE api_providers SET is_active = 0")
+        conn.execute("UPDATE api_providers SET is_active = 1 WHERE id = ?", (provider_id,))
+        conn.commit()
+        return True
+
+    def deactivate_all_providers(self) -> None:
+        conn = self._get_conn()
+        conn.execute("UPDATE api_providers SET is_active = 0")
+        conn.commit()
