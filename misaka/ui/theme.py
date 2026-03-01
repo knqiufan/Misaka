@@ -373,6 +373,66 @@ def make_dialog(
     )
 
 
+def make_form_dialog(
+    *,
+    title: str,
+    content: ft.Control,
+    actions: list[ft.Control] | None = None,
+    subtitle: str | None = None,
+    icon: str | None = None,
+    width: int = 640,
+    **kwargs,
+) -> ft.AlertDialog:
+    """Modern form dialog with grouped layout and flexible styling."""
+    header_controls: list[ft.Control] = []
+    if icon:
+        header_controls.append(
+            ft.Container(
+                content=ft.Icon(icon, size=16, color=ft.Colors.PRIMARY),
+                width=28,
+                height=28,
+                border_radius=14,
+                bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY),
+                alignment=ft.Alignment.CENTER,
+            ),
+        )
+    header_controls.append(
+        ft.Column(
+            controls=[
+                ft.Text(title, size=17, weight=ft.FontWeight.W_600),
+                ft.Text(subtitle, size=12, opacity=0.68, visible=bool(subtitle)),
+            ],
+            spacing=2,
+            expand=True,
+        ),
+    )
+    return ft.AlertDialog(
+        modal=True,
+        bgcolor=ft.Colors.SURFACE,
+        shape=ft.RoundedRectangleBorder(radius=22),
+        inset_padding=ft.Padding.symmetric(horizontal=24, vertical=20),
+        content_padding=ft.Padding.only(left=20, right=20, top=16, bottom=12),
+        actions_padding=ft.Padding.only(left=16, right=16, top=8, bottom=14),
+        action_button_padding=0,
+        actions_alignment=ft.MainAxisAlignment.END,
+        scrollable=True,
+        content=ft.Container(
+            width=width,
+            content=ft.Column(
+                controls=[
+                    ft.Row(controls=header_controls, spacing=10),
+                    ft.Divider(height=1, color=ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE)),
+                    content,
+                ],
+                spacing=12,
+                tight=True,
+            ),
+        ),
+        actions=actions or [],
+        **kwargs,
+    )
+
+
 # ---- Divider --------------------------------------------------------------
 
 def make_divider() -> ft.Divider:

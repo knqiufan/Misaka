@@ -162,7 +162,7 @@ class AppShell(ft.Row):
     def _apply_theme(self, mode: str) -> None:
         """Apply the selected theme and persist it."""
         self.state.theme_mode = mode
-        apply_theme(self.state.page, mode)
+        apply_theme(self.state.page, mode, self.state.accent_color)
 
         # Persist the theme choice
         if hasattr(self.state, 'services') and self.state.services:

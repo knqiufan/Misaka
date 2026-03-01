@@ -22,7 +22,7 @@ from misaka.ui.theme import (
     apply_theme,
     make_badge,
     make_button,
-    make_dialog,
+    make_form_dialog,
     make_icon_button,
     make_outlined_button,
     make_section_card,
@@ -132,6 +132,41 @@ class SettingsPage(ft.Column):
     def _wrap_card(content: ft.Control) -> ft.Control:
         """Wrap a section in a card-like container that fills the available width."""
         return make_section_card(content)
+
+    @staticmethod
+    def _build_form_group(title: str, controls: list[ft.Control]) -> ft.Control:
+        """Build a soft card group used inside modern form dialogs."""
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(title, size=12, weight=ft.FontWeight.W_600, opacity=0.78),
+                    ft.Column(
+                        controls=controls,
+                        spacing=8,
+                        tight=False,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    ),
+                ],
+                spacing=8,
+                tight=True,
+            ),
+            width=None,
+            padding=ft.Padding.symmetric(horizontal=12, vertical=10),
+            border_radius=12,
+            bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE)),
+        )
+
+    @staticmethod
+    def _make_compact_field(**kwargs) -> ft.TextField:
+        """Create compact form field for dialog usage."""
+        defaults = {
+            "dense": True,
+            "text_size": 12,
+            "content_padding": ft.Padding.symmetric(horizontal=12, vertical=10),
+        }
+        defaults.update(kwargs)
+        return make_text_field(**defaults)
 
     # ---------------------------------------------------------------
     # Appearance section
@@ -466,12 +501,12 @@ class SettingsPage(ft.Column):
         else:
             default_json = config.config_json if config else "{}"
 
-        name_field = make_text_field(
+        name_field = self._make_compact_field(
             label=t("settings.router_name"),
             value=config.name if config else "",
             autofocus=True,
         )
-        api_key_field = make_text_field(
+        api_key_field = self._make_compact_field(
             label=t("settings.router_api_key"),
             value=(
                 str(form_vals.get("api_key", ""))
@@ -480,26 +515,26 @@ class SettingsPage(ft.Column):
             password=True,
             can_reveal_password=True,
         )
-        base_url_field = make_text_field(
+        base_url_field = self._make_compact_field(
             label=t("settings.router_base_url"),
             value=(
                 str(form_vals.get("base_url", ""))
                 or (config.base_url if config else "")
             ),
         )
-        main_model_field = make_text_field(
+        main_model_field = self._make_compact_field(
             label=t("settings.router_main_model"),
             value=str(form_vals.get("main_model", "")),
         )
-        haiku_model_field = make_text_field(
+        haiku_model_field = self._make_compact_field(
             label=t("settings.router_haiku_model"),
             value=str(form_vals.get("haiku_model", "")),
         )
-        opus_model_field = make_text_field(
+        opus_model_field = self._make_compact_field(
             label=t("settings.router_opus_model"),
             value=str(form_vals.get("opus_model", "")),
         )
-        sonnet_model_field = make_text_field(
+        sonnet_model_field = self._make_compact_field(
             label=t("settings.router_sonnet_model"),
             value=str(form_vals.get("sonnet_model", "")),
         )
@@ -507,13 +542,14 @@ class SettingsPage(ft.Column):
             label=t("settings.router_agent_team"),
             value=bool(form_vals.get("agent_team", False)),
         )
-        config_json_field = make_text_field(
-            label=t("settings.router_config_json"),
+        config_json_field = self._make_compact_field(
+            hint_text=t("settings.router_config_json"),
             value=default_json,
             multiline=True,
             min_lines=4,
             max_lines=10,
-            text_size=11,
+            text_size=12,
+            content_padding=ft.Padding.symmetric(horizontal=12, vertical=10),
         )
 
         model_fields = {
@@ -623,28 +659,43 @@ class SettingsPage(ft.Column):
             page.pop_dialog()
             self.state.update()
 
-        dialog = make_dialog(
-            title=(
-                t("settings.router_edit") if is_edit
-                else t("settings.router_add")
+        form_groups = [
+            self._build_form_group(
+                t("settings.router_title"),
+                [name_field, api_key_field, base_url_field],
             ),
-            content=ft.Column(
-                controls=[
-                    name_field,
-                    api_key_field,
-                    base_url_field,
+            self._build_form_group(
+                t("settings.default_model"),
+                [
                     main_model_field,
                     sonnet_model_field,
                     opus_model_field,
                     haiku_model_field,
                     agent_team_switch,
-                    config_json_field,
                 ],
-                spacing=12,
-                tight=True,
-                scroll=ft.ScrollMode.AUTO,
-                width=450,
             ),
+            self._build_form_group(
+                t("settings.router_config_json"),
+                [config_json_field],
+            ),
+        ]
+
+        dialog = make_form_dialog(
+            title=(
+                t("settings.router_edit") if is_edit
+                else t("settings.router_add")
+            ),
+            content=ft.Column(
+                controls=form_groups,
+                spacing=10,
+                scroll=ft.ScrollMode.AUTO,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                tight=False,
+                height=430,
+            ),
+            subtitle=t("settings.router_desc"),
+            icon=ft.Icons.ROUTE_ROUNDED,
+            width=640,
             actions=[
                 make_text_button(
                     t("common.cancel"),
