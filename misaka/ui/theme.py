@@ -238,18 +238,15 @@ def make_outlined_button(
     icon: str | None = None,
     on_click: object = None,
     **kwargs,
-) -> ft.OutlinedButton:
-    """Secondary outlined button with pill shape."""
-    return ft.OutlinedButton(
-        text,
+) -> ft.Button:
+    """Unified button style (same as primary pill button)."""
+    return ft.Button(
+        content=text,
         icon=icon,
         on_click=on_click,
         style=ft.ButtonStyle(
             shape=_BUTTON_SHAPE,
             padding=ft.Padding.symmetric(horizontal=20, vertical=10),
-            side=ft.BorderSide(
-                1, ft.Colors.with_opacity(0.15, ft.Colors.ON_SURFACE),
-            ),
         ),
         **kwargs,
     )
