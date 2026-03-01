@@ -7,17 +7,18 @@ file preview display.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import flet as ft
 
 from misaka.i18n import t
-from misaka.ui.components.file_tree import FileTree
 from misaka.ui.components.file_preview import FilePreview
+from misaka.ui.components.file_tree import FileTree
 from misaka.ui.components.task_list import TaskList
 
 if TYPE_CHECKING:
-    from misaka.db.models import FilePreview as FilePreviewModel, FileTreeNode, TaskItem
+    from misaka.db.models import FilePreview as FilePreviewModel
     from misaka.state import AppState
 
 
@@ -56,7 +57,7 @@ class RightPanel(ft.Column):
 
         files_btn = ft.TextButton(
             content=t("right_panel.files"),
-            icon=ft.Icons.FOLDER if is_files else ft.Icons.FOLDER_OUTLINED,
+            icon=ft.Icons.FOLDER_ROUNDED if is_files else ft.Icons.FOLDER_OUTLINED,
             on_click=lambda e: self._switch_tab("files"),
             style=ft.ButtonStyle(
                 color=ft.Colors.PRIMARY if is_files else ft.Colors.ON_SURFACE_VARIANT,
@@ -65,7 +66,11 @@ class RightPanel(ft.Column):
 
         tasks_btn = ft.TextButton(
             content=t("right_panel.tasks"),
-            icon=ft.Icons.CHECKLIST if not is_files else ft.Icons.CHECKLIST_RTL,
+            icon=(
+                ft.Icons.CHECKLIST_ROUNDED
+                if not is_files
+                else ft.Icons.CHECKLIST_RTL_ROUNDED
+            ),
             on_click=lambda e: self._switch_tab("tasks"),
             style=ft.ButtonStyle(
                 color=ft.Colors.PRIMARY if not is_files else ft.Colors.ON_SURFACE_VARIANT,
@@ -75,9 +80,9 @@ class RightPanel(ft.Column):
         tab_bar = ft.Container(
             content=ft.Row(
                 controls=[files_btn, tasks_btn],
-                spacing=0,
+                spacing=2,
             ),
-            padding=ft.Padding.symmetric(horizontal=4, vertical=4),
+            padding=ft.Padding.only(left=6, right=6, top=6, bottom=4),
         )
 
         # Content area
@@ -96,13 +101,17 @@ class RightPanel(ft.Column):
                     content=ft.Row(
                         controls=[
                             ft.IconButton(
-                                icon=ft.Icons.ARROW_BACK,
+                                icon=ft.Icons.ARROW_BACK_ROUNDED,
                                 icon_size=18,
                                 on_click=self._close_preview,
                                 tooltip=t("right_panel.back_to_tree"),
                                 style=ft.ButtonStyle(padding=4),
                             ),
-                            ft.Text(t("right_panel.file_preview"), size=13, weight=ft.FontWeight.W_500),
+                            ft.Text(
+                                t("right_panel.file_preview"),
+                                size=12,
+                                weight=ft.FontWeight.W_500,
+                            ),
                         ],
                         spacing=4,
                     ),
@@ -127,20 +136,25 @@ class RightPanel(ft.Column):
         dir_display = ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Icon(ft.Icons.FOLDER_OPEN, size=14, color=ft.Colors.PRIMARY, opacity=0.7),
+                    ft.Icon(
+                        ft.Icons.FOLDER_OPEN_ROUNDED,
+                        size=14,
+                        color=ft.Colors.PRIMARY,
+                        opacity=0.6,
+                    ),
                     ft.Text(
                         working_dir or t("right_panel.no_files"),
-                        size=12,
+                        size=11,
                         opacity=0.5,
                         max_lines=1,
                         overflow=ft.TextOverflow.ELLIPSIS,
                         expand=True,
                     ),
                 ],
-                spacing=6,
+                spacing=5,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.Padding.only(left=8, right=8, top=4, bottom=4),
+            padding=ft.Padding.only(left=10, right=10, top=1, bottom=4),
             visible=is_files,
         )
 

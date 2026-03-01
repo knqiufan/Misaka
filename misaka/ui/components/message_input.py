@@ -15,6 +15,7 @@ import flet as ft
 
 from misaka.commands import SlashCommand, filter_commands
 from misaka.i18n import t
+from misaka.ui.theme import MONO_FONT_FAMILY
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -61,7 +62,7 @@ class MessageInput(ft.Container):
             shift_enter=True,
             on_submit=self._handle_send,
             on_change=self._handle_text_change,
-            border_radius=10,
+            border_radius=12,
             content_padding=ft.Padding.symmetric(horizontal=14, vertical=10),
             text_size=13,
         )
@@ -69,7 +70,11 @@ class MessageInput(ft.Container):
         is_streaming = self.state.is_streaming
 
         self._send_btn = ft.IconButton(
-            icon=ft.Icons.STOP_CIRCLE_ROUNDED if is_streaming else ft.Icons.ARROW_UPWARD_ROUNDED,
+            icon=(
+                ft.Icons.STOP_CIRCLE_ROUNDED
+                if is_streaming
+                else ft.Icons.ARROW_UPWARD_ROUNDED
+            ),
             tooltip=t("chat.stop") if is_streaming else t("chat.send"),
             on_click=self._handle_action,
             icon_color=ft.Colors.WHITE,
@@ -87,7 +92,7 @@ class MessageInput(ft.Container):
         )
 
         command_btn = ft.IconButton(
-            icon=ft.Icons.TERMINAL,
+            icon=ft.Icons.TERMINAL_ROUNDED,
             tooltip=t("chat.command_menu"),
             on_click=lambda e: self._show_command_menu(filter_commands("")),
             icon_size=18,
@@ -98,14 +103,14 @@ class MessageInput(ft.Container):
         self._command_menu_container = ft.Container(
             content=self._command_menu,
             visible=False,
-            border_radius=10,
-            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=12,
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE)),
             bgcolor=ft.Colors.SURFACE_CONTAINER,
             padding=ft.Padding.symmetric(vertical=4),
             shadow=ft.BoxShadow(
-                blur_radius=8,
-                spread_radius=1,
-                color=ft.Colors.with_opacity(0.15, ft.Colors.BLACK),
+                blur_radius=12,
+                spread_radius=0,
+                color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK),
             ),
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
@@ -117,7 +122,7 @@ class MessageInput(ft.Container):
         input_row = ft.Row(
             controls=[attach_btn, command_btn, self._model_indicator,
                       self._badge_container, self._text_field, self._send_btn],
-            spacing=6,
+            spacing=4,
             vertical_alignment=ft.CrossAxisAlignment.END,
         )
 
@@ -126,7 +131,7 @@ class MessageInput(ft.Container):
             spacing=4,
             tight=True,
         )
-        self.padding = ft.Padding.symmetric(horizontal=12, vertical=8)
+        self.padding = ft.Padding.symmetric(horizontal=12, vertical=10)
 
     # ------------------------------------------------------------------
     # Slash-command menu
@@ -167,17 +172,17 @@ class MessageInput(ft.Container):
         return ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Icon(cmd.icon, size=16, opacity=0.6),
+                    ft.Icon(cmd.icon, size=15, opacity=0.5),
                     ft.Text(
                         f"/{cmd.name}",
-                        size=13,
+                        size=12,
                         weight=ft.FontWeight.W_500,
-                        font_family="Cascadia Code, JetBrains Mono, Consolas, monospace",
+                        font_family=MONO_FONT_FAMILY,
                     ),
                     ft.Text(
                         cmd.description,
-                        size=12,
-                        opacity=0.5,
+                        size=11,
+                        opacity=0.4,
                         max_lines=1,
                         overflow=ft.TextOverflow.ELLIPSIS,
                         expand=True,
@@ -186,7 +191,7 @@ class MessageInput(ft.Container):
                 spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.Padding.symmetric(horizontal=12, vertical=6),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=7),
             on_click=lambda e, c=cmd: self._select_command(c),
             ink=True,
         )
@@ -256,16 +261,16 @@ class MessageInput(ft.Container):
                     content=ft.Row(
                         controls=[
                             ft.Icon(
-                                ft.Icons.CHECK if is_selected else ft.Icons.CIRCLE,
-                                size=14,
-                                opacity=1.0 if is_selected else 0.3,
+                                ft.Icons.CHECK_ROUNDED if is_selected else ft.Icons.CIRCLE,
+                                size=13,
+                                opacity=1.0 if is_selected else 0.2,
                                 color=ft.Colors.PRIMARY if is_selected else None,
                             ),
                             ft.Text(
                                 label,
-                                size=13,
+                                size=12,
                                 weight=(
-                                    ft.FontWeight.W_600
+                                    ft.FontWeight.W_500
                                     if is_selected
                                     else ft.FontWeight.NORMAL
                                 ),
@@ -274,7 +279,7 @@ class MessageInput(ft.Container):
                         spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    padding=ft.Padding.symmetric(horizontal=12, vertical=6),
+                    padding=ft.Padding.symmetric(horizontal=12, vertical=7),
                     on_click=lambda e, v=value: self._select_model(v),
                     ink=True,
                 )
@@ -303,10 +308,10 @@ class MessageInput(ft.Container):
             content=ft.Text(
                 label,
                 size=10,
-                weight=ft.FontWeight.W_600,
+                weight=ft.FontWeight.W_500,
                 color=ft.Colors.PRIMARY,
             ),
-            border=ft.Border.all(1, ft.Colors.PRIMARY),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.PRIMARY)),
             border_radius=6,
             padding=ft.Padding.symmetric(horizontal=6, vertical=2),
         )
@@ -324,10 +329,12 @@ class MessageInput(ft.Container):
             self._model_indicator.content = ft.Text(
                 model.capitalize(),
                 size=10,
-                weight=ft.FontWeight.W_600,
+                weight=ft.FontWeight.W_500,
                 color=ft.Colors.PRIMARY,
             )
-            self._model_indicator.border = ft.Border.all(1, ft.Colors.PRIMARY)
+            self._model_indicator.border = ft.Border.all(
+                1, ft.Colors.with_opacity(0.2, ft.Colors.PRIMARY),
+            )
             self._model_indicator.border_radius = 6
             self._model_indicator.padding = ft.Padding.symmetric(
                 horizontal=6, vertical=2
@@ -347,15 +354,15 @@ class MessageInput(ft.Container):
         self._badge_container.content = ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Icon(cmd.icon, size=14, color=ft.Colors.WHITE),
+                    ft.Icon(cmd.icon, size=13, color=ft.Colors.WHITE),
                     ft.Text(
                         f"/{cmd.name}",
                         size=11,
-                        weight=ft.FontWeight.W_600,
+                        weight=ft.FontWeight.W_500,
                         color=ft.Colors.WHITE,
                     ),
                     ft.IconButton(
-                        icon=ft.Icons.CLOSE,
+                        icon=ft.Icons.CLOSE_ROUNDED,
                         icon_size=12,
                         icon_color=ft.Colors.WHITE,
                         on_click=lambda e: self._remove_badge(),

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Callable
 import flet as ft
 
 from misaka.i18n import t
+from misaka.ui.theme import MONO_FONT_FAMILY
 
 if TYPE_CHECKING:
     from misaka.state import AppState, PermissionRequest
@@ -91,7 +92,7 @@ class PermissionDialog(ft.Container):
                 ft.Container(
                     content=ft.Text(
                         input_display,
-                        font_family="Consolas, Monaco, monospace",
+                        font_family=MONO_FONT_FAMILY,
                         size=12,
                         selectable=True,
                         no_wrap=False,

@@ -1,14 +1,15 @@
 """Navigation rail component.
 
 Custom vertical navigation bar on the left side of the application.
-Uses a hand-crafted Column layout for pixel-perfect alignment.
+Slim icon-focused design with pill-shaped selection indicators.
 Destinations: Chat, Settings, Plugins, Skills.
-Includes an app logo at the top and a theme toggle at the bottom.
+Includes a theme toggle at the bottom.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import flet as ft
 
@@ -28,10 +29,30 @@ _PAGE_TO_INDEX = {
 _INDEX_TO_PAGE = {v: k for k, v in _PAGE_TO_INDEX.items()}
 
 _NAV_ITEMS: list[dict] = [
-    {"page": "chat", "icon": ft.Icons.CHAT_BUBBLE_OUTLINE, "selected_icon": ft.Icons.CHAT_BUBBLE, "label_key": "nav.chat"},
-    {"page": "settings", "icon": ft.Icons.SETTINGS_OUTLINED, "selected_icon": ft.Icons.SETTINGS, "label_key": "nav.settings"},
-    {"page": "plugins", "icon": ft.Icons.EXTENSION_OUTLINED, "selected_icon": ft.Icons.EXTENSION, "label_key": "nav.plugins"},
-    {"page": "extensions", "icon": ft.Icons.CODE_OUTLINED, "selected_icon": ft.Icons.CODE, "label_key": "nav.extensions"},
+    {
+        "page": "chat",
+        "icon": ft.Icons.CHAT_BUBBLE_OUTLINE,
+        "selected_icon": ft.Icons.CHAT_BUBBLE,
+        "label_key": "nav.chat",
+    },
+    {
+        "page": "settings",
+        "icon": ft.Icons.SETTINGS_OUTLINED,
+        "selected_icon": ft.Icons.SETTINGS,
+        "label_key": "nav.settings",
+    },
+    {
+        "page": "plugins",
+        "icon": ft.Icons.EXTENSION_OUTLINED,
+        "selected_icon": ft.Icons.EXTENSION,
+        "label_key": "nav.plugins",
+    },
+    {
+        "page": "extensions",
+        "icon": ft.Icons.CODE_OUTLINED,
+        "selected_icon": ft.Icons.CODE,
+        "label_key": "nav.extensions",
+    },
 ]
 
 
@@ -40,24 +61,23 @@ def _build_nav_item(
     is_selected: bool,
     on_click: Callable[[str], None],
 ) -> ft.Control:
-    """Build a single navigation item with icon + label."""
+    """Build a single navigation item — icon with pill selection indicator."""
     page_name = item["page"]
     icon_name = item["selected_icon"] if is_selected else item["icon"]
     label = t(item["label_key"])
 
     icon_color = ft.Colors.PRIMARY if is_selected else ft.Colors.ON_SURFACE_VARIANT
-    label_color = ft.Colors.PRIMARY if is_selected else ft.Colors.ON_SURFACE_VARIANT
 
     return ft.Container(
         content=ft.Column(
             controls=[
                 ft.Container(
                     content=ft.Icon(icon_name, size=20, color=icon_color),
-                    width=40,
-                    height=32,
-                    border_radius=8,
+                    width=42,
+                    height=34,
+                    border_radius=10,
                     bgcolor=(
-                        ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)
+                        ft.Colors.with_opacity(0.1, ft.Colors.PRIMARY)
                         if is_selected
                         else ft.Colors.TRANSPARENT
                     ),
@@ -65,21 +85,21 @@ def _build_nav_item(
                 ),
                 ft.Text(
                     label,
-                    size=10,
-                    weight=ft.FontWeight.W_600 if is_selected else ft.FontWeight.NORMAL,
-                    color=label_color,
+                    size=9,
+                    weight=ft.FontWeight.W_500 if is_selected else ft.FontWeight.NORMAL,
+                    color=icon_color,
                     text_align=ft.TextAlign.CENTER,
                 ),
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=2,
         ),
-        width=56,
-        padding=ft.Padding.symmetric(vertical=4),
+        width=54,
+        padding=ft.Padding.symmetric(vertical=3),
         alignment=ft.Alignment.CENTER,
         on_click=lambda e, p=page_name: on_click(p),
         ink=True,
-        border_radius=8,
+        border_radius=10,
     )
 
 
@@ -117,7 +137,7 @@ def build_nav_rail(
             icon=theme_icon,
             tooltip=theme_label,
             on_click=handle_theme,
-            icon_size=20,
+            icon_size=18,
             style=ft.ButtonStyle(padding=6),
         ),
         alignment=ft.Alignment.CENTER,
@@ -126,14 +146,21 @@ def build_nav_rail(
     return ft.Container(
         content=ft.Column(
             controls=[
+                ft.Container(height=4),
                 *nav_items,
                 ft.Container(expand=True),
                 theme_btn,
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=4,
+            spacing=2,
         ),
-        width=64,
-        padding=ft.Padding.only(top=12, bottom=12, left=4, right=4),
+        width=60,
+        padding=ft.Padding.only(top=8, bottom=8, left=3, right=3),
         bgcolor=ft.Colors.SURFACE_CONTAINER,
+        border=ft.Border(
+            right=ft.BorderSide(
+                1,
+                ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            ),
+        ),
     )

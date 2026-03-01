@@ -16,6 +16,7 @@ import flet as ft
 from misaka.db.models import Message, MessageContentBlock
 from misaka.ui.components.code_block import CodeBlock
 from misaka.ui.components.tool_call_block import ToolCallBlock
+from misaka.ui.theme import MONO_FONT_FAMILY
 
 
 @dataclass
@@ -63,20 +64,20 @@ class MessageItem(ft.Container):
 
         self.content = ft.Column(
             controls=[header, *content_controls],
-            spacing=6,
+            spacing=8,
         )
-        self.padding = ft.Padding.symmetric(horizontal=16, vertical=10)
+        self.padding = ft.Padding.symmetric(horizontal=20, vertical=12)
         self.margin = ft.Margin.only(bottom=2)
-        self.border_radius = 8
+        self.border_radius = 10
         if is_user:
-            self.bgcolor = ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE)
+            self.bgcolor = ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE)
             self.border = ft.Border.all(
-                1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
+                1, ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE)
             )
 
     def _build_header(self, is_user: bool) -> ft.Control:
         role_icon = ft.Icon(
-            ft.Icons.PERSON_OUTLINE if is_user else ft.Icons.SMART_TOY_OUTLINED,
+            ft.Icons.PERSON_OUTLINE if is_user else ft.Icons.AUTO_AWESOME_OUTLINED,
             size=14,
             color=ft.Colors.ON_SURFACE_VARIANT if is_user else ft.Colors.PRIMARY,
         )
@@ -89,7 +90,7 @@ class MessageItem(ft.Container):
         time_label = ft.Text(
             self._format_time(self._message.created_at),
             size=10,
-            opacity=0.4,
+            opacity=0.3,
         )
         return ft.Row(
             controls=[role_icon, role_label, ft.Container(expand=True), time_label],
@@ -162,24 +163,24 @@ class MessageItem(ft.Container):
         detail_container = ft.Container(
             content=ft.Text(
                 detail_text,
-                font_family="Cascadia Code, JetBrains Mono, Consolas, monospace",
+                font_family=MONO_FONT_FAMILY,
                 size=10,
                 selectable=True,
                 no_wrap=False,
             ),
             padding=8,
-            border_radius=4,
+            border_radius=6,
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
             visible=False,
         )
 
-        chevron = ft.Icon(ft.Icons.CHEVRON_RIGHT, size=14, opacity=0.4)
+        chevron = ft.Icon(ft.Icons.CHEVRON_RIGHT_ROUNDED, size=14, opacity=0.3)
 
         def toggle(e):
             detail_container.visible = not detail_container.visible
             chevron.name = (
-                ft.Icons.EXPAND_MORE if detail_container.visible
-                else ft.Icons.CHEVRON_RIGHT
+                ft.Icons.EXPAND_MORE_ROUNDED if detail_container.visible
+                else ft.Icons.CHEVRON_RIGHT_ROUNDED
             )
             detail_container.update()
             chevron.update()
@@ -187,8 +188,8 @@ class MessageItem(ft.Container):
         summary_row = ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Icon(ft.Icons.DATA_OBJECT, size=14, color=ft.Colors.PRIMARY, opacity=0.7),
-                    ft.Text(summary, size=12, opacity=0.7, expand=True,
+                    ft.Icon(ft.Icons.DATA_OBJECT, size=13, color=ft.Colors.PRIMARY, opacity=0.5),
+                    ft.Text(summary, size=11, opacity=0.5, expand=True,
                             max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
                     chevron,
                 ],
@@ -197,10 +198,10 @@ class MessageItem(ft.Container):
             ),
             on_click=toggle,
             ink=True,
-            border_radius=4,
-            padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+            border_radius=6,
+            padding=ft.Padding.symmetric(horizontal=8, vertical=5),
             bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
-            border=ft.Border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE)),
         )
 
         return ft.Column(controls=[summary_row, detail_container], spacing=2, tight=True)

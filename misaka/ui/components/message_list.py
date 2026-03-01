@@ -6,7 +6,8 @@ with auto-scroll to bottom on new messages and "load earlier" pagination.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import flet as ft
 
@@ -33,7 +34,7 @@ class MessageList(ft.Column):
             expand=True,
             auto_scroll=True,
             spacing=2,
-            padding=ft.Padding.symmetric(horizontal=8, vertical=8),
+            padding=ft.Padding.symmetric(horizontal=4, vertical=8),
         )
         self._streaming_msg = StreamingMessage(state)
         self._empty_view = ft.Container(
@@ -41,21 +42,21 @@ class MessageList(ft.Column):
                 controls=[
                     ft.Icon(
                         ft.Icons.CHAT_BUBBLE_OUTLINE,
-                        size=48,
-                        opacity=0.3,
+                        size=40,
+                        opacity=0.15,
                     ),
                     ft.Text(
                         t("chat.no_messages"),
-                        size=16,
+                        size=15,
                         weight=ft.FontWeight.W_300,
                         text_align=ft.TextAlign.CENTER,
-                        opacity=0.5,
+                        opacity=0.4,
                     ),
                     ft.Text(
                         t("chat.send_to_start"),
-                        size=13,
+                        size=12,
                         text_align=ft.TextAlign.CENTER,
-                        opacity=0.3,
+                        opacity=0.25,
                     ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -95,12 +96,12 @@ class MessageList(ft.Column):
         return ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Icon(ft.Icons.EXPAND_LESS, size=16, opacity=0.5),
+                    ft.Icon(ft.Icons.EXPAND_LESS_ROUNDED, size=14, opacity=0.4),
                     ft.Text(
                         t("chat.load_earlier"),
-                        size=12,
+                        size=11,
                         weight=ft.FontWeight.W_500,
-                        opacity=0.6,
+                        opacity=0.5,
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.CENTER,
@@ -109,7 +110,7 @@ class MessageList(ft.Column):
             on_click=lambda e: self._handle_load_more(),
             padding=ft.Padding.symmetric(vertical=8),
             ink=True,
-            border_radius=6,
+            border_radius=8,
         )
 
     def _handle_load_more(self) -> None:

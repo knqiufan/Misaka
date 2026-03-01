@@ -71,14 +71,19 @@ class ExtensionsPage(ft.Column):
                 controls=[
                     ft.Text(
                         t("extensions.title"),
-                        size=24,
-                        weight=ft.FontWeight.BOLD,
+                        size=22,
+                        weight=ft.FontWeight.W_600,
                         expand=True,
                     ),
+                    ft.OutlinedButton(
+                        content=t("extensions.refresh_skills"),
+                        icon=ft.Icons.REFRESH,
+                        on_click=self._refresh_all_skills,
+                    ),
                     ft.Button(
-                        content=t("extensions.new_skill"),
-                        icon=ft.Icons.ADD,
-                        on_click=self._show_create_dialog,
+                        content=t("extensions.install_from_zip"),
+                        icon=ft.Icons.UPLOAD_FILE,
+                        on_click=self._pick_zip_and_install,
                     ),
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -100,7 +105,7 @@ class ExtensionsPage(ft.Column):
             hint_text=t("extensions.search_skills"),
             prefix_icon=ft.Icons.SEARCH,
             dense=True,
-            border_radius=8,
+            border_radius=10,
             content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
             on_change=self._on_search,
         )
@@ -126,7 +131,11 @@ class ExtensionsPage(ft.Column):
                 expand=True,
             ),
             width=260,
-            border=ft.Border(right=ft.BorderSide(1, ft.Colors.OUTLINE)),
+            border=ft.Border(
+                right=ft.BorderSide(
+                    1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+                ),
+            ),
         )
 
         # --- Right panel: editor ---
@@ -135,7 +144,7 @@ class ExtensionsPage(ft.Column):
             min_lines=20,
             max_lines=40,
             expand=True,
-            border_radius=8,
+            border_radius=10,
         )
 
         self._editor_panel = ft.Container(
@@ -217,8 +226,8 @@ class ExtensionsPage(ft.Column):
             controls=[
                 ft.Text(
                     skill.name,
-                    size=18,
-                    weight=ft.FontWeight.W_500,
+                    size=16,
+                    weight=ft.FontWeight.W_600,
                 ),
                 badge,
                 ft.Container(expand=True),
@@ -397,8 +406,8 @@ class ExtensionsPage(ft.Column):
                 spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.Padding.symmetric(horizontal=4, vertical=4),
-            border_radius=6,
+            padding=ft.Padding.symmetric(horizontal=6, vertical=5),
+            border_radius=8,
             bgcolor=(
                 ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY)
                 if is_selected
@@ -421,6 +430,115 @@ class ExtensionsPage(ft.Column):
         self._refresh_skill_list()
         if self._skill_list:
             self._skill_list.update()
+
+    def _refresh_all_skills(self, e: ft.ControlEvent) -> None:
+        """Reload all skills from disk and refresh the UI."""
+        self._selected_skill = None
+        self._load_skills()
+        self._refresh_skill_list()
+        if self._editor_panel:
+            self._editor_panel.content = self._build_editor_content()
+        self.state.update()
+        if e.page:
+            self._show_snackbar(e.page, t("extensions.skills_refreshed"))
+
+    def _pick_zip_and_install(self, e: ft.ControlEvent) -> None:
+        if not e.page:
+            return
+        page = e.page
+        result, zip_path = self._pick_zip_file_path()
+        if result == "selected" and zip_path:
+            self._install_skill_from_zip_path(page, zip_path)
+            return
+        if result == "cancelled":
+            return
+
+        self._show_zip_path_dialog(page)
+
+    @staticmethod
+    def _pick_zip_file_path() -> tuple[str, str | None]:
+        """Open native file dialog and return (status, zip_path).
+
+        Status values:
+        - "selected": user picked a file
+        - "cancelled": dialog opened, but user cancelled/closed it
+        - "unavailable": native picker is not available
+        """
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+        except Exception:
+            return "unavailable", None
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        try:
+            selected = filedialog.askopenfilename(
+                title="Select skill ZIP",
+                filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")],
+            )
+            if selected:
+                return "selected", selected
+            return "cancelled", None
+        finally:
+            root.destroy()
+
+    def _show_zip_path_dialog(self, page: ft.Page) -> None:
+        zip_path_field = ft.TextField(
+            label=t("extensions.zip_path_label"),
+            hint_text=t("extensions.zip_path_hint"),
+            autofocus=True,
+            dense=True,
+        )
+
+        def do_install(_ev: ft.ControlEvent) -> None:
+            zip_path = (zip_path_field.value or "").strip()
+            if not zip_path:
+                return
+            page.pop_dialog()
+            self._install_skill_from_zip_path(page, zip_path)
+
+        dialog = ft.AlertDialog(
+            title=ft.Text(t("extensions.install_from_zip")),
+            content=ft.Column(
+                controls=[
+                    ft.Text(t("extensions.install_zip_manual_notice"), size=12, opacity=0.7),
+                    zip_path_field,
+                ],
+                spacing=12,
+                tight=True,
+                width=420,
+            ),
+            actions=[
+                ft.TextButton(t("common.cancel"), on_click=lambda ev: page.pop_dialog()),
+                ft.Button(t("common.confirm"), on_click=do_install),
+            ],
+        )
+        page.show_dialog(dialog)
+
+    def _install_skill_from_zip_path(self, page: ft.Page, zip_path: str) -> None:
+        svc = self._get_skill_service()
+        if not svc:
+            return
+
+        try:
+            installed = svc.install_skills_from_zip(zip_path)
+        except Exception as exc:
+            logger.error("Failed to install skill zip: %s", exc)
+            self._show_snackbar(page, t("extensions.install_zip_failed", error=str(exc)))
+            return
+
+        self._selected_skill = None
+        self._load_skills()
+        self._refresh_skill_list()
+        if self._editor_panel:
+            self._editor_panel.content = self._build_editor_content()
+        self.state.update()
+        self._show_snackbar(
+            page,
+            t("extensions.install_zip_success", count=str(len(installed))),
+        )
 
     def _save_skill(self, e: ft.ControlEvent) -> None:
         svc = self._get_skill_service()
@@ -482,80 +600,6 @@ class ExtensionsPage(ft.Column):
                     on_click=do_delete,
                     color=ft.Colors.WHITE,
                     bgcolor=ft.Colors.ERROR,
-                ),
-            ],
-        )
-        page.show_dialog(dialog)
-
-    def _show_create_dialog(self, e: ft.ControlEvent) -> None:
-        if not e.page:
-            return
-        page = e.page
-
-        name_field = ft.TextField(
-            label=t("extensions.skill_name"),
-            hint_text=t("extensions.skill_name_hint"),
-            autofocus=True,
-            dense=True,
-        )
-        scope_dropdown = ft.Dropdown(
-            label=t("extensions.skill_scope"),
-            value="global",
-            options=[
-                ft.dropdown.Option(key="global", text=t("extensions.source_global")),
-                ft.dropdown.Option(key="project", text=t("extensions.source_project")),
-            ],
-            dense=True,
-        )
-        content_field = ft.TextField(
-            label=t("extensions.skill_content"),
-            hint_text=t("extensions.skill_content_hint"),
-            multiline=True,
-            min_lines=6,
-            max_lines=12,
-        )
-
-        def do_create(ev):
-            name = (name_field.value or "").strip()
-            content = content_field.value or ""
-            scope = scope_dropdown.value or "global"
-            if not name:
-                return
-            svc = self._get_skill_service()
-            if svc:
-                try:
-                    svc.create_skill(name, content, scope=scope)
-                    page.pop_dialog()
-                    self._show_snackbar(page, t("extensions.skill_created"))
-                    self._load_skills()
-                    # Select newly created skill
-                    for s in self._skills:
-                        if s.name == name:
-                            self._selected_skill = s
-                            break
-                    self._refresh_skill_list()
-                    if self._editor_panel:
-                        self._editor_panel.content = self._build_editor_content()
-                    self.state.update()
-                except Exception as exc:
-                    logger.error("Failed to create skill: %s", exc)
-
-        dialog = ft.AlertDialog(
-            title=ft.Text(t("extensions.create_skill_title")),
-            content=ft.Column(
-                controls=[name_field, scope_dropdown, content_field],
-                spacing=12,
-                tight=True,
-                width=400,
-            ),
-            actions=[
-                ft.TextButton(
-                    t("common.cancel"),
-                    on_click=lambda ev: page.pop_dialog(),
-                ),
-                ft.Button(
-                    t("common.save"),
-                    on_click=do_create,
                 ),
             ],
         )

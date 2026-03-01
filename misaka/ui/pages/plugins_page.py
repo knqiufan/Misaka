@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import flet as ft
 
 from misaka.i18n import t
+from misaka.ui.theme import MONO_FONT_FAMILY
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -46,8 +47,8 @@ class PluginsPage(ft.Column):
                 controls=[
                     ft.Text(
                         t("plugins.title"),
-                        size=24,
-                        weight=ft.FontWeight.BOLD,
+                        size=22,
+                        weight=ft.FontWeight.W_600,
                         expand=True,
                     ),
                     ft.Button(
@@ -92,7 +93,7 @@ class PluginsPage(ft.Column):
                         t("plugins.config_files_desc"),
                         size=12,
                         opacity=0.6,
-                        font_family="Consolas, Monaco, monospace",
+                        font_family=MONO_FONT_FAMILY,
                     ),
                     ft.Button(
                         content=t("plugins.reload_config"),
@@ -109,7 +110,6 @@ class PluginsPage(ft.Column):
 
     def _load_mcp_config(self) -> None:
         """Load MCP server configurations from settings files."""
-        import os
         from pathlib import Path
 
         home = Path.home()
@@ -122,7 +122,7 @@ class PluginsPage(ft.Column):
         for config_path in config_paths:
             if config_path.exists():
                 try:
-                    with open(config_path, "r", encoding="utf-8") as f:
+                    with open(config_path, encoding="utf-8") as f:
                         data = json.load(f)
                     servers = data.get("mcpServers", {})
                     if isinstance(servers, dict):
@@ -235,16 +235,19 @@ class PluginsPage(ft.Column):
                 spacing=12,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=12,
-            border_radius=8,
-            border=ft.Border.all(1, ft.Colors.OUTLINE),
+            padding=14,
+            border_radius=10,
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            ),
         )
 
     def _show_add_dialog(self, e: ft.ControlEvent) -> None:
         if not e.page:
             return
 
-        from misaka.ui.theme import make_text_field as _mtf, make_dropdown as _mdd
+        from misaka.ui.theme import make_dropdown as _mdd
+        from misaka.ui.theme import make_text_field as _mtf
         name_field = _mtf(label=t("plugins.server_name"), autofocus=True)
         type_dropdown = _mdd(
             label=t("plugins.transport_type"),
@@ -309,7 +312,7 @@ class PluginsPage(ft.Column):
         data = {}
         if config_path.exists():
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with open(config_path, encoding="utf-8") as f:
                     data = json.load(f)
             except (json.JSONDecodeError, OSError):
                 pass

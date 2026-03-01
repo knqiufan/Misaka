@@ -149,9 +149,10 @@
     "title": "技能",
     "description": "管理 Claude Code 的自定义技能和命令模板。",
     "new_skill": "新建技能",
+    "install_from_zip": "从 ZIP 安装",
     "search_skills": "搜索技能...",
     "no_skills": "未找到技能",
-    "no_skills_desc": "创建新技能或在 ~/.claude/commands/ 中添加 .md 文件",
+    "no_skills_desc": "从 ZIP 安装技能，或在 ~/.claude/commands/ 中添加 .md 文件",
     "no_matching_skills": "没有匹配的技能",
     "source_global": "全局",
     "source_project": "项目",
@@ -170,7 +171,14 @@
     "skill_scope": "范围",
     "skill_content": "内容（Markdown）",
     "skill_content_hint": "输入技能内容...",
-    "readonly_skill": "此技能为只读。"
+    "readonly_skill": "此技能为只读。",
+    "refresh_skills": "刷新",
+    "skills_refreshed": "技能列表已刷新。",
+    "install_zip_success": "已从 ZIP 安装 {count} 个技能包。",
+    "install_zip_failed": "ZIP 安装失败：{error}",
+    "install_zip_manual_notice": "当前环境不支持系统文件选择器，请输入 ZIP 文件绝对路径。",
+    "zip_path_label": "ZIP 文件路径",
+    "zip_path_hint": "例如 C:/Users/you/Downloads/my-skill.zip"
   },
   "import_session": {
     "title": "导入 CLI 会话",

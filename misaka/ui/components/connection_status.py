@@ -28,21 +28,23 @@ class ConnectionStatus(ft.Row):
 
     def _build_ui(self) -> None:
         if self._is_streaming:
-            color = ft.Colors.ORANGE
+            color = "#f59e0b"
         elif self._connected:
-            color = ft.Colors.GREEN
+            color = "#10b981"
         else:
-            color = ft.Colors.GREY_500
+            color = "#6b7280"
 
-        label = self._model or (t("chat.connected") if self._connected else t("chat.disconnected"))
+        label = self._model or (
+            t("chat.connected") if self._connected else t("chat.disconnected")
+        )
 
         self._dot = ft.Container(
-            width=8,
-            height=8,
-            border_radius=4,
+            width=6,
+            height=6,
+            border_radius=3,
             bgcolor=color,
         )
-        self._label = ft.Text(label, size=11)
+        self._label = ft.Text(label, size=11, opacity=0.6)
         self.controls = [self._dot, self._label]
 
     def set_status(

@@ -6,8 +6,9 @@ with search filtering, new-chat button, and context menu support.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import flet as ft
 
@@ -50,7 +51,7 @@ class ChatList(ft.Column):
             hint_text=t("chat.search_sessions"),
             prefix_icon=ft.Icons.SEARCH,
             dense=True,
-            border_radius=8,
+            border_radius=10,
             content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
             on_change=self._on_search,
         )
@@ -60,19 +61,19 @@ class ChatList(ft.Column):
                 controls=[
                     ft.Text(
                         t("chat.chats"),
-                        size=16,
-                        weight=ft.FontWeight.BOLD,
+                        size=15,
+                        weight=ft.FontWeight.W_600,
                         expand=True,
                     ),
                     ft.IconButton(
-                        icon=ft.Icons.DOWNLOAD,
+                        icon=ft.Icons.DOWNLOAD_ROUNDED,
                         tooltip=t("chat.import_session"),
                         on_click=self._handle_import,
                         icon_size=18,
                         style=ft.ButtonStyle(padding=6),
                     ),
                     ft.IconButton(
-                        icon=ft.Icons.ADD,
+                        icon=ft.Icons.ADD_ROUNDED,
                         tooltip=t("chat.new_chat"),
                         on_click=self._handle_new_chat,
                         icon_size=20,
@@ -81,24 +82,23 @@ class ChatList(ft.Column):
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.Padding.only(left=12, right=4, top=8, bottom=4),
+            padding=ft.Padding.only(left=14, right=4, top=10, bottom=4),
         )
 
         search_bar = ft.Container(
             content=self._search_field,
-            padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=4),
         )
 
         self._session_list = ft.ListView(
             expand=True,
-            spacing=2,
-            padding=ft.Padding.symmetric(horizontal=4, vertical=4),
+            spacing=1,
+            padding=ft.Padding.symmetric(horizontal=6, vertical=6),
         )
 
         self.controls = [
             header,
             search_bar,
-            ft.Divider(height=1),
             self._session_list,
         ]
 
@@ -119,14 +119,14 @@ class ChatList(ft.Column):
                         controls=[
                             ft.Icon(
                                 ft.Icons.CHAT_BUBBLE_OUTLINE,
-                                size=32,
-                                opacity=0.3,
+                                size=28,
+                                opacity=0.2,
                             ),
                             ft.Text(
                                 msg,
                                 italic=True,
                                 size=12,
-                                opacity=0.5,
+                                opacity=0.4,
                                 text_align=ft.TextAlign.CENTER,
                             ),
                         ],
@@ -134,7 +134,7 @@ class ChatList(ft.Column):
                         spacing=8,
                     ),
                     alignment=ft.Alignment.CENTER,
-                    padding=24,
+                    padding=32,
                 )
             ]
             return
@@ -148,11 +148,11 @@ class ChatList(ft.Column):
                     ft.Container(
                         content=ft.Text(
                             label,
-                            size=11,
+                            size=10,
                             weight=ft.FontWeight.W_600,
-                            opacity=0.45,
+                            opacity=0.35,
                         ),
-                        padding=ft.Padding.only(left=12, top=10, bottom=4),
+                        padding=ft.Padding.only(left=12, top=12, bottom=4),
                     )
                 )
             for s in group:
@@ -223,16 +223,16 @@ class ChatList(ft.Column):
         subtitle = " \u00b7 ".join(subtitle_parts) if subtitle_parts else ""
 
         mode_colors = {
-            "code": ft.Colors.BLUE,
-            "plan": ft.Colors.ORANGE,
-            "ask": ft.Colors.GREEN,
+            "code": "#6366f1",
+            "plan": "#f59e0b",
+            "ask": "#10b981",
         }
-        mode_color = mode_colors.get(session.mode, ft.Colors.GREY)
+        mode_color = mode_colors.get(session.mode, "#6b7280")
 
         delete_btn = ft.IconButton(
-            icon=ft.Icons.DELETE_OUTLINE,
-            icon_size=16,
-            icon_color=ft.Colors.ERROR,
+            icon=ft.Icons.CLOSE_ROUNDED,
+            icon_size=14,
+            icon_color=ft.Colors.ON_SURFACE_VARIANT,
             tooltip=t("chat.delete"),
             on_click=lambda e, sid=session.id: self._confirm_delete(sid, e.page),
             style=ft.ButtonStyle(padding=2),
@@ -241,12 +241,6 @@ class ChatList(ft.Column):
 
         item_content = ft.Row(
             controls=[
-                ft.Container(
-                    width=3,
-                    height=36,
-                    border_radius=2,
-                    bgcolor=ft.Colors.PRIMARY if is_selected else ft.Colors.TRANSPARENT,
-                ),
                 ft.Column(
                     controls=[
                         ft.Text(
@@ -261,18 +255,18 @@ class ChatList(ft.Column):
                                 ft.Container(
                                     content=ft.Text(
                                         session.mode.upper(),
-                                        size=9,
-                                        color=ft.Colors.WHITE,
-                                        weight=ft.FontWeight.BOLD,
+                                        size=8,
+                                        color="#ffffff",
+                                        weight=ft.FontWeight.W_600,
                                     ),
                                     bgcolor=mode_color,
-                                    border_radius=3,
-                                    padding=ft.Padding.symmetric(horizontal=4, vertical=1),
+                                    border_radius=4,
+                                    padding=ft.Padding.symmetric(horizontal=5, vertical=1),
                                 ),
                                 ft.Text(
                                     subtitle,
                                     size=11,
-                                    opacity=0.45,
+                                    opacity=0.35,
                                     max_lines=1,
                                     overflow=ft.TextOverflow.ELLIPSIS,
                                     expand=True,
@@ -281,12 +275,12 @@ class ChatList(ft.Column):
                             spacing=6,
                         ),
                     ],
-                    spacing=2,
+                    spacing=3,
                     expand=True,
                 ),
                 delete_btn,
             ],
-            spacing=6,
+            spacing=4,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
@@ -300,12 +294,18 @@ class ChatList(ft.Column):
 
         inner = ft.Container(
             content=item_content,
-            padding=ft.Padding.only(left=4, right=4, top=5, bottom=5),
-            border_radius=6,
+            padding=ft.Padding.only(left=10, right=6, top=8, bottom=8),
+            border_radius=10,
             bgcolor=(
                 ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY)
                 if is_selected
                 else ft.Colors.TRANSPARENT
+            ),
+            border=ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.1, ft.Colors.PRIMARY)
+                if is_selected
+                else ft.Colors.TRANSPARENT,
             ),
             on_click=lambda e, sid=session.id: self._handle_select(sid),
             on_long_press=lambda e, sid=session.id: self._show_context_menu(e, sid),
@@ -363,7 +363,7 @@ class ChatList(ft.Column):
                         ft.Text(
                             session.title,
                             size=14,
-                            weight=ft.FontWeight.BOLD,
+                            weight=ft.FontWeight.W_600,
                             max_lines=1,
                             overflow=ft.TextOverflow.ELLIPSIS,
                         ),
@@ -376,12 +376,24 @@ class ChatList(ft.Column):
                         ft.ListTile(
                             leading=ft.Icon(ft.Icons.ARCHIVE, size=20),
                             title=ft.Text(t("chat.archive"), size=13),
-                            on_click=close_menu(self._on_archive, session_id) if self._on_archive else None,
+                            on_click=(
+                                close_menu(self._on_archive, session_id)
+                                if self._on_archive else None
+                            ),
                         ),
                         ft.ListTile(
-                            leading=ft.Icon(ft.Icons.DELETE, size=20, color=ft.Colors.ERROR),
-                            title=ft.Text(t("chat.delete"), size=13, color=ft.Colors.ERROR),
-                            on_click=close_menu(self._confirm_delete, session_id, page) if self._on_delete else None,
+                            leading=ft.Icon(
+                                ft.Icons.DELETE, size=20, color=ft.Colors.ERROR,
+                            ),
+                            title=ft.Text(
+                                t("chat.delete"), size=13, color=ft.Colors.ERROR,
+                            ),
+                            on_click=(
+                                close_menu(
+                                    self._confirm_delete, session_id, page,
+                                )
+                                if self._on_delete else None
+                            ),
                         ),
                     ],
                     tight=True,

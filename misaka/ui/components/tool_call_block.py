@@ -10,24 +10,25 @@ import json
 
 import flet as ft
 
+from misaka.ui.theme import MONO_FONT_FAMILY
 
 _TOOL_ICONS = {
-    "Read": ft.Icons.DESCRIPTION,
-    "Write": ft.Icons.EDIT_NOTE,
-    "Edit": ft.Icons.EDIT,
-    "Bash": ft.Icons.TERMINAL,
-    "Glob": ft.Icons.SEARCH,
-    "Grep": ft.Icons.FIND_IN_PAGE,
-    "WebFetch": ft.Icons.LANGUAGE,
-    "WebSearch": ft.Icons.TRAVEL_EXPLORE,
-    "TodoWrite": ft.Icons.CHECKLIST,
-    "Task": ft.Icons.TASK,
+    "Read": ft.Icons.DESCRIPTION_OUTLINED,
+    "Write": ft.Icons.EDIT_NOTE_OUTLINED,
+    "Edit": ft.Icons.EDIT_OUTLINED,
+    "Bash": ft.Icons.TERMINAL_ROUNDED,
+    "Glob": ft.Icons.SEARCH_ROUNDED,
+    "Grep": ft.Icons.FIND_IN_PAGE_OUTLINED,
+    "WebFetch": ft.Icons.LANGUAGE_ROUNDED,
+    "WebSearch": ft.Icons.TRAVEL_EXPLORE_ROUNDED,
+    "TodoWrite": ft.Icons.CHECKLIST_ROUNDED,
+    "Task": ft.Icons.TASK_OUTLINED,
 }
 
 _STATUS_COLORS = {
-    "success": ft.Colors.GREEN,
-    "error": ft.Colors.ERROR,
-    "pending": ft.Colors.AMBER,
+    "success": "#10b981",
+    "error": "#ef4444",
+    "pending": "#f59e0b",
 }
 
 
@@ -53,7 +54,7 @@ class ToolCallBlock(ft.Container):
         self._build_ui()
 
     def _build_ui(self) -> None:
-        icon = _TOOL_ICONS.get(self._tool_name, ft.Icons.BUILD_CIRCLE)
+        icon = _TOOL_ICONS.get(self._tool_name, ft.Icons.BUILD_CIRCLE_OUTLINED)
         summary = self._get_input_summary()
 
         status_color = (
@@ -63,24 +64,24 @@ class ToolCallBlock(ft.Container):
         )
 
         self._chevron = ft.Icon(
-            ft.Icons.EXPAND_MORE if self._expanded else ft.Icons.CHEVRON_RIGHT,
+            ft.Icons.EXPAND_MORE_ROUNDED if self._expanded else ft.Icons.CHEVRON_RIGHT_ROUNDED,
             size=14,
-            opacity=0.4,
+            opacity=0.3,
         )
 
         summary_row = ft.Row(
             controls=[
-                ft.Container(width=6, height=6, border_radius=3, bgcolor=status_color),
-                ft.Icon(icon, size=15, color=ft.Colors.PRIMARY, opacity=0.8),
+                ft.Container(width=5, height=5, border_radius=3, bgcolor=status_color),
+                ft.Icon(icon, size=14, color=ft.Colors.PRIMARY, opacity=0.6),
                 ft.Text(
                     self._tool_name,
-                    size=12,
+                    size=11,
                     weight=ft.FontWeight.W_600,
                 ),
                 ft.Text(
                     summary,
                     size=11,
-                    opacity=0.5,
+                    opacity=0.35,
                     max_lines=1,
                     overflow=ft.TextOverflow.ELLIPSIS,
                     expand=True,
@@ -95,27 +96,29 @@ class ToolCallBlock(ft.Container):
         self._detail_container = ft.Container(
             content=ft.Column(controls=detail_controls, spacing=4, tight=True),
             visible=self._expanded,
-            padding=ft.Padding.only(left=28, right=8, top=4, bottom=6),
+            padding=ft.Padding.only(left=26, right=8, top=4, bottom=6),
         )
 
         self.content = ft.Column(
             controls=[
                 ft.Container(
                     content=summary_row,
-                    padding=ft.Padding.symmetric(horizontal=8, vertical=5),
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=6),
                     on_click=self._toggle,
                     ink=True,
-                    border_radius=4,
+                    border_radius=6,
                 ),
                 self._detail_container,
             ],
             spacing=0,
             tight=True,
         )
-        self.border_radius = 6
+        self.border_radius = 8
         self.margin = ft.Margin.only(top=1, bottom=1)
-        self.bgcolor = ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE)
-        self.border = ft.Border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE))
+        self.bgcolor = ft.Colors.with_opacity(0.02, ft.Colors.ON_SURFACE)
+        self.border = ft.Border.all(
+            1, ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
+        )
 
     def _build_detail_controls(self) -> list[ft.Control]:
         controls: list[ft.Control] = []
@@ -127,17 +130,22 @@ class ToolCallBlock(ft.Container):
             controls.append(
                 ft.Container(
                     content=ft.Column(controls=[
-                        ft.Text("Input", size=10, weight=ft.FontWeight.W_600, opacity=0.4),
+                        ft.Text(
+                            "Input",
+                            size=9,
+                            weight=ft.FontWeight.W_600,
+                            opacity=0.3,
+                        ),
                         ft.Text(
                             input_text,
-                            font_family="Cascadia Code, JetBrains Mono, Consolas, monospace",
+                            font_family=MONO_FONT_FAMILY,
                             size=10,
                             selectable=True,
                             no_wrap=False,
                         ),
                     ], spacing=2, tight=True),
-                    padding=6,
-                    border_radius=4,
+                    padding=8,
+                    border_radius=6,
                     bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
                 )
             )
@@ -152,29 +160,29 @@ class ToolCallBlock(ft.Container):
                     content=ft.Column(controls=[
                         ft.Text(
                             "Error" if self._is_error else "Output",
-                            size=10,
+                            size=9,
                             weight=ft.FontWeight.W_600,
-                            opacity=0.4,
+                            opacity=0.3,
                             color=output_color,
                         ),
                         ft.Text(
                             display,
-                            font_family="Cascadia Code, JetBrains Mono, Consolas, monospace",
+                            font_family=MONO_FONT_FAMILY,
                             size=10,
                             selectable=True,
                             no_wrap=False,
                             color=output_color,
                         ),
                     ], spacing=2, tight=True),
-                    padding=6,
-                    border_radius=4,
+                    padding=8,
+                    border_radius=6,
                     bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
                 )
             )
 
         if not controls:
             controls.append(
-                ft.Text("No details", size=11, italic=True, opacity=0.4)
+                ft.Text("No details", size=10, italic=True, opacity=0.3)
             )
 
         return controls
@@ -186,7 +194,8 @@ class ToolCallBlock(ft.Container):
             self._detail_container.update()
         if self._chevron:
             self._chevron.name = (
-                ft.Icons.EXPAND_MORE if self._expanded else ft.Icons.CHEVRON_RIGHT
+                ft.Icons.EXPAND_MORE_ROUNDED if self._expanded
+                else ft.Icons.CHEVRON_RIGHT_ROUNDED
             )
             self._chevron.update()
 

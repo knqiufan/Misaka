@@ -2,51 +2,77 @@
 Theme configuration for Misaka.
 
 Defines Material Design 3 themes with Misaka's color palette
-for dark, light, and system modes.
+for dark, light, and system modes. Modern minimalist tech aesthetic.
 """
 
 from __future__ import annotations
 
+import sys
+
 import flet as ft
 
 # ---------------------------------------------------------------------------
-# Color palette
+# Color palette — Neo Minimal Tech
 # ---------------------------------------------------------------------------
 
-# Primary accent — indigo-500, modern and vibrant
+# Primary accent — indigo-500, vibrant yet restrained
 ACCENT_BLUE = "#6366f1"
 ACCENT_BLUE_LIGHT = "#818cf8"
 
-# Dark theme — deeper, richer backgrounds
-DARK_BG = "#0f0f14"
-DARK_SURFACE = "#18181b"
-DARK_SURFACE_VARIANT = "#27272a"
-DARK_ON_SURFACE = "#e4e4e7"
-DARK_ON_SURFACE_VARIANT = "#a1a1aa"
-DARK_BORDER = "#3f3f46"
+# Dark theme — deep, immersive, near-black
+DARK_BG = "#08080c"
+DARK_SURFACE = "#101018"
+DARK_SURFACE_VARIANT = "#1a1a24"
+DARK_ON_SURFACE = "#e8e8ed"
+DARK_ON_SURFACE_VARIANT = "#9494a0"
+DARK_BORDER = "#2a2a36"
 
-# Light theme — cleaner whites
-LIGHT_BG = "#fafafa"
+# Light theme — crisp whites with cool undertones
+LIGHT_BG = "#f6f7fa"
 LIGHT_SURFACE = "#ffffff"
-LIGHT_SURFACE_VARIANT = "#f4f4f5"
-LIGHT_ON_SURFACE = "#18181b"
-LIGHT_ON_SURFACE_VARIANT = "#71717a"
-LIGHT_BORDER = "#e4e4e7"
+LIGHT_SURFACE_VARIANT = "#f0f1f5"
+LIGHT_ON_SURFACE = "#111118"
+LIGHT_ON_SURFACE_VARIANT = "#64647a"
+LIGHT_BORDER = "#dddde6"
 
-# Semantic colors
-SUCCESS_GREEN = "#22c55e"
+# Semantic colors — softer, more refined
+SUCCESS_GREEN = "#10b981"
 WARNING_AMBER = "#f59e0b"
 ERROR_RED = "#ef4444"
 
-# Consistent border radius
-RADIUS_SM = 6
-RADIUS_MD = 8
-RADIUS_LG = 12
-RADIUS_XL = 16
+# Consistent border radius — larger for modern feel
+RADIUS_SM = 8
+RADIUS_MD = 10
+RADIUS_LG = 14
+RADIUS_XL = 18
 
-# Preferred font stack
-FONT_FAMILY = "Microsoft YaHei, Consolas, Segoe UI, sans-serif"
-MONO_FONT_FAMILY = "Consolas, Cascadia Code, JetBrains Mono, monospace"
+# Preferred UI font family.
+# NOTE:
+# Flet/Flutter expects a single font-family name here rather than a CSS-style
+# comma-separated fallback list. Using a CSS font stack causes lookup failure,
+# then engine fallback may mix glyph providers per character (especially CJK),
+# which can render words like "关于" with inconsistent glyph shapes.
+def _resolve_ui_font_family() -> str:
+    """Return a stable platform-native UI font family."""
+    if sys.platform.startswith("win"):
+        # Full CJK coverage and stable weight rendering on Windows.
+        return "Microsoft YaHei UI"
+    if sys.platform == "darwin":
+        return "PingFang SC"
+    return "Noto Sans CJK SC"
+
+
+def _resolve_mono_font_family() -> str:
+    """Return a stable platform-native monospace font family."""
+    if sys.platform.startswith("win"):
+        return "Consolas"
+    if sys.platform == "darwin":
+        return "Menlo"
+    return "DejaVu Sans Mono"
+
+
+FONT_FAMILY = _resolve_ui_font_family()
+MONO_FONT_FAMILY = _resolve_mono_font_family()
 
 
 # ---------------------------------------------------------------------------
@@ -113,11 +139,11 @@ def make_text_field(**kwargs) -> ft.TextField:
     defaults = dict(
         border=ft.InputBorder.OUTLINE,
         border_radius=RADIUS_MD,
-        border_color=ft.Colors.with_opacity(0.18, ft.Colors.ON_SURFACE),
+        border_color=ft.Colors.with_opacity(0.1, ft.Colors.ON_SURFACE),
         focused_border_color=ACCENT_BLUE,
-        focused_border_width=2,
+        focused_border_width=1.5,
         border_width=1,
-        fill_color=ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
+        fill_color=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
         filled=True,
         text_size=13,
         label_style=ft.TextStyle(size=12),
@@ -132,11 +158,11 @@ def make_dropdown(**kwargs) -> ft.Dropdown:
     defaults = dict(
         border=ft.InputBorder.OUTLINE,
         border_radius=RADIUS_MD,
-        border_color=ft.Colors.with_opacity(0.18, ft.Colors.ON_SURFACE),
+        border_color=ft.Colors.with_opacity(0.1, ft.Colors.ON_SURFACE),
         focused_border_color=ACCENT_BLUE,
-        focused_border_width=2,
+        focused_border_width=1.5,
         border_width=1,
-        fill_color=ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
+        fill_color=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
         filled=True,
         text_size=13,
         label_style=ft.TextStyle(size=12),

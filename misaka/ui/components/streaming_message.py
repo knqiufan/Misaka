@@ -40,7 +40,7 @@ class StreamingMessage(ft.Container):
     def _start_thinking_pulse(self) -> None:
         """Toggle the thinking text opacity to create a gentle pulse effect."""
         if self._thinking_text and self._is_attached_to_page():
-            self._thinking_text.opacity = 0.2 if self._pulse_low else 0.6
+            self._thinking_text.opacity = 0.15 if self._pulse_low else 0.5
             self._pulse_low = not self._pulse_low
             with contextlib.suppress(Exception):
                 self._thinking_text.update()
@@ -55,19 +55,24 @@ class StreamingMessage(ft.Container):
         self.visible = True
         controls: list[ft.Control] = []
 
-        # Role label
+        # Role label with progress indicator
         controls.append(
             ft.Row(
                 controls=[
+                    ft.Icon(
+                        ft.Icons.AUTO_AWESOME_OUTLINED,
+                        size=14,
+                        color=ft.Colors.PRIMARY,
+                    ),
                     ft.Text(
                         "Claude",
                         size=12,
-                        weight=ft.FontWeight.BOLD,
+                        weight=ft.FontWeight.W_600,
                         color=ft.Colors.PRIMARY,
                     ),
-                    ft.ProgressRing(width=14, height=14, stroke_width=2),
+                    ft.ProgressRing(width=12, height=12, stroke_width=1.5),
                 ],
-                spacing=8,
+                spacing=6,
             )
         )
 
@@ -95,12 +100,12 @@ class StreamingMessage(ft.Container):
                 )
 
         if len(controls) == 1:
-            # Only header, no content yet - show thinking indicator with shimmer
+            # Only header, no content yet - show thinking indicator
             thinking_text = ft.Text(
                 "Thinking...",
-                size=13,
+                size=12,
                 italic=True,
-                opacity=0.6,
+                opacity=0.5,
                 animate_opacity=ft.Animation(800, ft.AnimationCurve.EASE_IN_OUT),
             )
             controls.append(
@@ -111,10 +116,10 @@ class StreamingMessage(ft.Container):
             )
             self._thinking_text = thinking_text
 
-        self.content = ft.Column(controls=controls, spacing=6)
-        self.padding = ft.Padding.symmetric(horizontal=16, vertical=10)
+        self.content = ft.Column(controls=controls, spacing=8)
+        self.padding = ft.Padding.symmetric(horizontal=20, vertical=12)
         self.margin = ft.Margin.only(bottom=4)
-        self.border_radius = 8
+        self.border_radius = 10
 
     def refresh(self) -> None:
         """Rebuild the streaming display from current state."""

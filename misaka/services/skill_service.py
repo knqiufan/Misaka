@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
+import tempfile
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -184,8 +187,13 @@ class SkillService:
         plugin_base = home / ".claude" / "plugins" / "marketplaces"
         skills.extend(self._scan_plugin_skills(plugin_base))
 
-        logger.debug("Discovered %d skill(s) in total", len(skills))
-        return skills
+        deduplicated = self._deduplicate_skills(skills)
+        logger.debug(
+            "Discovered %d skill(s) in total (%d after dedup)",
+            len(skills),
+            len(deduplicated),
+        )
+        return deduplicated
 
     def read_skill(self, name: str, source: str | None = None) -> SkillFile | None:
         """Look up a single skill by name (and optionally by source).
@@ -264,6 +272,52 @@ class SkillService:
             file_path=str(file_path),
         )
 
+    def install_skills_from_zip(self, zip_path: str) -> list[str]:
+        """Install one or more skills from a local zip archive.
+
+        The archive is scanned for directories containing ``SKILL.md``.
+        Each discovered package is copied into ``~/.claude/skills/<package>/``.
+
+        Args:
+            zip_path: Absolute path to a local ``.zip`` file.
+
+        Returns:
+            A list of installed package directory names.
+
+        Raises:
+            FileNotFoundError: If *zip_path* does not exist.
+            ValueError: If the file is not a zip archive or contains no skill package.
+        """
+        archive = Path(zip_path)
+        if not archive.is_file():
+            raise FileNotFoundError(f"Zip file not found: {zip_path}")
+        if archive.suffix.lower() != ".zip":
+            raise ValueError("Only .zip skill packages are supported")
+
+        skills_root = Path.home() / ".claude" / "skills"
+        skills_root.mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory(prefix="misaka-skill-") as temp_dir:
+            temp_root = Path(temp_dir)
+            self._extract_zip_to_temp(archive, temp_root)
+            package_dirs = self._discover_skill_package_dirs(temp_root)
+            if not package_dirs:
+                raise ValueError("No valid skill package found (missing SKILL.md)")
+
+            installed_names: list[str] = []
+            for package_dir in package_dirs:
+                folder_name = self._derive_package_dir_name(package_dir, archive.stem)
+                target_dir = skills_root / folder_name
+                self._install_package_dir(package_dir, target_dir)
+                installed_names.append(folder_name)
+
+        logger.info(
+            "Installed %d skill package(s) from zip %s",
+            len(installed_names),
+            archive,
+        )
+        return installed_names
+
     def update_skill(
         self, name: str, content: str, source: str | None = None
     ) -> SkillFile:
@@ -327,6 +381,50 @@ class SkillService:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_zip_to_temp(archive: Path, target_dir: Path) -> None:
+        try:
+            with zipfile.ZipFile(archive, "r") as zf:
+                zf.extractall(target_dir)
+        except zipfile.BadZipFile as exc:
+            raise ValueError(f"Invalid zip archive: {archive}") from exc
+
+    @staticmethod
+    def _discover_skill_package_dirs(temp_root: Path) -> list[Path]:
+        """Find package directories that contain SKILL.md."""
+        skill_files = sorted(temp_root.rglob("SKILL.md"))
+        if not skill_files:
+            return []
+
+        package_dirs: list[Path] = []
+        seen: set[str] = set()
+        for skill_file in skill_files:
+            package_dir = skill_file.parent
+            marker = str(package_dir.resolve(strict=False)).lower()
+            if marker in seen:
+                continue
+            seen.add(marker)
+            package_dirs.append(package_dir)
+        return package_dirs
+
+    @staticmethod
+    def _derive_package_dir_name(package_dir: Path, fallback_name: str) -> str:
+        raw_name = package_dir.name or fallback_name
+        safe_name = _sanitize_skill_name(raw_name)
+        if safe_name:
+            return safe_name
+
+        fallback_safe = _sanitize_skill_name(fallback_name)
+        if fallback_safe:
+            return fallback_safe
+        return "skill-package"
+
+    @staticmethod
+    def _install_package_dir(package_dir: Path, target_dir: Path) -> None:
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        shutil.copytree(package_dir, target_dir)
 
     def _scan_directory(
         self, directory: Path, source: str, prefix: str = ""
@@ -497,6 +595,54 @@ class SkillService:
                         skills.append(skill)
 
         return skills
+
+    @staticmethod
+    def _deduplicate_skills(skills: list[SkillFile]) -> list[SkillFile]:
+        """Remove duplicate skills from multi-source scans.
+
+        Two-pass strategy:
+        1) De-duplicate by canonical file path (handles symlink/junction aliases).
+        2) For installed skills only, collapse entries that have the same name and
+           same content body (common when both `.agents/skills` and `.claude/skills`
+           expose mirrored packages).
+        """
+        path_seen: dict[str, SkillFile] = {}
+        path_order: list[str] = []
+
+        for skill in skills:
+            canonical = str(Path(skill.file_path).resolve(strict=False)).lower()
+            if canonical in path_seen:
+                continue
+            path_seen[canonical] = skill
+            path_order.append(canonical)
+
+        installed_priority = {"agents": 0, "claude": 1, None: 2}
+        installed_seen: dict[tuple[str, str], SkillFile] = {}
+        result: list[SkillFile] = []
+
+        for canonical in path_order:
+            skill = path_seen[canonical]
+            if skill.source != "installed":
+                result.append(skill)
+                continue
+
+            key = (skill.name.strip().lower(), skill.content.strip())
+            existing = installed_seen.get(key)
+            if existing is None:
+                installed_seen[key] = skill
+                result.append(skill)
+                continue
+
+            current_rank = installed_priority.get(skill.installed_source, 99)
+            existing_rank = installed_priority.get(existing.installed_source, 99)
+            if current_rank >= existing_rank:
+                continue
+
+            idx = result.index(existing)
+            result[idx] = skill
+            installed_seen[key] = skill
+
+        return result
 
     # ------------------------------------------------------------------
     # File-level helper

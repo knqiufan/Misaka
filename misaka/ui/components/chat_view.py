@@ -83,14 +83,14 @@ class ChatView(ft.Column):
             ],
             dense=True,
             content_padding=ft.Padding.symmetric(horizontal=8, vertical=4),
-            width=120,
+            width=110,
             on_select=self._handle_mode_dropdown_change,
             text_size=12,
         )
 
         # Left panel toggle
         left_toggle = ft.IconButton(
-            icon=ft.Icons.MENU,
+            icon=ft.Icons.MENU_ROUNDED,
             tooltip=t("chat.toggle_left_panel"),
             on_click=lambda e: self._on_toggle_left_panel() if self._on_toggle_left_panel else None,
             icon_size=20,
@@ -99,7 +99,7 @@ class ChatView(ft.Column):
 
         # Right panel toggle
         right_toggle = ft.IconButton(
-            icon=ft.Icons.VERTICAL_SPLIT,
+            icon=ft.Icons.VERTICAL_SPLIT_ROUNDED,
             tooltip=t("chat.toggle_right_panel"),
             on_click=lambda e: (
                 self._on_toggle_right_panel()
@@ -111,7 +111,7 @@ class ChatView(ft.Column):
 
         # Clear messages button
         clear_btn = ft.IconButton(
-            icon=ft.Icons.DELETE_SWEEP,
+            icon=ft.Icons.DELETE_SWEEP_ROUNDED,
             tooltip=t("chat.clear_messages"),
             on_click=lambda e: self._on_clear_messages() if self._on_clear_messages else None,
             icon_size=20,
@@ -121,7 +121,7 @@ class ChatView(ft.Column):
 
         # Folder picker button
         folder_btn = ft.IconButton(
-            icon=ft.Icons.FOLDER_OPEN,
+            icon=ft.Icons.FOLDER_OPEN_ROUNDED,
             tooltip=t("chat.open_folder"),
             on_click=lambda e: self._on_open_folder() if self._on_open_folder else None,
             icon_size=20,
@@ -136,7 +136,7 @@ class ChatView(ft.Column):
         title_col_controls = [
             ft.Text(
                 title_text,
-                size=16,
+                size=15,
                 weight=ft.FontWeight.W_500,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
@@ -147,7 +147,7 @@ class ChatView(ft.Column):
                 ft.Text(
                     working_dir,
                     size=10,
-                    opacity=0.5,
+                    opacity=0.35,
                     max_lines=1,
                     overflow=ft.TextOverflow.ELLIPSIS,
                 ),
@@ -168,10 +168,13 @@ class ChatView(ft.Column):
                     clear_btn,
                     right_toggle,
                 ],
-                spacing=8,
+                spacing=6,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.Padding.symmetric(horizontal=8, vertical=6),
+            padding=ft.Padding.symmetric(horizontal=8, vertical=8),
+            border=ft.Border(
+                bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)),
+            ),
         )
 
         # --- Update banner ---
@@ -204,23 +207,23 @@ class ChatView(ft.Column):
         welcome_view = ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Icon(ft.Icons.SMART_TOY, size=64, opacity=0.2),
+                    ft.Icon(ft.Icons.SMART_TOY_OUTLINED, size=56, opacity=0.15),
                     ft.Text(
                         t("app.welcome_title"),
-                        size=24,
+                        size=22,
                         weight=ft.FontWeight.W_300,
                         text_align=ft.TextAlign.CENTER,
-                        opacity=0.5,
+                        opacity=0.4,
                     ),
                     ft.Text(
                         t("app.welcome_subtitle"),
-                        size=14,
+                        size=13,
                         text_align=ft.TextAlign.CENTER,
-                        opacity=0.3,
+                        opacity=0.25,
                     ),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=12,
+                spacing=10,
             ),
             alignment=ft.Alignment.CENTER,
             expand=True,
@@ -230,14 +233,17 @@ class ChatView(ft.Column):
         # --- Assemble ---
         self.controls = [
             header,
-            ft.Divider(height=1),
             self._update_banner,
             self._error_banner,
             self._message_list if has_session else welcome_view,
-            ft.Divider(height=1) if has_session else ft.Container(height=0),
             ft.Container(
                 content=self._message_input,
                 visible=has_session,
+                border=ft.Border(
+                    top=ft.BorderSide(
+                        1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+                    ),
+                ),
             ),
         ]
 
@@ -250,24 +256,24 @@ class ChatView(ft.Column):
             self._error_banner.content = ft.Container(
                 content=ft.Row(
                     controls=[
-                        ft.Icon(ft.Icons.ERROR, color=ft.Colors.ERROR, size=18),
+                        ft.Icon(ft.Icons.ERROR_OUTLINE_ROUNDED, color=ft.Colors.ERROR, size=16),
                         ft.Text(
                             self.state.error_message,
                             expand=True,
-                            size=13,
+                            size=12,
                             color=ft.Colors.ERROR,
                         ),
                         ft.IconButton(
-                            icon=ft.Icons.CLOSE,
-                            icon_size=16,
+                            icon=ft.Icons.CLOSE_ROUNDED,
+                            icon_size=14,
                             on_click=self._dismiss_error,
                             style=ft.ButtonStyle(padding=4),
                         ),
                     ],
                     spacing=8,
                 ),
-                padding=ft.Padding.symmetric(horizontal=16, vertical=8),
-                bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.ERROR),
+                padding=ft.Padding.symmetric(horizontal=16, vertical=6),
+                bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.ERROR),
             )
         else:
             self._error_banner.visible = False

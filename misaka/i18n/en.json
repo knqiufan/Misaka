@@ -149,9 +149,10 @@
     "title": "Skills",
     "description": "Manage custom skills and command templates for Claude Code.",
     "new_skill": "New Skill",
+    "install_from_zip": "Install from ZIP",
     "search_skills": "Search skills...",
     "no_skills": "No skills found",
-    "no_skills_desc": "Create a new skill or add .md files to ~/.claude/commands/",
+    "no_skills_desc": "Install skills from ZIP, or add .md files to ~/.claude/commands/",
     "no_matching_skills": "No matching skills",
     "source_global": "Global",
     "source_project": "Project",
@@ -170,7 +171,14 @@
     "skill_scope": "Scope",
     "skill_content": "Content (Markdown)",
     "skill_content_hint": "Enter skill content...",
-    "readonly_skill": "This skill is read-only."
+    "readonly_skill": "This skill is read-only.",
+    "refresh_skills": "Refresh",
+    "skills_refreshed": "Skills list refreshed.",
+    "install_zip_success": "Installed {count} skill package(s) from ZIP.",
+    "install_zip_failed": "ZIP install failed: {error}",
+    "install_zip_manual_notice": "Native file picker is unavailable. Please input the ZIP file path.",
+    "zip_path_label": "ZIP File Path",
+    "zip_path_hint": "e.g. C:/Users/you/Downloads/my-skill.zip"
   },
   "import_session": {
     "title": "Import CLI Session",

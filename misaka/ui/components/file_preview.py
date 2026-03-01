@@ -10,6 +10,7 @@ import flet as ft
 
 from misaka.i18n import t
 from misaka.db.models import FilePreview as FilePreviewModel
+from misaka.ui.theme import MONO_FONT_FAMILY
 
 
 class FilePreview(ft.Column):
@@ -120,7 +121,7 @@ class FilePreview(ft.Column):
         code_view = ft.Container(
             content=ft.Text(
                 self._preview.content,
-                font_family="Consolas, Monaco, monospace",
+                font_family=MONO_FONT_FAMILY,
                 size=12,
                 selectable=True,
                 no_wrap=False,

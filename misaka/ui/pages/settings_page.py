@@ -75,7 +75,11 @@ class SettingsPage(ft.Column):
 
         # Page header
         header = ft.Container(
-            content=ft.Text(t("settings.title"), size=24, weight=ft.FontWeight.BOLD),
+            content=ft.Text(
+                t("settings.title"),
+                size=22,
+                weight=ft.FontWeight.W_600,
+            ),
             padding=ft.Padding.only(left=24, top=20, bottom=12),
         )
 
@@ -122,8 +126,10 @@ class SettingsPage(ft.Column):
         return ft.Container(
             content=content,
             margin=ft.Margin.symmetric(horizontal=16, vertical=4),
-            border_radius=8,
-            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE)),
+            border_radius=12,
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.05, ft.Colors.ON_SURFACE),
+            ),
         )
 
     # ---------------------------------------------------------------
@@ -147,8 +153,8 @@ class SettingsPage(ft.Column):
                         controls=[
                             ft.Text(
                                 t("settings.api_providers"),
-                                size=18,
-                                weight=ft.FontWeight.W_500,
+                                size=16,
+                                weight=ft.FontWeight.W_600,
                             ),
                             ft.Container(expand=True),
                             add_btn,
@@ -273,9 +279,11 @@ class SettingsPage(ft.Column):
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=12,
-            border_radius=8,
-            border=ft.Border.all(1, ft.Colors.OUTLINE),
+            padding=14,
+            border_radius=10,
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            ),
         )
 
     def _show_add_provider_dialog(self, e: ft.ControlEvent) -> None:
@@ -393,13 +401,15 @@ class SettingsPage(ft.Column):
 
     def _build_appearance_section(self) -> ft.Control:
         theme_buttons: list[ft.Control] = []
+        use_white_active_text = self.state.theme_mode == "light"
         for mode, label_key, icon in _THEME_MODES:
             is_active = self.state.theme_mode == mode
+            active_text_color = ft.Colors.WHITE if is_active and use_white_active_text else None
             btn = ft.Container(
                 content=ft.Row(
                     controls=[
-                        ft.Icon(icon, size=18),
-                        ft.Text(t(label_key), size=13),
+                        ft.Icon(icon, size=18, color=active_text_color),
+                        ft.Text(t(label_key), size=13, color=active_text_color),
                     ],
                     spacing=6,
                 ),
@@ -408,7 +418,7 @@ class SettingsPage(ft.Column):
                     1,
                     ft.Colors.PRIMARY if is_active else ft.Colors.OUTLINE,
                 ),
-                border_radius=8,
+                border_radius=10,
                 padding=ft.Padding.symmetric(horizontal=14, vertical=8),
                 on_click=lambda e, m=mode: self._change_theme(m),
                 ink=True,
@@ -418,7 +428,7 @@ class SettingsPage(ft.Column):
         return ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Text(t("settings.appearance"), size=18, weight=ft.FontWeight.W_500),
+                    ft.Text(t("settings.appearance"), size=16, weight=ft.FontWeight.W_600),
                     ft.Text(t("settings.appearance_desc"), size=12, opacity=0.6),
                     ft.Row(controls=theme_buttons, spacing=8),
                 ],
@@ -476,7 +486,7 @@ class SettingsPage(ft.Column):
         return ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Text(t("settings.permission_mode"), size=18, weight=ft.FontWeight.W_500),
+                    ft.Text(t("settings.permission_mode"), size=16, weight=ft.FontWeight.W_600),
                     ft.Text(
                         t("settings.permission_mode_desc"),
                         size=12,
@@ -516,8 +526,8 @@ class SettingsPage(ft.Column):
                         controls=[
                             ft.Text(
                                 t("settings.router_title"),
-                                size=18,
-                                weight=ft.FontWeight.W_500,
+                                size=16,
+                                weight=ft.FontWeight.W_600,
                             ),
                             ft.Container(expand=True),
                             add_btn,
@@ -644,11 +654,12 @@ class SettingsPage(ft.Column):
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=12,
-            border_radius=8,
+            padding=14,
+            border_radius=10,
             border=ft.Border.all(
                 1,
-                ft.Colors.GREEN if is_active else ft.Colors.OUTLINE,
+                "#10b981" if is_active
+                else ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
         )
 
@@ -844,18 +855,20 @@ class SettingsPage(ft.Column):
 
     def _build_language_section(self) -> ft.Control:
         current_locale = getattr(self.state, "locale", "zh-CN")
+        use_white_active_text = self.state.theme_mode == "light"
 
         lang_buttons: list[ft.Control] = []
         for locale_code, locale_label in _LANGUAGES:
             is_active = current_locale == locale_code
+            active_text_color = ft.Colors.WHITE if is_active and use_white_active_text else None
             btn = ft.Container(
-                content=ft.Text(locale_label, size=13),
+                content=ft.Text(locale_label, size=13, color=active_text_color),
                 bgcolor=ft.Colors.PRIMARY if is_active else ft.Colors.TRANSPARENT,
                 border=ft.Border.all(
                     1,
                     ft.Colors.PRIMARY if is_active else ft.Colors.OUTLINE,
                 ),
-                border_radius=8,
+                border_radius=10,
                 padding=ft.Padding.symmetric(horizontal=14, vertical=8),
                 on_click=lambda e, loc=locale_code: self._change_language(loc),
                 ink=True,
@@ -865,7 +878,7 @@ class SettingsPage(ft.Column):
         return ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Text(t("settings.language"), size=18, weight=ft.FontWeight.W_500),
+                    ft.Text(t("settings.language"), size=16, weight=ft.FontWeight.W_600),
                     ft.Text(t("settings.language_desc"), size=12, opacity=0.6),
                     ft.Row(controls=lang_buttons, spacing=8),
                 ],
@@ -920,8 +933,8 @@ class SettingsPage(ft.Column):
                         controls=[
                             ft.Text(
                                 t("settings.claude_update"),
-                                size=18,
-                                weight=ft.FontWeight.W_500,
+                                size=16,
+                                weight=ft.FontWeight.W_600,
                             ),
                             ft.Container(expand=True),
                             action_btn,
@@ -1107,8 +1120,8 @@ class SettingsPage(ft.Column):
                         controls=[
                             ft.Text(
                                 t("settings.env_status"),
-                                size=18,
-                                weight=ft.FontWeight.W_500,
+                                size=16,
+                                weight=ft.FontWeight.W_600,
                             ),
                             ft.Container(expand=True),
                             header_btn,
@@ -1198,10 +1211,11 @@ class SettingsPage(ft.Column):
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=ft.Padding.symmetric(horizontal=12, vertical=8),
-            border_radius=8,
+            border_radius=10,
             border=ft.Border.all(
                 1,
-                ft.Colors.GREEN if is_installed else ft.Colors.OUTLINE,
+                "#10b981" if is_installed
+                else ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
         )
 
@@ -1284,7 +1298,7 @@ class SettingsPage(ft.Column):
         return ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Text(t("settings.about"), size=18, weight=ft.FontWeight.W_500),
+                    ft.Text(t("settings.about"), size=16, weight=ft.FontWeight.W_600),
                     ft.Text(
                         t("settings.about_app"),
                         size=13,
