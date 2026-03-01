@@ -16,6 +16,7 @@ from misaka.i18n import t
 from misaka.ui.components.connection_status import ConnectionStatus
 from misaka.ui.components.message_input import MessageInput
 from misaka.ui.components.message_list import MessageList
+from misaka.ui.components.offset_menu import OffsetMenu, OffsetMenuOption
 from misaka.ui.components.update_banner import UpdateBanner
 
 if TYPE_CHECKING:
@@ -55,7 +56,7 @@ class ChatView(ft.Column):
         self._message_list: MessageList | None = None
         self._message_input: MessageInput | None = None
         self._connection_status: ConnectionStatus | None = None
-        self._mode_dropdown: ft.Dropdown | None = None
+        self._mode_dropdown: OffsetMenu | None = None
         self._error_banner: ft.Container | None = None
         self._update_banner: UpdateBanner | None = None
         self._build_ui()
@@ -72,20 +73,19 @@ class ChatView(ft.Column):
         )
 
         # Mode selector dropdown
-        from misaka.ui.theme import make_dropdown as _mdd_mode, make_icon_button
+        from misaka.ui.theme import make_icon_button
         current_mode = session.mode if session else "code"
-        self._mode_dropdown = _mdd_mode(
+        self._mode_dropdown = OffsetMenu(
             value=current_mode,
             options=[
-                ft.dropdown.Option(key="code", text="Code"),
-                ft.dropdown.Option(key="plan", text="Plan"),
-                ft.dropdown.Option(key="ask", text="Ask"),
+                OffsetMenuOption(key="code", label="Code"),
+                OffsetMenuOption(key="plan", label="Plan"),
+                OffsetMenuOption(key="ask", label="Ask"),
             ],
-            dense=True,
-            content_padding=ft.Padding.symmetric(horizontal=8, vertical=2),
-            width=110,
-            on_select=self._handle_mode_dropdown_change,
-            text_size=12,
+            width=96,
+            menu_width=120,
+            offset_y=10,
+            on_change=self._handle_mode_change,
         )
 
         left_toggle = make_icon_button(
@@ -282,11 +282,6 @@ class ChatView(ft.Column):
     def _handle_mode_change(self, mode: str) -> None:
         if self._on_mode_change:
             self._on_mode_change(mode)
-
-    def _handle_mode_dropdown_change(self, e: ft.ControlEvent) -> None:
-        mode = e.data or e.control.value
-        if mode:
-            self._handle_mode_change(mode)
 
     def _handle_update(self) -> None:
         """Handle 'Update Now' click from the update banner."""

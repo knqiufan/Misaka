@@ -125,7 +125,13 @@
     "router_in_use": "In Use",
     "router_default": "Default",
     "router_activate_confirm": "Activate this configuration? This will overwrite ~/.claude/settings.json",
-    "router_no_configs": "No configurations yet. Click the add button to create one"
+    "router_no_configs": "No configurations yet. Click the add button to create one",
+    "accent_color": "Theme Color",
+    "accent_color_desc": "Choose a global accent color",
+    "misaka_update": "Misaka Update",
+    "misaka_update_desc": "Check for Misaka application updates",
+    "misaka_version": "Current Version",
+    "update_not_configured": "Update server not configured yet"
   },
   "plugins": {
     "title": "Plugins (MCP Servers)",

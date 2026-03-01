@@ -82,13 +82,13 @@ def _make_expansion_tile_theme() -> ft.ExpansionTileTheme:
     )
 
 
-def get_dark_theme() -> ft.Theme:
+def get_dark_theme(accent: str = ACCENT_BLUE) -> ft.Theme:
     """Return the dark theme for Misaka."""
     return ft.Theme(
         font_family=FONT_FAMILY,
-        color_scheme_seed=ACCENT_BLUE,
+        color_scheme_seed=accent,
         color_scheme=ft.ColorScheme(
-            primary=ACCENT_BLUE,
+            primary=accent,
             on_primary="#ffffff",
             surface=DARK_BG,
             on_surface=DARK_ON_SURFACE,
@@ -101,13 +101,13 @@ def get_dark_theme() -> ft.Theme:
     )
 
 
-def get_light_theme() -> ft.Theme:
+def get_light_theme(accent: str = ACCENT_BLUE) -> ft.Theme:
     """Return the light theme for Misaka."""
     return ft.Theme(
         font_family=FONT_FAMILY,
-        color_scheme_seed=ACCENT_BLUE,
+        color_scheme_seed=accent,
         color_scheme=ft.ColorScheme(
-            primary=ACCENT_BLUE,
+            primary=accent,
             on_primary="#ffffff",
             surface=LIGHT_BG,
             on_surface=LIGHT_ON_SURFACE,
@@ -132,7 +132,7 @@ def make_text_field(**kwargs) -> ft.TextField:
         border=ft.InputBorder.OUTLINE,
         border_radius=RADIUS_MD,
         border_color=ft.Colors.with_opacity(0.1, ft.Colors.ON_SURFACE),
-        focused_border_color=ACCENT_BLUE,
+        focused_border_color=ft.Colors.PRIMARY,
         focused_border_width=1.5,
         border_width=1,
         fill_color=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
@@ -153,7 +153,7 @@ def make_dropdown(**kwargs) -> ft.Dropdown:
         border=ft.InputBorder.OUTLINE,
         border_radius=RADIUS_MD,
         border_color=ft.Colors.with_opacity(0.1, ft.Colors.ON_SURFACE),
-        focused_border_color=ACCENT_BLUE,
+        focused_border_color=ft.Colors.PRIMARY,
         focused_border_width=1.5,
         border_width=1,
         fill_color=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
@@ -411,15 +411,16 @@ CODE_THEME_ONE_DARK = {
 # Page-level theme application
 # ---------------------------------------------------------------------------
 
-def apply_theme(page: ft.Page, mode: str) -> None:
+def apply_theme(page: ft.Page, mode: str, accent: str = ACCENT_BLUE) -> None:
     """Apply a theme mode to the Flet page.
 
     Args:
         page: The Flet page to theme.
         mode: One of "system", "light", or "dark".
+        accent: Hex color string for the accent color.
     """
-    page.theme = get_light_theme()
-    page.dark_theme = get_dark_theme()
+    page.theme = get_light_theme(accent)
+    page.dark_theme = get_dark_theme(accent)
 
     if mode == "dark":
         page.theme_mode = ft.ThemeMode.DARK

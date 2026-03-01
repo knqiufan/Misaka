@@ -90,6 +90,16 @@ class RouterConfigService:
                 env[_AGENT_TEAM_ENV_KEY] = "1"
             else:
                 env.pop(_AGENT_TEAM_ENV_KEY, None)
+        elif field_name == "api_key":
+            if value:
+                env["ANTHROPIC_AUTH_TOKEN"] = str(value)
+            else:
+                env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        elif field_name == "base_url":
+            if value:
+                env["ANTHROPIC_BASE_URL"] = str(value)
+            else:
+                env.pop("ANTHROPIC_BASE_URL", None)
         elif field_name in _FIELD_TO_ENV_KEY:
             env_key = _FIELD_TO_ENV_KEY[field_name]
             if value:
@@ -117,6 +127,8 @@ class RouterConfigService:
             result[field_name] = env.get(env_key, "")
 
         result["agent_team"] = env.get(_AGENT_TEAM_ENV_KEY) == "1"
+        result["api_key"] = env.get("ANTHROPIC_AUTH_TOKEN", "")
+        result["base_url"] = env.get("ANTHROPIC_BASE_URL", "")
         return result
 
     def ensure_default_config(self) -> None:

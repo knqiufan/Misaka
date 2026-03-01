@@ -10,8 +10,17 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
+
+# Allow running this file as a script (e.g. via `flet run misaka/main.py`)
+# while still resolving absolute imports like `import misaka.*`.
+if __package__ in {None, ""}:
+    _project_root = Path(__file__).resolve().parent.parent
+    _project_root_str = str(_project_root)
+    if _project_root_str not in sys.path:
+        sys.path.insert(0, _project_root_str)
 
 import flet as ft
 
@@ -38,6 +47,90 @@ from misaka.ui.app_shell import AppShell
 from misaka.ui.theme import apply_theme
 
 logger = logging.getLogger(__name__)
+
+
+def _is_truthy_env(name: str) -> bool:
+    """Return True when an env var looks enabled."""
+    value = os.environ.get(name, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _is_source_tree() -> bool:
+    """Detect if running from repository source tree."""
+    return (Path(__file__).resolve().parent.parent / "pyproject.toml").exists()
+
+
+def _is_debug_mode() -> bool:
+    """Enable debug defaults for source/dev runs or explicit env."""
+    return _is_truthy_env("MISAKA_DEBUG") or _is_source_tree()
+
+
+def _is_hot_reload_mode() -> bool:
+    """Enable hot reload by default in debug mode."""
+    if _is_truthy_env("MISAKA_DISABLE_HOT_RELOAD"):
+        return False
+    if _is_truthy_env("MISAKA_HOT_RELOAD"):
+        return True
+    return _is_debug_mode()
+
+
+def _launch_flet_hot_reload(script_path: Path) -> int:
+    """Run app via Flet CLI with hot reload and verbose output."""
+    env = os.environ.copy()
+    env["MISAKA_FLET_CLI_CHILD"] = "1"
+    env["MISAKA_DEBUG"] = env.get("MISAKA_DEBUG", "1")
+    env["MISAKA_VERBOSE_LOG"] = env.get("MISAKA_VERBOSE_LOG", "1")
+    project_root = script_path.parent.parent
+    relative_script = script_path.relative_to(project_root)
+    commands = [
+        [
+            "flet",
+            "run",
+            "-v",
+            "-d",
+            "-r",
+            "--assets",
+            "assets",
+            str(relative_script),
+        ],
+        [
+            "flet",
+            "run",
+            "-d",
+            "-r",
+            "--assets",
+            "assets",
+            str(relative_script),
+        ],
+        ["flet", "run", "-m", "misaka.main", "-d", "-r"],
+    ]
+    last_exit_code = 1
+    for cmd in commands:
+        try:
+            exit_code = subprocess.run(cmd, check=False, env=env, cwd=project_root).returncode
+            last_exit_code = exit_code
+            if exit_code == 0:
+                return 0
+        except OSError as exc:
+            print(f"Warning: failed to start Flet hot reload runner: {exc}", file=sys.stderr)
+            return 1
+    return last_exit_code
+
+
+def _maybe_delegate_hot_reload() -> bool:
+    """Delegate startup to Flet CLI in dev mode."""
+    if os.environ.get("MISAKA_FLET_CLI_CHILD") == "1":
+        return False
+    if not _is_hot_reload_mode():
+        return False
+
+    script_path = Path(__file__).resolve()
+    exit_code = _launch_flet_hot_reload(script_path)
+    if exit_code == 0:
+        return True
+
+    print("Warning: hot reload mode unavailable, falling back to standard run.", file=sys.stderr)
+    return False
 
 
 class ServiceContainer:
@@ -103,7 +196,7 @@ def _setup_logging() -> None:
     """
     ensure_data_dir()
 
-    is_debug = bool(os.environ.get("MISAKA_DEBUG"))
+    is_debug = _is_debug_mode() or _is_truthy_env("MISAKA_VERBOSE_LOG")
     level = logging.DEBUG if is_debug else logging.INFO
 
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
@@ -120,6 +213,10 @@ def _setup_logging() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=handlers,
     )
+    if is_debug:
+        logging.getLogger("flet").setLevel(logging.DEBUG)
+        logging.getLogger("watchdog").setLevel(logging.DEBUG)
+        logging.getLogger("claude_agent_sdk").setLevel(logging.DEBUG)
 
 
 def _main(page: ft.Page) -> None:
@@ -155,7 +252,9 @@ def _main(page: ft.Page) -> None:
     # --- Apply saved theme ---
     saved_theme = services.settings_service.get_theme()
     state.theme_mode = saved_theme
-    apply_theme(page, state.theme_mode)
+    saved_accent = services.settings_service.get(SettingKeys.ACCENT_COLOR) or "#6366f1"
+    state.accent_color = saved_accent
+    apply_theme(page, state.theme_mode, state.accent_color)
 
     # --- Load initial data ---
     state.sessions = services.session_service.get_all()
@@ -210,6 +309,9 @@ def _main(page: ft.Page) -> None:
 
 def main() -> None:
     """Application entry point."""
+    if _maybe_delegate_hot_reload():
+        return
+
     _setup_logging()
     logger.info("Starting Misaka...")
     assets = str(Path(__file__).resolve().parent.parent / "assets")

@@ -84,6 +84,7 @@ class SettingKeys:
     MAX_THINKING_TOKENS = "max_thinking_tokens"
     DANGEROUSLY_SKIP_PERMISSIONS = "dangerously_skip_permissions"
     LANGUAGE = "language"
+    ACCENT_COLOR = "accent_color"
 
 
 # ---------------------------------------------------------------------------

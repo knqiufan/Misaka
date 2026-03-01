@@ -7,6 +7,7 @@ default model configuration.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -19,9 +20,9 @@ from misaka.ui.theme import (
     ERROR_RED,
     SUCCESS_GREEN,
     WARNING_AMBER,
+    apply_theme,
     make_badge,
     make_button,
-    make_danger_button,
     make_dialog,
     make_dropdown,
     make_icon_button,
@@ -33,7 +34,7 @@ from misaka.ui.theme import (
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
-    from misaka.db.models import ApiProvider, RouterConfig
+    from misaka.db.models import RouterConfig
     from misaka.state import AppState
 
 
@@ -78,16 +79,10 @@ class SettingsPage(ft.Column):
         self.db = db
         self._on_theme_change = on_theme_change
         self._on_locale_change = on_locale_change
-        self._providers: list[ApiProvider] = []
-        self._provider_list: ft.Column | None = None
         self._router_list: ft.Column | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
-        # Load providers from DB
-        if self.db:
-            self._providers = self.db.get_all_providers()
-
         # Page header
         header = ft.Container(
             content=ft.Text(
@@ -97,9 +92,6 @@ class SettingsPage(ft.Column):
             ),
             padding=ft.Padding.only(left=24, top=20, bottom=12),
         )
-
-        # --- API Providers section ---
-        provider_section = self._build_provider_section()
 
         # --- Appearance section ---
         appearance_section = self._build_appearance_section()
@@ -113,6 +105,9 @@ class SettingsPage(ft.Column):
         # --- Claude Code update section ---
         claude_update_section = self._build_claude_update_section()
 
+        # --- Misaka update section ---
+        misaka_update_section = self._build_misaka_update_section()
+
         # --- Environment status section ---
         env_status_section = self._build_env_status_section()
 
@@ -124,11 +119,11 @@ class SettingsPage(ft.Column):
 
         self.controls = [
             header,
-            self._wrap_card(provider_section),
             self._wrap_card(appearance_section),
             self._wrap_card(permission_section),
             self._wrap_card(cli_settings_section),
             self._wrap_card(claude_update_section),
+            self._wrap_card(misaka_update_section),
             self._wrap_card(env_status_section),
             self._wrap_card(language_section),
             self._wrap_card(about_section),
@@ -139,266 +134,6 @@ class SettingsPage(ft.Column):
     def _wrap_card(content: ft.Control) -> ft.Control:
         """Wrap a section in a card-like container that fills the available width."""
         return make_section_card(content)
-
-    # ---------------------------------------------------------------
-    # Provider section
-    # ---------------------------------------------------------------
-
-    def _build_provider_section(self) -> ft.Control:
-        self._provider_list = ft.Column(spacing=4)
-        self._refresh_provider_list()
-
-        add_btn = make_button(
-            t("settings.add_provider"),
-            icon=ft.Icons.ADD,
-            on_click=self._show_add_provider_dialog,
-        )
-
-        return ft.Container(
-            content=ft.Column(
-                controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Text(
-                                t("settings.api_providers"),
-                                size=16,
-                                weight=ft.FontWeight.W_600,
-                            ),
-                            ft.Container(expand=True),
-                            add_btn,
-                        ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    ft.Text(
-                        t("settings.api_providers_desc"),
-                        size=12,
-                        opacity=0.6,
-                    ),
-                    self._provider_list,
-                ],
-                spacing=12,
-            ),
-            padding=ft.Padding.symmetric(horizontal=24, vertical=16),
-        )
-
-    def _refresh_provider_list(self) -> None:
-        if not self._provider_list:
-            return
-        if not self._providers:
-            self._provider_list.controls = [
-                ft.Container(
-                    content=ft.Text(
-                        t("settings.no_providers"),
-                        italic=True,
-                        size=12,
-                        opacity=0.5,
-                    ),
-                    padding=12,
-                )
-            ]
-            return
-
-        self._provider_list.controls = [
-            self._build_provider_card(p) for p in self._providers
-        ]
-
-    def _build_provider_card(self, provider: ApiProvider) -> ft.Control:
-        is_active = provider.is_active == 1
-
-        status_badge = (
-            make_badge(t("settings.active"), bgcolor=SUCCESS_GREEN)
-            if is_active
-            else make_badge(
-                t("settings.inactive"),
-                bgcolor="#6b7280",
-                color=ft.Colors.WHITE,
-            )
-        )
-
-        masked_key = ""
-        if provider.api_key:
-            if len(provider.api_key) > 8:
-                masked_key = provider.api_key[:4] + "..." + provider.api_key[-4:]
-            else:
-                masked_key = "***"
-
-        return ft.Container(
-            content=ft.Row(
-                controls=[
-                    ft.Column(
-                        controls=[
-                            ft.Row(
-                                controls=[
-                                    ft.Text(
-                                        provider.name,
-                                        size=14,
-                                        weight=ft.FontWeight.W_500,
-                                    ),
-                                    status_badge,
-                                ],
-                                spacing=8,
-                            ),
-                            ft.Text(
-                                f"{provider.provider_type} | {masked_key or t('common.no_key')}",
-                                size=11,
-                                opacity=0.6,
-                            ),
-                            ft.Text(
-                                provider.base_url or t("common.default_url"),
-                                size=11,
-                                opacity=0.4,
-                            ) if provider.base_url else ft.Container(height=0),
-                        ],
-                        spacing=2,
-                        expand=True,
-                    ),
-                    ft.Row(
-                        controls=[
-                            make_icon_button(
-                                ft.Icons.POWER_SETTINGS_NEW,
-                                icon_color=SUCCESS_GREEN if not is_active else "#6b7280",
-                                tooltip=(
-                                    t("settings.activate")
-                                    if not is_active
-                                    else t("settings.deactivate")
-                                ),
-                                on_click=lambda e, pid=provider.id: self._toggle_provider(pid),
-                                icon_size=20,
-                            ),
-                            make_icon_button(
-                                ft.Icons.EDIT,
-                                tooltip=t("settings.edit"),
-                                on_click=lambda e, p=provider: self._show_edit_provider_dialog(p),
-                                icon_size=20,
-                            ),
-                            make_icon_button(
-                                ft.Icons.DELETE,
-                                tooltip=t("settings.delete"),
-                                icon_color=ERROR_RED,
-                                on_click=lambda e, pid=provider.id: self._delete_provider(pid),
-                                icon_size=20,
-                            ),
-                        ],
-                        spacing=0,
-                    ),
-                ],
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            padding=14,
-            border_radius=12,
-            border=ft.Border.all(
-                1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
-            ),
-        )
-
-    def _show_add_provider_dialog(self, e: ft.ControlEvent) -> None:
-        self._show_provider_form(e.page, provider=None)
-
-    def _show_edit_provider_dialog(self, provider: ApiProvider) -> None:
-        if self.state.page:
-            self._show_provider_form(self.state.page, provider=provider)
-
-    def _show_provider_form(self, page: ft.Page, provider: ApiProvider | None) -> None:
-        is_edit = provider is not None
-
-        name_field = make_text_field(
-            label=t("settings.provider_name"),
-            value=provider.name if provider else "",
-            autofocus=True,
-        )
-        type_field = make_dropdown(
-            label=t("settings.provider_type"),
-            value=provider.provider_type if provider else "anthropic",
-            options=[
-                ft.dropdown.Option("anthropic"),
-                ft.dropdown.Option("openrouter"),
-                ft.dropdown.Option("bedrock"),
-                ft.dropdown.Option("vertex"),
-                ft.dropdown.Option("custom"),
-            ],
-        )
-        key_field = make_text_field(
-            label=t("settings.api_key"),
-            value=provider.api_key if provider else "",
-            password=True,
-            can_reveal_password=True,
-        )
-        url_field = make_text_field(
-            label=t("settings.base_url"),
-            value=provider.base_url if provider else "",
-        )
-        env_field = make_text_field(
-            label=t("settings.extra_env"),
-            value=provider.extra_env if provider and provider.extra_env != "{}" else "",
-            multiline=True,
-            min_lines=2,
-            max_lines=4,
-        )
-        notes_field = make_text_field(
-            label=t("settings.notes"),
-            value=provider.notes if provider else "",
-        )
-
-        def save(ev):
-            name = (name_field.value or "").strip()
-            if not name:
-                return
-
-            kwargs = {
-                "provider_type": type_field.value or "anthropic",
-                "api_key": key_field.value or "",
-                "base_url": url_field.value or "",
-                "extra_env": env_field.value or "{}",
-                "notes": notes_field.value or "",
-            }
-
-            if is_edit and provider and self.db:
-                self.db.update_provider(provider.id, name=name, **kwargs)
-            elif self.db:
-                self.db.create_provider(name=name, **kwargs)
-
-            # Reload
-            if self.db:
-                self._providers = self.db.get_all_providers()
-            self._refresh_provider_list()
-            page.pop_dialog()
-            self.state.update()
-
-        dialog = make_dialog(
-            title=t("settings.edit_provider") if is_edit else t("settings.add_provider"),
-            content=ft.Column(
-                controls=[name_field, type_field, key_field, url_field, env_field, notes_field],
-                spacing=12,
-                tight=True,
-                scroll=ft.ScrollMode.AUTO,
-                width=400,
-            ),
-            actions=[
-                make_text_button(t("settings.cancel"), on_click=lambda ev: page.pop_dialog()),
-                make_button(t("settings.save"), on_click=save),
-            ],
-        )
-        page.show_dialog(dialog)
-
-    def _toggle_provider(self, provider_id: str) -> None:
-        if not self.db:
-            return
-        provider = self.db.get_provider(provider_id)
-        if provider and provider.is_active == 1:
-            self.db.deactivate_all_providers()
-        else:
-            self.db.activate_provider(provider_id)
-        self._providers = self.db.get_all_providers()
-        self._refresh_provider_list()
-        self.state.update()
-
-    def _delete_provider(self, provider_id: str) -> None:
-        if not self.db:
-            return
-        self.db.delete_provider(provider_id)
-        self._providers = self.db.get_all_providers()
-        self._refresh_provider_list()
-        self.state.update()
 
     # ---------------------------------------------------------------
     # Appearance section
@@ -430,12 +165,45 @@ class SettingsPage(ft.Column):
             )
             theme_buttons.append(btn)
 
+        # --- Accent color selector ---
+        accent_colors = [
+            ("#6366f1", "Indigo"),
+            ("#3b82f6", "Blue"),
+            ("#10b981", "Emerald"),
+            ("#f43f5e", "Rose"),
+            ("#f59e0b", "Amber"),
+            ("#8b5cf6", "Purple"),
+            ("#14b8a6", "Teal"),
+        ]
+        current_accent = getattr(self.state, "accent_color", "#6366f1")
+        color_circles: list[ft.Control] = []
+        for hex_color, color_name in accent_colors:
+            is_selected = current_accent == hex_color
+            circle = ft.Container(
+                width=28,
+                height=28,
+                bgcolor=hex_color,
+                border_radius=14,
+                border=ft.Border.all(
+                    3 if is_selected else 1,
+                    ft.Colors.ON_SURFACE if is_selected
+                    else ft.Colors.with_opacity(0.15, ft.Colors.ON_SURFACE),
+                ),
+                tooltip=color_name,
+                on_click=lambda e, c=hex_color: self._change_accent_color(c),
+                ink=True,
+            )
+            color_circles.append(circle)
+
         return ft.Container(
             content=ft.Column(
                 controls=[
                     ft.Text(t("settings.appearance"), size=16, weight=ft.FontWeight.W_600),
                     ft.Text(t("settings.appearance_desc"), size=12, opacity=0.6),
                     ft.Row(controls=theme_buttons, spacing=8),
+                    ft.Text(t("settings.accent_color"), size=14, weight=ft.FontWeight.W_500),
+                    ft.Text(t("settings.accent_color_desc"), size=12, opacity=0.6),
+                    ft.Row(controls=color_circles, spacing=8),
                 ],
                 spacing=12,
             ),
@@ -444,8 +212,17 @@ class SettingsPage(ft.Column):
 
     def _change_theme(self, mode: str) -> None:
         self.state.theme_mode = mode
+        apply_theme(self.state.page, mode, self.state.accent_color)
         if self._on_theme_change:
             self._on_theme_change(mode)
+        self._build_ui()
+        self.state.update()
+
+    def _change_accent_color(self, color: str) -> None:
+        self.state.accent_color = color
+        if self.db:
+            self.db.set_setting("accent_color", color)
+        apply_theme(self.state.page, self.state.theme_mode, color)
         self._build_ui()
         self.state.update()
 
@@ -678,6 +455,19 @@ class SettingsPage(ft.Column):
         if is_edit and config and svc:
             form_vals = svc.sync_json_to_form(config.config_json)
 
+        # Default JSON for add mode: load current settings with env={}
+        if not is_edit:
+            cli_svc = getattr(self.state.services, "cli_settings_service", None) \
+                if self.state.services else None
+            if cli_svc:
+                default_data = cli_svc.read_settings()
+                default_data["env"] = {}
+                default_json = json.dumps(default_data, indent=2, ensure_ascii=False)
+            else:
+                default_json = "{}"
+        else:
+            default_json = config.config_json if config else "{}"
+
         name_field = make_text_field(
             label=t("settings.router_name"),
             value=config.name if config else "",
@@ -685,13 +475,19 @@ class SettingsPage(ft.Column):
         )
         api_key_field = make_text_field(
             label=t("settings.router_api_key"),
-            value=config.api_key if config else "",
+            value=(
+                str(form_vals.get("api_key", ""))
+                or (config.api_key if config else "")
+            ),
             password=True,
             can_reveal_password=True,
         )
         base_url_field = make_text_field(
             label=t("settings.router_base_url"),
-            value=config.base_url if config else "",
+            value=(
+                str(form_vals.get("base_url", ""))
+                or (config.base_url if config else "")
+            ),
         )
         main_model_field = make_text_field(
             label=t("settings.router_main_model"),
@@ -715,7 +511,7 @@ class SettingsPage(ft.Column):
         )
         config_json_field = make_text_field(
             label=t("settings.router_config_json"),
-            value=config.config_json if config else "{}",
+            value=default_json,
             multiline=True,
             min_lines=4,
             max_lines=10,
@@ -744,6 +540,29 @@ class SettingsPage(ft.Column):
         for fname, fld in model_fields.items():
             fld.on_change = on_model_field_change(fname)
 
+        def on_api_key_change(e: ft.ControlEvent):
+            if not svc:
+                return
+            current_json = config_json_field.value or "{}"
+            updated = svc.sync_form_to_json(
+                current_json, "api_key", e.data or ""
+            )
+            config_json_field.value = updated
+            config_json_field.update()
+
+        def on_base_url_change(e: ft.ControlEvent):
+            if not svc:
+                return
+            current_json = config_json_field.value or "{}"
+            updated = svc.sync_form_to_json(
+                current_json, "base_url", e.data or ""
+            )
+            config_json_field.value = updated
+            config_json_field.update()
+
+        api_key_field.on_change = on_api_key_change
+        base_url_field.on_change = on_base_url_change
+
         def on_agent_team_change(e: ft.ControlEvent):
             if not svc:
                 return
@@ -770,6 +589,14 @@ class SettingsPage(ft.Column):
             if agent_team_switch.value != new_agent:
                 agent_team_switch.value = new_agent
                 agent_team_switch.update()
+            new_api_key = str(vals.get("api_key", ""))
+            if api_key_field.value != new_api_key:
+                api_key_field.value = new_api_key
+                api_key_field.update()
+            new_base_url = str(vals.get("base_url", ""))
+            if base_url_field.value != new_base_url:
+                base_url_field.value = new_base_url
+                base_url_field.update()
 
         config_json_field.on_blur = on_json_change
 
@@ -1256,6 +1083,60 @@ class SettingsPage(ft.Column):
         if hasattr(self.state, "services") and self.state.services:
             return getattr(self.state.services, "env_check_service", None)
         return None
+
+    # ---------------------------------------------------------------
+    # Misaka update section
+    # ---------------------------------------------------------------
+
+    def _build_misaka_update_section(self) -> ft.Control:
+        """Build the Misaka version info and update check section."""
+        from misaka import __version__
+
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Text(
+                                t("settings.misaka_update"),
+                                size=16,
+                                weight=ft.FontWeight.W_600,
+                            ),
+                            ft.Container(expand=True),
+                            make_outlined_button(
+                                t("settings.check_update"),
+                                icon=ft.Icons.REFRESH,
+                                on_click=self._handle_misaka_update_check,
+                            ),
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Text(
+                        t("settings.misaka_update_desc"),
+                        size=12,
+                        opacity=0.6,
+                    ),
+                    ft.Text(
+                        f"{t('settings.misaka_version')}: {__version__}",
+                        size=13,
+                        opacity=0.8,
+                    ),
+                ],
+                spacing=12,
+            ),
+            padding=ft.Padding.symmetric(horizontal=24, vertical=16),
+        )
+
+    def _handle_misaka_update_check(self, e: ft.ControlEvent) -> None:
+        """Show a placeholder snackbar for Misaka update check."""
+        if not e.page:
+            return
+        e.page.open(
+            ft.SnackBar(
+                content=ft.Text(t("settings.update_not_configured")),
+                duration=3000,
+            )
+        )
 
     # ---------------------------------------------------------------
     # About section

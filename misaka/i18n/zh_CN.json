@@ -125,7 +125,13 @@
     "router_in_use": "使用中",
     "router_default": "Default",
     "router_activate_confirm": "确认启用此配置？这将覆盖 ~/.claude/settings.json",
-    "router_no_configs": "暂无配置，点击添加按钮创建"
+    "router_no_configs": "暂无配置，点击添加按钮创建",
+    "accent_color": "主题颜色",
+    "accent_color_desc": "选择全局主题强调色",
+    "misaka_update": "Misaka 更新",
+    "misaka_update_desc": "检查 Misaka 应用更新",
+    "misaka_version": "当前版本",
+    "update_not_configured": "更新服务器尚未配置"
   },
   "plugins": {
     "title": "插件（MCP 服务器）",

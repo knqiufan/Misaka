@@ -112,6 +112,7 @@ class AppState:
 
         # --- Theme ---
         self.theme_mode: str = "system"  # "system" | "light" | "dark"
+        self.accent_color: str = "#6366f1"
 
         # --- File tree state ---
         self.file_tree_root: str | None = None
