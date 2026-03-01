@@ -31,9 +31,15 @@ class StreamingMessage(ft.Container):
         """Start the thinking pulse animation after mounting."""
         self._start_thinking_pulse()
 
+    def _is_attached_to_page(self) -> bool:
+        """Return whether this control is attached to a page."""
+        with contextlib.suppress(RuntimeError):
+            return self.page is not None
+        return False
+
     def _start_thinking_pulse(self) -> None:
         """Toggle the thinking text opacity to create a gentle pulse effect."""
-        if self._thinking_text and self.page:
+        if self._thinking_text and self._is_attached_to_page():
             self._thinking_text.opacity = 0.2 if self._pulse_low else 0.6
             self._pulse_low = not self._pulse_low
             with contextlib.suppress(Exception):

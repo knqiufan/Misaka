@@ -117,6 +117,7 @@ class ClaudeService:
         mcp_servers: dict[str, Any] | None = None,
         permission_mode: str = "acceptEdits",
         provider: ApiProvider | None = None,
+        can_use_tool: Any = None,
     ) -> Any:
         """Build ClaudeAgentOptions from parameters.
 
@@ -143,6 +144,7 @@ class ClaudeService:
                 "WebFetch", "WebSearch",
             ],
             include_partial_messages=True,
+            can_use_tool=can_use_tool,
         )
 
         if skip_permissions:
@@ -215,6 +217,10 @@ class ClaudeService:
         # Get active provider
         provider = self._db.get_active_provider()
 
+        can_use_tool = None
+        if on_permission_request:
+            can_use_tool = self._make_permission_callback(on_permission_request)
+
         options = self._build_options(
             model=model,
             system_prompt=system_prompt,
@@ -223,19 +229,22 @@ class ClaudeService:
             mcp_servers=mcp_servers,
             permission_mode=permission_mode,
             provider=provider,
+            can_use_tool=can_use_tool,
         )
 
         try:
             async with ClaudeSDKClient(options=options) as client:
                 self._client = client
 
-                # Build permission callback
-                can_use_tool = None
-                if on_permission_request:
-                    can_use_tool = self._make_permission_callback(on_permission_request)
+                # SDK >= 0.1.39: query() then receive_response()
+                # Older SDK versions may still expose send_message().
+                if hasattr(client, "query") and hasattr(client, "receive_response"):
+                    await client.query(prompt, session_id=session_id)
+                    response_stream = client.receive_response()
+                else:
+                    response_stream = client.send_message(prompt, can_use_tool=can_use_tool)
 
-                # Send message and iterate over response stream
-                async for message in client.send_message(prompt, can_use_tool=can_use_tool):
+                async for message in response_stream:
                     if not self._is_streaming or self._abort_event.is_set():
                         break
 
@@ -526,7 +535,10 @@ class ClaudeService:
 
         if self._client:
             try:
-                await self._client.abort()
+                if hasattr(self._client, "abort"):
+                    await self._client.abort()
+                elif hasattr(self._client, "interrupt"):
+                    await self._client.interrupt()
             except Exception as exc:
                 logger.warning("Error aborting client: %s", exc)
             self._client = None
