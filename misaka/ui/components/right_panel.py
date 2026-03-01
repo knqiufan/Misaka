@@ -55,23 +55,26 @@ class RightPanel(ft.Column):
             or (session.working_directory if session else "")
         )
 
-        from misaka.ui.theme import make_text_button
-        files_btn = make_text_button(
-            t("right_panel.files"),
-            on_click=lambda e: self._switch_tab("files"),
+        files_btn = self._build_tab_button(
+            label=t("right_panel.files"),
+            tab_key="files",
+            is_active=is_files,
         )
-
-        tasks_btn = make_text_button(
-            t("right_panel.tasks"),
-            on_click=lambda e: self._switch_tab("tasks"),
+        tasks_btn = self._build_tab_button(
+            label=t("right_panel.tasks"),
+            tab_key="tasks",
+            is_active=not is_files,
         )
 
         tab_bar = ft.Container(
             content=ft.Row(
                 controls=[files_btn, tasks_btn],
-                spacing=2,
+                spacing=6,
             ),
-            padding=ft.Padding.only(left=6, right=6, top=6, bottom=4),
+            padding=ft.Padding.symmetric(horizontal=8, vertical=6),
+            margin=ft.Margin.only(left=8, right=8, top=6, bottom=4),
+            # bgcolor=ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
+            border_radius=12,
         )
 
         # Content area
@@ -150,6 +153,33 @@ class RightPanel(ft.Column):
             dir_display,
             ft.Container(content=content, expand=True),
         ]
+
+    def _build_tab_button(self, label: str, tab_key: str, is_active: bool) -> ft.Control:
+        """Build right-panel tab with clear active/inactive separation."""
+        text_color = ft.Colors.PRIMARY if is_active else ft.Colors.with_opacity(0.68, ft.Colors.ON_SURFACE)
+        return ft.Container(
+            content=ft.Text(
+                label,
+                size=13,
+                weight=ft.FontWeight.W_600 if is_active else ft.FontWeight.W_500,
+                color=text_color,
+            ),
+            padding=ft.Padding.symmetric(horizontal=14, vertical=8),
+            border_radius=10,
+            bgcolor=(
+                ft.Colors.with_opacity(0.14, ft.Colors.PRIMARY)
+                if is_active
+                else ft.Colors.TRANSPARENT
+            ),
+            border=ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.24, ft.Colors.PRIMARY)
+                if is_active
+                else ft.Colors.TRANSPARENT,
+            ),
+            on_click=lambda e, key=tab_key: self._switch_tab(key),
+            ink=True,
+        )
 
     def _parse_file_tree_nodes(self):
         """Parse file tree nodes from state."""

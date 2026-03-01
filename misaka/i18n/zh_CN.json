@@ -238,7 +238,7 @@
     "deny": "拒绝"
   },
   "right_panel": {
-    "files": "文件",
+    "files": "工作目录",
     "tasks": "任务",
     "file_preview": "文件预览",
     "back_to_tree": "返回文件树",

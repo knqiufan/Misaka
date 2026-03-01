@@ -16,7 +16,6 @@ import flet as ft
 import misaka.i18n as i18n
 from misaka.i18n import t
 from misaka.ui.theme import (
-    ACCENT_BLUE,
     ERROR_RED,
     SUCCESS_GREEN,
     WARNING_AMBER,
@@ -24,7 +23,6 @@ from misaka.ui.theme import (
     make_badge,
     make_button,
     make_dialog,
-    make_dropdown,
     make_icon_button,
     make_outlined_button,
     make_section_card,

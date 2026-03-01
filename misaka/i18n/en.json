@@ -238,7 +238,7 @@
     "deny": "Deny"
   },
   "right_panel": {
-    "files": "Files",
+    "files": "Working Dir",
     "tasks": "Tasks",
     "file_preview": "File Preview",
     "back_to_tree": "Back to file tree",

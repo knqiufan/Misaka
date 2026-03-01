@@ -238,7 +238,7 @@
     "deny": "拒絕"
   },
   "right_panel": {
-    "files": "檔案",
+    "files": "工作目錄",
     "tasks": "任務",
     "file_preview": "檔案預覽",
     "back_to_tree": "返回檔案樹",
