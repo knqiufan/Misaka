@@ -22,7 +22,6 @@ _BASE_LEFT_PADDING = 6
 _DEPTH_INDENT = 10
 _FILE_ICON_SIZE = 15
 _FOLDER_ICON_SIZE = 16
-_HOVER_BG = ft.Colors.with_opacity(0.07, ft.Colors.PRIMARY)
 _SELECTED_BG = ft.Colors.with_opacity(0.14, ft.Colors.PRIMARY)
 
 
@@ -162,7 +161,6 @@ class FileTree(ft.Column):
             ),
             border_radius=8,
             padding=ft.Padding.symmetric(horizontal=6, vertical=4),
-            on_hover=self._handle_folder_hover,
             bgcolor=ft.Colors.TRANSPARENT,
         )
 
@@ -208,7 +206,6 @@ class FileTree(ft.Column):
                 bottom=2,
                 right=6,
             ),
-            on_hover=self._handle_file_hover,
             ink=True,
             border_radius=8,
             height=_ROW_HEIGHT,
@@ -250,24 +247,6 @@ class FileTree(ft.Column):
 
         if self._on_file_click:
             self._on_file_click(path)
-
-    @staticmethod
-    def _handle_folder_hover(e: ft.ControlEvent) -> None:
-        if not isinstance(e.control, ft.Container):
-            return
-        e.control.bgcolor = _HOVER_BG if e.data == "true" else ft.Colors.TRANSPARENT
-        e.control.update()
-
-    def _handle_file_hover(self, e: ft.ControlEvent) -> None:
-        if not isinstance(e.control, ft.Container):
-            return
-        path = e.control.data
-        if isinstance(path, str) and path == self._selected_file_path:
-            e.control.bgcolor = _SELECTED_BG
-            e.control.update()
-            return
-        e.control.bgcolor = _HOVER_BG if e.data == "true" else ft.Colors.TRANSPARENT
-        e.control.update()
 
     def set_nodes(self, nodes: list[FileTreeNode]) -> None:
         self._nodes = nodes

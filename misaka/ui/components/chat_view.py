@@ -82,7 +82,7 @@ class ChatView(ft.Column):
                 ft.dropdown.Option(key="ask", text="Ask"),
             ],
             dense=True,
-            content_padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+            content_padding=ft.Padding.symmetric(horizontal=8, vertical=2),
             width=110,
             on_select=self._handle_mode_dropdown_change,
             text_size=12,
