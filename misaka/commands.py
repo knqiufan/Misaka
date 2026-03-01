@@ -6,7 +6,7 @@ mirroring the Claude Code CLI command set.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import flet as ft
 
@@ -23,6 +23,12 @@ class SlashCommand:
 
 
 BUILT_IN_COMMANDS: list[SlashCommand] = [
+    SlashCommand(
+        name="model",
+        description="切换模型",
+        icon=ft.Icons.MODEL_TRAINING,
+        immediate=True,
+    ),
     SlashCommand(
         name="help",
         description="显示可用命令和提示",

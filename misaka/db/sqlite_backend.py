@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from misaka.db.database import DatabaseBackend
-from misaka.db.models import ApiProvider, ChatSession, Message, TaskItem
+from misaka.db.models import ApiProvider, ChatSession, Message, RouterConfig, TaskItem
 
 
 def _now() -> str:
@@ -79,6 +79,25 @@ def _row_to_provider(row: sqlite3.Row) -> ApiProvider:
         sort_order=row["sort_order"],
         extra_env=row["extra_env"],
         notes=row["notes"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _row_to_router_config(row: sqlite3.Row) -> RouterConfig:
+    return RouterConfig(
+        id=row["id"],
+        name=row["name"],
+        api_key=row["api_key"],
+        base_url=row["base_url"],
+        main_model=row["main_model"],
+        haiku_model=row["haiku_model"],
+        opus_model=row["opus_model"],
+        sonnet_model=row["sonnet_model"],
+        agent_team=bool(row["agent_team"]),
+        config_json=row["config_json"],
+        is_active=row["is_active"],
+        sort_order=row["sort_order"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -167,6 +186,10 @@ class SQLiteBackend(DatabaseBackend):
             CREATE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id);
         """)
         conn.commit()
+
+        # Run incremental migrations
+        from misaka.db.migrations import run_migrations
+        run_migrations(conn)
 
     def close(self) -> None:
         if self._conn:
@@ -372,7 +395,9 @@ class SQLiteBackend(DatabaseBackend):
         tid = _generate_id()
         now = _now()
         conn.execute(
-            """INSERT INTO tasks (id, session_id, title, status, description, created_at, updated_at)
+            """INSERT INTO tasks
+               (id, session_id, title, status, description,
+                created_at, updated_at)
                VALUES (?, ?, ?, 'pending', ?, ?, ?)""",
             (tid, session_id, title, description, now, now),
         )
@@ -499,3 +524,109 @@ class SQLiteBackend(DatabaseBackend):
         conn = self._get_conn()
         conn.execute("UPDATE api_providers SET is_active = 0")
         conn.commit()
+
+    # ----- Router Configs -----
+
+    def get_all_router_configs(self) -> list[RouterConfig]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM router_configs ORDER BY sort_order ASC, created_at ASC"
+        ).fetchall()
+        return [_row_to_router_config(r) for r in rows]
+
+    def get_router_config(self, config_id: str) -> RouterConfig | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM router_configs WHERE id = ?", (config_id,)
+        ).fetchone()
+        return _row_to_router_config(row) if row else None
+
+    def get_active_router_config(self) -> RouterConfig | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM router_configs WHERE is_active = 1 LIMIT 1"
+        ).fetchone()
+        return _row_to_router_config(row) if row else None
+
+    def create_router_config(self, name: str, **kwargs: Any) -> RouterConfig:
+        conn = self._get_conn()
+        cid = _generate_id()
+        now = _now()
+        max_row = conn.execute(
+            "SELECT MAX(sort_order) as max_order FROM router_configs"
+        ).fetchone()
+        sort_order = (max_row["max_order"] or -1) + 1 if max_row else 0
+        conn.execute(
+            """INSERT INTO router_configs
+               (id, name, api_key, base_url, main_model, haiku_model,
+                opus_model, sonnet_model, agent_team, config_json,
+                is_active, sort_order, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                cid,
+                name,
+                kwargs.get("api_key", ""),
+                kwargs.get("base_url", ""),
+                kwargs.get("main_model", ""),
+                kwargs.get("haiku_model", ""),
+                kwargs.get("opus_model", ""),
+                kwargs.get("sonnet_model", ""),
+                1 if kwargs.get("agent_team", False) else 0,
+                kwargs.get("config_json", "{}"),
+                kwargs.get("is_active", 0),
+                sort_order,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        return self.get_router_config(cid)  # type: ignore[return-value]
+
+    def update_router_config(self, config_id: str, **kwargs: Any) -> RouterConfig | None:
+        existing = self.get_router_config(config_id)
+        if not existing:
+            return None
+        conn = self._get_conn()
+        now = _now()
+        conn.execute(
+            """UPDATE router_configs
+               SET name = ?, api_key = ?, base_url = ?, main_model = ?,
+                   haiku_model = ?, opus_model = ?, sonnet_model = ?,
+                   agent_team = ?, config_json = ?, sort_order = ?,
+                   updated_at = ?
+               WHERE id = ?""",
+            (
+                kwargs.get("name", existing.name),
+                kwargs.get("api_key", existing.api_key),
+                kwargs.get("base_url", existing.base_url),
+                kwargs.get("main_model", existing.main_model),
+                kwargs.get("haiku_model", existing.haiku_model),
+                kwargs.get("opus_model", existing.opus_model),
+                kwargs.get("sonnet_model", existing.sonnet_model),
+                1 if kwargs.get("agent_team", existing.agent_team) else 0,
+                kwargs.get("config_json", existing.config_json),
+                kwargs.get("sort_order", existing.sort_order),
+                now,
+                config_id,
+            ),
+        )
+        conn.commit()
+        return self.get_router_config(config_id)
+
+    def delete_router_config(self, config_id: str) -> bool:
+        conn = self._get_conn()
+        cursor = conn.execute("DELETE FROM router_configs WHERE id = ?", (config_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def activate_router_config(self, config_id: str) -> bool:
+        existing = self.get_router_config(config_id)
+        if not existing:
+            return False
+        conn = self._get_conn()
+        conn.execute("UPDATE router_configs SET is_active = 0")
+        conn.execute(
+            "UPDATE router_configs SET is_active = 1 WHERE id = ?", (config_id,)
+        )
+        conn.commit()
+        return True

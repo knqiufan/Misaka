@@ -7,7 +7,8 @@ Orchestrates the chat interaction flow.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import flet as ft
 
@@ -19,23 +20,6 @@ from misaka.ui.components.update_banner import UpdateBanner
 
 if TYPE_CHECKING:
     from misaka.state import AppState
-
-
-# Available models: (value, display_label)
-_MODELS = [
-    ("sonnet", "Sonnet 4.5"),
-    ("opus", "Opus 4.6"),
-    ("haiku", "Haiku 4.5"),
-]
-
-_MODEL_VALUES = [m[0] for m in _MODELS]
-
-# Available modes
-_MODES = [
-    ("code", "Code", ft.Colors.BLUE),
-    ("plan", "Plan", ft.Colors.ORANGE),
-    ("ask", "Ask", ft.Colors.GREEN),
-]
 
 
 class ChatView(ft.Column):
@@ -71,8 +55,7 @@ class ChatView(ft.Column):
         self._message_list: MessageList | None = None
         self._message_input: MessageInput | None = None
         self._connection_status: ConnectionStatus | None = None
-        self._model_dropdown: ft.Dropdown | None = None
-        self._mode_buttons: list[ft.Control] = []
+        self._mode_dropdown: ft.Dropdown | None = None
         self._error_banner: ft.Container | None = None
         self._update_banner: UpdateBanner | None = None
         self._build_ui()
@@ -88,42 +71,22 @@ class ChatView(ft.Column):
             is_streaming=self.state.is_streaming,
         )
 
-        # Model selector
-        from misaka.ui.theme import make_dropdown as _mdd
-        current_model = session.model if session else _MODELS[0][0]
-        self._model_dropdown = _mdd(
-            value=current_model if current_model in _MODEL_VALUES else _MODELS[0][0],
-            options=[ft.dropdown.Option(key=m[0], text=m[1]) for m in _MODELS],
+        # Mode selector dropdown
+        from misaka.ui.theme import make_dropdown as _mdd_mode
+        current_mode = session.mode if session else "code"
+        self._mode_dropdown = _mdd_mode(
+            value=current_mode,
+            options=[
+                ft.dropdown.Option(key="code", text="Code"),
+                ft.dropdown.Option(key="plan", text="Plan"),
+                ft.dropdown.Option(key="ask", text="Ask"),
+            ],
             dense=True,
             content_padding=ft.Padding.symmetric(horizontal=8, vertical=4),
-            width=200,
-            on_select=self._handle_model_change,
+            width=120,
+            on_select=self._handle_mode_dropdown_change,
             text_size=12,
         )
-
-        # Mode toggle buttons (pill-shaped)
-        current_mode = session.mode if session else "code"
-        self._mode_buttons = []
-        for mode_id, mode_label, mode_color in _MODES:
-            is_active = current_mode == mode_id
-            btn = ft.Container(
-                content=ft.Text(
-                    mode_label,
-                    size=11,
-                    weight=ft.FontWeight.W_600 if is_active else ft.FontWeight.NORMAL,
-                    color=ft.Colors.WHITE if is_active else ft.Colors.ON_SURFACE_VARIANT,
-                ),
-                bgcolor=mode_color if is_active else ft.Colors.TRANSPARENT,
-                border_radius=12,
-                padding=ft.Padding.symmetric(horizontal=10, vertical=3),
-                on_click=lambda e, m=mode_id: self._handle_mode_change(m),
-                ink=True,
-                border=ft.Border.all(
-                    1,
-                    mode_color if is_active else ft.Colors.with_opacity(0.3, ft.Colors.OUTLINE),
-                ),
-            )
-            self._mode_buttons.append(btn)
 
         # Left panel toggle
         left_toggle = ft.IconButton(
@@ -138,7 +101,10 @@ class ChatView(ft.Column):
         right_toggle = ft.IconButton(
             icon=ft.Icons.VERTICAL_SPLIT,
             tooltip=t("chat.toggle_right_panel"),
-            on_click=lambda e: self._on_toggle_right_panel() if self._on_toggle_right_panel else None,
+            on_click=lambda e: (
+                self._on_toggle_right_panel()
+                if self._on_toggle_right_panel else None
+            ),
             icon_size=20,
             style=ft.ButtonStyle(padding=6),
         )
@@ -197,11 +163,7 @@ class ChatView(ft.Column):
                         expand=True,
                     ),
                     folder_btn,
-                    ft.Row(
-                        controls=self._mode_buttons,
-                        spacing=4,
-                    ),
-                    self._model_dropdown,
+                    self._mode_dropdown,
                     self._connection_status,
                     clear_btn,
                     right_toggle,
@@ -235,6 +197,7 @@ class ChatView(ft.Column):
             on_send=self._on_send,
             on_abort=self._on_abort,
             on_command=self._on_command,
+            on_model_change=self._handle_model_change_from_input,
         )
 
         # --- Welcome view (when no session selected) ---
@@ -315,14 +278,18 @@ class ChatView(ft.Column):
         self._refresh_error_banner()
         self.state.update()
 
-    def _handle_model_change(self, e: ft.ControlEvent) -> None:
-        model = e.data or e.control.value
+    def _handle_model_change_from_input(self, model: str) -> None:
         if self._on_model_change and model:
             self._on_model_change(model)
 
     def _handle_mode_change(self, mode: str) -> None:
         if self._on_mode_change:
             self._on_mode_change(mode)
+
+    def _handle_mode_dropdown_change(self, e: ft.ControlEvent) -> None:
+        mode = e.data or e.control.value
+        if mode:
+            self._handle_mode_change(mode)
 
     def _handle_update(self) -> None:
         """Handle 'Update Now' click from the update banner."""

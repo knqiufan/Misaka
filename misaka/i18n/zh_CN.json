@@ -39,7 +39,9 @@
     "yesterday": "昨天",
     "earlier": "更早",
     "load_earlier": "加载更早的消息",
-    "commands_title": "命令"
+    "commands_title": "命令",
+    "command_menu": "命令菜单",
+    "select_model": "选择模型"
   },
   "settings": {
     "title": "设置",
@@ -105,7 +107,25 @@
     "update_available": "有可用更新",
     "env_status": "环境状态",
     "env_status_desc": "检查并安装所需的运行环境依赖。",
-    "recheck": "重新检查"
+    "recheck": "重新检查",
+    "router_title": "Claude Code Router",
+    "router_desc": "管理多个 Claude Code 配置，快速切换不同环境",
+    "router_add": "添加配置",
+    "router_edit": "编辑配置",
+    "router_name": "供应商名称",
+    "router_api_key": "API Key",
+    "router_base_url": "请求地址",
+    "router_main_model": "主模型",
+    "router_haiku_model": "Haiku 模型",
+    "router_opus_model": "Opus 模型",
+    "router_sonnet_model": "Sonnet 模型",
+    "router_agent_team": "Agent Team 模式",
+    "router_config_json": "配置 JSON",
+    "router_enable": "启用",
+    "router_in_use": "使用中",
+    "router_default": "Default",
+    "router_activate_confirm": "确认启用此配置？这将覆盖 ~/.claude/settings.json",
+    "router_no_configs": "暂无配置，点击添加按钮创建"
   },
   "plugins": {
     "title": "插件（MCP 服务器）",

@@ -53,6 +53,12 @@ class MessageItem(ft.Container):
         else:
             content_controls = self._render_assistant_blocks(blocks)
 
+        # Hide message if all content is empty
+        if not content_controls:
+            self.visible = False
+            self.content = ft.Container(height=0)
+            return
+
         header = self._build_header(is_user)
 
         self.content = ft.Column(

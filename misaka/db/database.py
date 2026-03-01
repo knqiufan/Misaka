@@ -15,6 +15,7 @@ from misaka.db.models import (
     ApiProvider,
     ChatSession,
     Message,
+    RouterConfig,
     TaskItem,
 )
 
@@ -190,6 +191,36 @@ class DatabaseBackend(ABC):
     @abstractmethod
     def deactivate_all_providers(self) -> None:
         """Deactivate all providers."""
+
+    # ----- Router Configs -----
+
+    @abstractmethod
+    def get_all_router_configs(self) -> list[RouterConfig]:
+        """Return all router configs ordered by sort_order."""
+
+    @abstractmethod
+    def get_router_config(self, config_id: str) -> RouterConfig | None:
+        """Return a router config by ID, or None."""
+
+    @abstractmethod
+    def get_active_router_config(self) -> RouterConfig | None:
+        """Return the currently active router config, or None."""
+
+    @abstractmethod
+    def create_router_config(self, name: str, **kwargs: Any) -> RouterConfig:
+        """Create and return a new router config."""
+
+    @abstractmethod
+    def update_router_config(self, config_id: str, **kwargs: Any) -> RouterConfig | None:
+        """Update router config fields. Return updated config."""
+
+    @abstractmethod
+    def delete_router_config(self, config_id: str) -> bool:
+        """Delete a router config. Return True if deleted."""
+
+    @abstractmethod
+    def activate_router_config(self, config_id: str) -> bool:
+        """Set a router config as active (deactivating all others). Return True if found."""
 
 
 # ---------------------------------------------------------------------------

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import flet as ft
 
-
 # ---------------------------------------------------------------------------
 # Color palette
 # ---------------------------------------------------------------------------
@@ -46,8 +45,8 @@ RADIUS_LG = 12
 RADIUS_XL = 16
 
 # Preferred font stack
-FONT_FAMILY = "Segoe UI, SF Pro Display, -apple-system, Roboto, sans-serif"
-MONO_FONT_FAMILY = "Cascadia Code, JetBrains Mono, Menlo, Consolas, monospace"
+FONT_FAMILY = "Microsoft YaHei, Consolas, Segoe UI, sans-serif"
+MONO_FONT_FAMILY = "Consolas, Cascadia Code, JetBrains Mono, monospace"
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +69,7 @@ def _make_expansion_tile_theme() -> ft.ExpansionTileTheme:
 def get_dark_theme() -> ft.Theme:
     """Return the dark theme for Misaka."""
     return ft.Theme(
+        font_family=FONT_FAMILY,
         color_scheme_seed=ACCENT_BLUE,
         color_scheme=ft.ColorScheme(
             primary=ACCENT_BLUE,
@@ -88,6 +88,7 @@ def get_dark_theme() -> ft.Theme:
 def get_light_theme() -> ft.Theme:
     """Return the light theme for Misaka."""
     return ft.Theme(
+        font_family=FONT_FAMILY,
         color_scheme_seed=ACCENT_BLUE,
         color_scheme=ft.ColorScheme(
             primary=ACCENT_BLUE,

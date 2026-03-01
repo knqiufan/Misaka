@@ -13,7 +13,7 @@ import sqlite3
 logger = logging.getLogger(__name__)
 
 # Current schema version. Increment when adding new migrations.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def run_migrations(conn: sqlite3.Connection) -> None:
@@ -28,6 +28,9 @@ def run_migrations(conn: sqlite3.Connection) -> None:
 
     if current < 1:
         _migrate_v1(conn)
+
+    if current < 2:
+        _migrate_v2(conn)
 
     _set_version(conn, SCHEMA_VERSION)
     conn.commit()
@@ -84,3 +87,34 @@ def _get_column_names(conn: sqlite3.Connection, table: str) -> set[str]:
     # SQLite parameterized queries (?) do not support table/column name binding.
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return {row[1] for row in rows}
+
+
+def _migrate_v2(conn: sqlite3.Connection) -> None:
+    """Migration v2: Add router_configs table."""
+    logger.info("Running migration v2")
+
+    existing_tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "router_configs" not in existing_tables:
+        conn.execute("""
+            CREATE TABLE router_configs (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                api_key TEXT NOT NULL DEFAULT '',
+                base_url TEXT NOT NULL DEFAULT '',
+                main_model TEXT NOT NULL DEFAULT '',
+                haiku_model TEXT NOT NULL DEFAULT '',
+                opus_model TEXT NOT NULL DEFAULT '',
+                sonnet_model TEXT NOT NULL DEFAULT '',
+                agent_team INTEGER NOT NULL DEFAULT 0,
+                config_json TEXT NOT NULL DEFAULT '{}',
+                is_active INTEGER NOT NULL DEFAULT 0,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)

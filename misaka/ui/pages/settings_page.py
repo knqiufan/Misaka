@@ -7,17 +7,18 @@ default model configuration.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import flet as ft
 
 import misaka.i18n as i18n
 from misaka.i18n import t
-from misaka.ui.theme import make_text_field, make_dropdown
+from misaka.ui.theme import make_dropdown, make_text_field
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
-    from misaka.db.models import ApiProvider
+    from misaka.db.models import ApiProvider, RouterConfig
     from misaka.state import AppState
 
 
@@ -64,8 +65,7 @@ class SettingsPage(ft.Column):
         self._on_locale_change = on_locale_change
         self._providers: list[ApiProvider] = []
         self._provider_list: ft.Column | None = None
-        self._cli_json_field: ft.TextField | None = None
-        self._cli_settings_original: dict = {}
+        self._router_list: ft.Column | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -88,9 +88,6 @@ class SettingsPage(ft.Column):
         # --- Permission mode section ---
         permission_section = self._build_permission_section()
 
-        # --- Claude Code CLI section ---
-        cli_section = self._build_cli_section()
-
         # --- Claude CLI Settings (settings.json) section ---
         cli_settings_section = self._build_cli_settings_section()
 
@@ -111,7 +108,6 @@ class SettingsPage(ft.Column):
             self._wrap_card(provider_section),
             self._wrap_card(appearance_section),
             self._wrap_card(permission_section),
-            self._wrap_card(cli_section),
             self._wrap_card(cli_settings_section),
             self._wrap_card(claude_update_section),
             self._wrap_card(env_status_section),
@@ -250,7 +246,11 @@ class SettingsPage(ft.Column):
                             ft.IconButton(
                                 icon=ft.Icons.POWER_SETTINGS_NEW,
                                 icon_color=ft.Colors.GREEN if not is_active else ft.Colors.GREY,
-                                tooltip=t("settings.activate") if not is_active else t("settings.deactivate"),
+                                tooltip=(
+                                    t("settings.activate")
+                                    if not is_active
+                                    else t("settings.deactivate")
+                                ),
                                 on_click=lambda e, pid=provider.id: self._toggle_provider(pid),
                                 icon_size=20,
                             ),
@@ -495,188 +495,348 @@ class SettingsPage(ft.Column):
             self.db.set_setting("permission_mode", mode)
 
     # ---------------------------------------------------------------
-    # CLI section
-    # ---------------------------------------------------------------
-
-    def _build_cli_section(self) -> ft.Control:
-        # Default working directory
-        current_dir = ""
-        if self.db:
-            current_dir = self.db.get_setting("default_working_directory") or ""
-
-        dir_field = make_text_field(
-            label=t("settings.default_working_dir"),
-            value=current_dir,
-            hint_text=t("settings.default_working_dir_hint"),
-            on_change=self._save_working_dir,
-        )
-
-        # Default model
-        current_model = ""
-        if self.db:
-            current_model = self.db.get_setting("default_model") or ""
-
-        model_dropdown = make_dropdown(
-            label=t("settings.default_model"),
-            value=current_model or "sonnet",
-            options=[
-                ft.dropdown.Option(key="sonnet", text="Sonnet 4.5"),
-                ft.dropdown.Option(key="opus", text="Opus 4.6"),
-                ft.dropdown.Option(key="haiku", text="Haiku 4.5"),
-            ],
-            on_select=self._save_default_model,
-        )
-
-        return ft.Container(
-            content=ft.Column(
-                controls=[
-                    ft.Text(t("settings.claude_code"), size=18, weight=ft.FontWeight.W_500),
-                    ft.Text(
-                        t("settings.claude_code_desc"),
-                        size=12,
-                        opacity=0.6,
-                    ),
-                    dir_field,
-                    model_dropdown,
-                ],
-                spacing=12,
-                expand=True,
-            ),
-            padding=ft.Padding.symmetric(horizontal=24, vertical=16),
-            expand=True,
-        )
-
-    def _save_working_dir(self, e: ft.ControlEvent) -> None:
-        if self.db and e.data is not None:
-            self.db.set_setting("default_working_directory", e.data)
-
-    def _save_default_model(self, e: ft.ControlEvent) -> None:
-        model = e.data or e.control.value
-        if self.db and model:
-            self.db.set_setting("default_model", model)
-
-    # ---------------------------------------------------------------
-    # CLI Settings section (~/.claude/settings.json)
+    # Claude Code Router section
     # ---------------------------------------------------------------
 
     def _build_cli_settings_section(self) -> ft.Control:
-        """Build the Claude CLI settings.json editor section."""
-        import json
+        """Build the Claude Code Router configuration section."""
+        self._router_list = ft.Column(spacing=4)
+        self._refresh_router_list()
 
-        cli_svc = None
-        if hasattr(self.state, "services") and self.state.services:
-            cli_svc = getattr(self.state.services, "cli_settings_service", None)
-
-        settings_data = cli_svc.read_settings() if cli_svc else {}
-        self._cli_settings_original = dict(settings_data)
-
-        # JSON editor
-        self._cli_json_field = make_text_field(
-            value=json.dumps(settings_data, indent=2, ensure_ascii=False) if settings_data else "",
-            multiline=True,
-            min_lines=8,
-            max_lines=20,
-            text_size=12,
-            expand=True,
-        )
-
-        if not settings_data:
-            empty_notice = ft.Text(
-                t("settings.cli_settings_empty"),
-                size=12, italic=True, opacity=0.5,
-            )
-        else:
-            empty_notice = ft.Container(height=0)
-
-        format_btn = ft.OutlinedButton(
-            t("settings.cli_settings_format"),
-            icon=ft.Icons.FORMAT_ALIGN_LEFT,
-            on_click=self._format_cli_json,
-        )
-
-        reset_btn = ft.OutlinedButton(
-            t("settings.cli_settings_reset"),
-            icon=ft.Icons.RESTORE,
-            on_click=self._reset_cli_settings,
-        )
-
-        save_btn = ft.Button(
-            t("common.save"),
-            icon=ft.Icons.SAVE,
-            on_click=self._save_cli_settings,
+        add_btn = ft.Button(
+            content=t("settings.router_add"),
+            icon=ft.Icons.ADD,
+            on_click=self._show_add_router_dialog,
         )
 
         return ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Text(t("settings.cli_settings"), size=18, weight=ft.FontWeight.W_500),
-                    ft.Text(t("settings.cli_settings_desc"), size=12, opacity=0.6),
-                    empty_notice,
-                    self._cli_json_field,
                     ft.Row(
-                        controls=[format_btn, reset_btn, ft.Container(expand=True), save_btn],
-                        spacing=8,
+                        controls=[
+                            ft.Text(
+                                t("settings.router_title"),
+                                size=18,
+                                weight=ft.FontWeight.W_500,
+                            ),
+                            ft.Container(expand=True),
+                            add_btn,
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
+                    ft.Text(
+                        t("settings.router_desc"),
+                        size=12,
+                        opacity=0.6,
+                    ),
+                    self._router_list,
                 ],
                 spacing=12,
-                expand=True,
             ),
             padding=ft.Padding.symmetric(horizontal=24, vertical=16),
-            expand=True,
         )
 
-    def _format_cli_json(self, e: ft.ControlEvent) -> None:
-        import json
-        if self._cli_json_field:
-            try:
-                data = json.loads(self._cli_json_field.value or "{}")
-                self._cli_json_field.value = json.dumps(data, indent=2, ensure_ascii=False)
-                self._cli_json_field.update()
-            except json.JSONDecodeError:
-                pass
-
-    def _reset_cli_settings(self, e: ft.ControlEvent) -> None:
-        import json
-        if self._cli_json_field:
-            self._cli_json_field.value = json.dumps(
-                self._cli_settings_original, indent=2, ensure_ascii=False
-            )
-            self._cli_json_field.update()
-
-    def _save_cli_settings(self, e: ft.ControlEvent) -> None:
-        import json
-        if not e.page:
-            return
-
-        page = e.page
-        cli_svc = None
+    def _get_router_service(self):
         if hasattr(self.state, "services") and self.state.services:
-            cli_svc = getattr(self.state.services, "cli_settings_service", None)
+            return getattr(self.state.services, "router_config_service", None)
+        return None
 
-        if not cli_svc or not self._cli_json_field:
+    def _refresh_router_list(self) -> None:
+        if not hasattr(self, "_router_list") or not self._router_list:
+            return
+        svc = self._get_router_service()
+        if not svc:
             return
 
-        try:
-            data = json.loads(self._cli_json_field.value or "{}")
-        except json.JSONDecodeError:
-            page.show_dialog(ft.SnackBar(content=ft.Text("Invalid JSON"), bgcolor=ft.Colors.ERROR))
+        configs = svc.get_all()
+        if not configs:
+            self._router_list.controls = [
+                ft.Container(
+                    content=ft.Text(
+                        t("settings.router_no_configs"),
+                        italic=True,
+                        size=12,
+                        opacity=0.5,
+                    ),
+                    padding=12,
+                )
+            ]
             return
 
-        def do_save(ev):
+        self._router_list.controls = [
+            self._build_router_card(c) for c in configs
+        ]
+
+    def _build_router_card(self, config: RouterConfig) -> ft.Control:
+        is_active = config.is_active == 1
+
+        status_badge = ft.Container(
+            content=ft.Text(
+                t("settings.router_in_use") if is_active else "",
+                size=10,
+                weight=ft.FontWeight.BOLD,
+                color=ft.Colors.WHITE,
+            ),
+            bgcolor=ft.Colors.GREEN if is_active else ft.Colors.TRANSPARENT,
+            border_radius=4,
+            padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+            visible=is_active,
+        )
+
+        model_info = config.main_model or ""
+        if model_info:
+            model_info = f"Model: {model_info}"
+
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Column(
+                        controls=[
+                            ft.Row(
+                                controls=[
+                                    ft.Text(
+                                        config.name,
+                                        size=14,
+                                        weight=ft.FontWeight.W_500,
+                                    ),
+                                    status_badge,
+                                ],
+                                spacing=8,
+                            ),
+                            ft.Text(
+                                model_info if model_info else config.name,
+                                size=11,
+                                opacity=0.6,
+                            ),
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                    ft.Row(
+                        controls=[
+                            ft.OutlinedButton(
+                                t("settings.router_enable"),
+                                on_click=lambda e, cid=config.id: (
+                                    self._activate_router(cid)
+                                ),
+                                visible=not is_active,
+                            ) if not is_active else ft.Container(width=0),
+                            ft.IconButton(
+                                icon=ft.Icons.EDIT,
+                                tooltip=t("common.edit"),
+                                on_click=lambda e, c=config: (
+                                    self._show_edit_router_dialog(c)
+                                ),
+                                icon_size=20,
+                            ),
+                            ft.IconButton(
+                                icon=ft.Icons.DELETE,
+                                tooltip=t("common.delete"),
+                                icon_color=ft.Colors.ERROR,
+                                on_click=lambda e, cid=config.id: (
+                                    self._delete_router(cid)
+                                ),
+                                icon_size=20,
+                            ),
+                        ],
+                        spacing=0,
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=12,
+            border_radius=8,
+            border=ft.Border.all(
+                1,
+                ft.Colors.GREEN if is_active else ft.Colors.OUTLINE,
+            ),
+        )
+
+    def _show_add_router_dialog(self, e: ft.ControlEvent) -> None:
+        self._show_router_form(e.page, config=None)
+
+    def _show_edit_router_dialog(self, config: RouterConfig) -> None:
+        if self.state.page:
+            self._show_router_form(self.state.page, config=config)
+
+    def _show_router_form(
+        self, page: ft.Page, config: RouterConfig | None
+    ) -> None:
+        is_edit = config is not None
+        svc = self._get_router_service()
+
+        # Parse form values from config_json if editing
+        form_vals: dict[str, str | bool] = {}
+        if is_edit and config and svc:
+            form_vals = svc.sync_json_to_form(config.config_json)
+
+        name_field = make_text_field(
+            label=t("settings.router_name"),
+            value=config.name if config else "",
+            autofocus=True,
+        )
+        api_key_field = make_text_field(
+            label=t("settings.router_api_key"),
+            value=config.api_key if config else "",
+            password=True,
+            can_reveal_password=True,
+        )
+        base_url_field = make_text_field(
+            label=t("settings.router_base_url"),
+            value=config.base_url if config else "",
+        )
+        main_model_field = make_text_field(
+            label=t("settings.router_main_model"),
+            value=str(form_vals.get("main_model", "")),
+        )
+        haiku_model_field = make_text_field(
+            label=t("settings.router_haiku_model"),
+            value=str(form_vals.get("haiku_model", "")),
+        )
+        opus_model_field = make_text_field(
+            label=t("settings.router_opus_model"),
+            value=str(form_vals.get("opus_model", "")),
+        )
+        sonnet_model_field = make_text_field(
+            label=t("settings.router_sonnet_model"),
+            value=str(form_vals.get("sonnet_model", "")),
+        )
+        agent_team_switch = ft.Switch(
+            label=t("settings.router_agent_team"),
+            value=bool(form_vals.get("agent_team", False)),
+        )
+        config_json_field = make_text_field(
+            label=t("settings.router_config_json"),
+            value=config.config_json if config else "{}",
+            multiline=True,
+            min_lines=4,
+            max_lines=10,
+            text_size=11,
+        )
+
+        model_fields = {
+            "main_model": main_model_field,
+            "haiku_model": haiku_model_field,
+            "opus_model": opus_model_field,
+            "sonnet_model": sonnet_model_field,
+        }
+
+        def on_model_field_change(field_name: str):
+            def handler(e: ft.ControlEvent):
+                if not svc:
+                    return
+                current_json = config_json_field.value or "{}"
+                updated = svc.sync_form_to_json(
+                    current_json, field_name, e.data or ""
+                )
+                config_json_field.value = updated
+                config_json_field.update()
+            return handler
+
+        for fname, fld in model_fields.items():
+            fld.on_change = on_model_field_change(fname)
+
+        def on_agent_team_change(e: ft.ControlEvent):
+            if not svc:
+                return
+            current_json = config_json_field.value or "{}"
+            updated = svc.sync_form_to_json(
+                current_json, "agent_team", agent_team_switch.value
+            )
+            config_json_field.value = updated
+            config_json_field.update()
+
+        agent_team_switch.on_change = on_agent_team_change
+
+        def on_json_change(e: ft.ControlEvent):
+            if not svc:
+                return
+            raw = config_json_field.value or "{}"
+            vals = svc.sync_json_to_form(raw)
+            for fname, fld in model_fields.items():
+                new_val = str(vals.get(fname, ""))
+                if fld.value != new_val:
+                    fld.value = new_val
+                    fld.update()
+            new_agent = bool(vals.get("agent_team", False))
+            if agent_team_switch.value != new_agent:
+                agent_team_switch.value = new_agent
+                agent_team_switch.update()
+
+        config_json_field.on_blur = on_json_change
+
+        def save(ev):
+            name = (name_field.value or "").strip()
+            if not name:
+                return
+
+            kwargs = {
+                "api_key": api_key_field.value or "",
+                "base_url": base_url_field.value or "",
+                "main_model": main_model_field.value or "",
+                "haiku_model": haiku_model_field.value or "",
+                "opus_model": opus_model_field.value or "",
+                "sonnet_model": sonnet_model_field.value or "",
+                "agent_team": agent_team_switch.value or False,
+                "config_json": config_json_field.value or "{}",
+            }
+
+            if is_edit and config and svc:
+                svc.update(config.id, name=name, **kwargs)
+            elif svc:
+                svc.create(name, **kwargs)
+
+            self._refresh_router_list()
             page.pop_dialog()
-            cli_svc.write_settings(data)
-            self._cli_settings_original = dict(data)
-            page.show_dialog(ft.SnackBar(content=ft.Text(t("settings.cli_settings_saved"))))
+            self.state.update()
 
         dialog = ft.AlertDialog(
-            title=ft.Text(t("settings.cli_settings_save_confirm_title")),
-            content=ft.Text(t("settings.cli_settings_save_confirm")),
+            title=ft.Text(
+                t("settings.router_edit") if is_edit
+                else t("settings.router_add")
+            ),
+            content=ft.Column(
+                controls=[
+                    name_field,
+                    api_key_field,
+                    base_url_field,
+                    main_model_field,
+                    sonnet_model_field,
+                    opus_model_field,
+                    haiku_model_field,
+                    agent_team_switch,
+                    config_json_field,
+                ],
+                spacing=12,
+                tight=True,
+                scroll=ft.ScrollMode.AUTO,
+                width=450,
+            ),
             actions=[
-                ft.TextButton(t("common.cancel"), on_click=lambda ev: page.pop_dialog()),
-                ft.Button(t("common.save"), on_click=do_save),
+                ft.TextButton(
+                    t("common.cancel"),
+                    on_click=lambda ev: page.pop_dialog(),
+                ),
+                ft.Button(t("common.save"), on_click=save),
             ],
         )
         page.show_dialog(dialog)
+
+    def _activate_router(self, config_id: str) -> None:
+        svc = self._get_router_service()
+        if not svc:
+            return
+        svc.activate(config_id)
+        self._refresh_router_list()
+        self.state.update()
+
+    def _delete_router(self, config_id: str) -> None:
+        svc = self._get_router_service()
+        if not svc:
+            return
+        svc.delete(config_id)
+        self._refresh_router_list()
+        self.state.update()
 
     # ---------------------------------------------------------------
     # Language section

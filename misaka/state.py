@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 from misaka.db.models import ChatSession, Message, TaskItem
 
-
 # ---------------------------------------------------------------------------
 # Content block types used during streaming
 # ---------------------------------------------------------------------------
@@ -135,6 +134,9 @@ class AppState:
 
         # --- i18n state ---
         self.locale: str = "zh-CN"
+
+        # --- Model selection ---
+        self.selected_model: str = "default"
 
     # ----- Helpers -----
 

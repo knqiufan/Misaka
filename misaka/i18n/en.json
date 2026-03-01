@@ -39,7 +39,9 @@
     "yesterday": "Yesterday",
     "earlier": "Earlier",
     "load_earlier": "Load earlier messages",
-    "commands_title": "Commands"
+    "commands_title": "Commands",
+    "command_menu": "Command Menu",
+    "select_model": "Select Model"
   },
   "settings": {
     "title": "Settings",
@@ -105,7 +107,25 @@
     "update_available": "Update available",
     "env_status": "Environment Status",
     "env_status_desc": "Check and install required runtime dependencies.",
-    "recheck": "Re-check"
+    "recheck": "Re-check",
+    "router_title": "Claude Code Router",
+    "router_desc": "Manage multiple Claude Code configurations for quick environment switching",
+    "router_add": "Add Configuration",
+    "router_edit": "Edit Configuration",
+    "router_name": "Provider Name",
+    "router_api_key": "API Key",
+    "router_base_url": "Request URL",
+    "router_main_model": "Main Model",
+    "router_haiku_model": "Haiku Model",
+    "router_opus_model": "Opus Model",
+    "router_sonnet_model": "Sonnet Model",
+    "router_agent_team": "Agent Team Mode",
+    "router_config_json": "Config JSON",
+    "router_enable": "Enable",
+    "router_in_use": "In Use",
+    "router_default": "Default",
+    "router_activate_confirm": "Activate this configuration? This will overwrite ~/.claude/settings.json",
+    "router_no_configs": "No configurations yet. Click the add button to create one"
   },
   "plugins": {
     "title": "Plugins (MCP Servers)",

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Misaka is a desktop GUI client for Claude Code, built with Python 3.10+ and [Flet](https://flet.dev) (Flutter-based UI framework). It wraps the `claude-agent-sdk` to provide multi-turn streaming conversations, session management, file browsing, MCP server integration, and skill management in a Material Design 3 interface.
+Misaka is a desktop GUI client for Claude Code, built with Python 3.10+ and [Flet](https://flet.dev) 0.80.x (Flutter-based UI framework). It wraps the `claude-agent-sdk` to provide multi-turn streaming conversations, session management, file browsing, MCP server integration, and skill management in a Material Design 3 interface.
 
 **External runtime requirement:** Node.js + `@anthropic-ai/claude-code` CLI installed globally.
 

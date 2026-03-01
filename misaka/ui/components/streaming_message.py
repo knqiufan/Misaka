@@ -6,15 +6,15 @@ with live-updating text, tool call blocks, and a progress indicator.
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 import flet as ft
 
-from misaka.ui.components.code_block import CodeBlock
 from misaka.ui.components.tool_call_block import ToolCallBlock
 
 if TYPE_CHECKING:
-    from misaka.state import AppState, StreamingTextBlock, StreamingToolUseBlock
+    from misaka.state import AppState, StreamingToolUseBlock
 
 
 class StreamingMessage(ft.Container):
@@ -23,9 +23,24 @@ class StreamingMessage(ft.Container):
     def __init__(self, state: AppState) -> None:
         super().__init__()
         self.state = state
+        self._thinking_text: ft.Text | None = None
+        self._pulse_low = True
         self._build_ui()
 
+    def did_mount(self) -> None:
+        """Start the thinking pulse animation after mounting."""
+        self._start_thinking_pulse()
+
+    def _start_thinking_pulse(self) -> None:
+        """Toggle the thinking text opacity to create a gentle pulse effect."""
+        if self._thinking_text and self.page:
+            self._thinking_text.opacity = 0.2 if self._pulse_low else 0.6
+            self._pulse_low = not self._pulse_low
+            with contextlib.suppress(Exception):
+                self._thinking_text.update()
+
     def _build_ui(self) -> None:
+        self._thinking_text = None
         if not self.state.is_streaming:
             self.visible = False
             self.content = ft.Container()
@@ -74,15 +89,21 @@ class StreamingMessage(ft.Container):
                 )
 
         if len(controls) == 1:
-            # Only header, no content yet - show thinking indicator
+            # Only header, no content yet - show thinking indicator with shimmer
+            thinking_text = ft.Text(
+                "Thinking...",
+                size=13,
+                italic=True,
+                opacity=0.6,
+                animate_opacity=ft.Animation(800, ft.AnimationCurve.EASE_IN_OUT),
+            )
             controls.append(
                 ft.Row(
-                    controls=[
-                        ft.Text("Thinking...", size=13, italic=True, opacity=0.6),
-                    ],
+                    controls=[thinking_text],
                     spacing=8,
                 )
             )
+            self._thinking_text = thinking_text
 
         self.content = ft.Column(controls=controls, spacing=6)
         self.padding = ft.Padding.symmetric(horizontal=16, vertical=10)
@@ -92,3 +113,4 @@ class StreamingMessage(ft.Container):
     def refresh(self) -> None:
         """Rebuild the streaming display from current state."""
         self._build_ui()
+        self._start_thinking_pulse()

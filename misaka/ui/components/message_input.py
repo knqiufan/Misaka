@@ -7,7 +7,9 @@ Supports Shift+Enter for newline and Enter to send.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+import contextlib
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import flet as ft
 
@@ -27,17 +29,20 @@ class MessageInput(ft.Container):
         on_send: Callable[[str], None] | None = None,
         on_abort: Callable[[], None] | None = None,
         on_command: Callable[[str], None] | None = None,
+        on_model_change: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__()
         self.state = state
         self._on_send = on_send
         self._on_abort = on_abort
         self._on_command = on_command
+        self._on_model_change = on_model_change
         self._text_field: ft.TextField | None = None
         self._send_btn: ft.IconButton | None = None
         self._command_menu: ft.Column | None = None
         self._command_menu_container: ft.Container | None = None
         self._badge_container: ft.Container | None = None
+        self._model_indicator: ft.Container | None = None
         self._active_badge: SlashCommand | None = None
         self._build_ui()
 
@@ -81,6 +86,14 @@ class MessageInput(ft.Container):
             style=ft.ButtonStyle(padding=6),
         )
 
+        command_btn = ft.IconButton(
+            icon=ft.Icons.TERMINAL,
+            tooltip=t("chat.command_menu"),
+            on_click=lambda e: self._show_command_menu(filter_commands("")),
+            icon_size=18,
+            style=ft.ButtonStyle(padding=6),
+        )
+
         self._command_menu = ft.Column(spacing=0, tight=True)
         self._command_menu_container = ft.Container(
             content=self._command_menu,
@@ -99,8 +112,11 @@ class MessageInput(ft.Container):
 
         self._badge_container = ft.Container(visible=False)
 
+        self._model_indicator = self._build_model_indicator()
+
         input_row = ft.Row(
-            controls=[attach_btn, self._badge_container, self._text_field, self._send_btn],
+            controls=[attach_btn, command_btn, self._model_indicator,
+                      self._badge_container, self._text_field, self._send_btn],
             spacing=6,
             vertical_alignment=ft.CrossAxisAlignment.END,
         )
@@ -179,6 +195,13 @@ class MessageInput(ft.Container):
         """Handle selection of a slash command from the menu."""
         self._hide_command_menu()
 
+        if cmd.name == "model":
+            if self._text_field:
+                self._text_field.value = ""
+                self._text_field.update()
+            self._show_model_menu()
+            return
+
         if cmd.immediate:
             if self._text_field:
                 self._text_field.value = ""
@@ -191,6 +214,126 @@ class MessageInput(ft.Container):
                 self._text_field.value = ""
                 self._text_field.update()
                 self._text_field.focus()
+
+    # ------------------------------------------------------------------
+    # Model sub-menu
+    # ------------------------------------------------------------------
+
+    def _get_model_options(self) -> list[tuple[str, str]]:
+        """Read model names from settings and build option list."""
+        options: list[tuple[str, str]] = [("default", "Default")]
+        if hasattr(self.state, "services") and self.state.services:
+            cli_svc = getattr(self.state.services, "cli_settings_service", None)
+            if cli_svc:
+                settings = cli_svc.read_settings()
+                env = settings.get("env", {})
+                sonnet = env.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "Sonnet")
+                opus = env.get("ANTHROPIC_DEFAULT_OPUS_MODEL", "Opus")
+                haiku = env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL", "Haiku")
+                main = env.get("ANTHROPIC_MODEL", "")
+                if main and main != options[0][1]:
+                    options[0] = ("default", f"Default ({main})")
+                options.append(("sonnet", sonnet if sonnet != "Sonnet" else "Sonnet"))
+                options.append(("opus", opus if opus != "Opus" else "Opus"))
+                options.append(("haiku", haiku if haiku != "Haiku" else "Haiku"))
+                return options
+        options.extend([("sonnet", "Sonnet"), ("opus", "Opus"), ("haiku", "Haiku")])
+        return options
+
+    def _show_model_menu(self) -> None:
+        """Show a second-level menu for model selection."""
+        if not self._command_menu or not self._command_menu_container:
+            return
+
+        options = self._get_model_options()
+        current = self.state.selected_model
+
+        items: list[ft.Control] = []
+        for value, label in options:
+            is_selected = value == current
+            items.append(
+                ft.Container(
+                    content=ft.Row(
+                        controls=[
+                            ft.Icon(
+                                ft.Icons.CHECK if is_selected else ft.Icons.CIRCLE,
+                                size=14,
+                                opacity=1.0 if is_selected else 0.3,
+                                color=ft.Colors.PRIMARY if is_selected else None,
+                            ),
+                            ft.Text(
+                                label,
+                                size=13,
+                                weight=(
+                                    ft.FontWeight.W_600
+                                    if is_selected
+                                    else ft.FontWeight.NORMAL
+                                ),
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.Padding.symmetric(horizontal=12, vertical=6),
+                    on_click=lambda e, v=value: self._select_model(v),
+                    ink=True,
+                )
+            )
+
+        self._command_menu.controls = items
+        self._command_menu_container.visible = True
+        self._command_menu_container.update()
+
+    def _select_model(self, model: str) -> None:
+        """Handle model selection from the sub-menu."""
+        self._hide_command_menu()
+        self.state.selected_model = model
+        self._refresh_model_indicator()
+        if self._on_model_change:
+            self._on_model_change(model)
+
+    def _build_model_indicator(self) -> ft.Container:
+        """Build a small badge showing the currently selected model."""
+        model = self.state.selected_model
+        if model == "default":
+            return ft.Container(visible=False)
+
+        label = model.capitalize()
+        return ft.Container(
+            content=ft.Text(
+                label,
+                size=10,
+                weight=ft.FontWeight.W_600,
+                color=ft.Colors.PRIMARY,
+            ),
+            border=ft.Border.all(1, ft.Colors.PRIMARY),
+            border_radius=6,
+            padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+        )
+
+    def _refresh_model_indicator(self) -> None:
+        """Update the model indicator badge."""
+        if not self._model_indicator:
+            return
+        model = self.state.selected_model
+        if model == "default":
+            self._model_indicator.visible = False
+            self._model_indicator.content = None
+        else:
+            self._model_indicator.visible = True
+            self._model_indicator.content = ft.Text(
+                model.capitalize(),
+                size=10,
+                weight=ft.FontWeight.W_600,
+                color=ft.Colors.PRIMARY,
+            )
+            self._model_indicator.border = ft.Border.all(1, ft.Colors.PRIMARY)
+            self._model_indicator.border_radius = 6
+            self._model_indicator.padding = ft.Padding.symmetric(
+                horizontal=6, vertical=2
+            )
+        with contextlib.suppress(Exception):
+            self._model_indicator.update()
 
     # ------------------------------------------------------------------
     # Badge (non-immediate commands)

@@ -12,7 +12,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-
 # ---------------------------------------------------------------------------
 # Chat session
 # ---------------------------------------------------------------------------
@@ -214,6 +213,30 @@ class FilePreview:
     content: str
     language: str
     line_count: int
+
+
+# ---------------------------------------------------------------------------
+# Router configuration
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RouterConfig:
+    """A Claude Code Router configuration."""
+
+    id: str
+    name: str
+    api_key: str = ""
+    base_url: str = ""
+    main_model: str = ""
+    haiku_model: str = ""
+    opus_model: str = ""
+    sonnet_model: str = ""
+    agent_team: bool = False
+    config_json: str = "{}"
+    is_active: int = 0
+    sort_order: int = 0
+    created_at: str = ""
+    updated_at: str = ""
 
 
 # ---------------------------------------------------------------------------

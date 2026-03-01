@@ -39,7 +39,9 @@
     "yesterday": "昨天",
     "earlier": "更早",
     "load_earlier": "載入更早的訊息",
-    "commands_title": "命令"
+    "commands_title": "命令",
+    "command_menu": "命令選單",
+    "select_model": "選擇模型"
   },
   "settings": {
     "title": "設定",
@@ -105,7 +107,25 @@
     "update_available": "有可用更新",
     "env_status": "環境狀態",
     "env_status_desc": "檢查並安裝所需的執行環境依賴。",
-    "recheck": "重新檢查"
+    "recheck": "重新檢查",
+    "router_title": "Claude Code Router",
+    "router_desc": "管理多個 Claude Code 設定，快速切換不同環境",
+    "router_add": "新增設定",
+    "router_edit": "編輯設定",
+    "router_name": "供應商名稱",
+    "router_api_key": "API Key",
+    "router_base_url": "請求位址",
+    "router_main_model": "主模型",
+    "router_haiku_model": "Haiku 模型",
+    "router_opus_model": "Opus 模型",
+    "router_sonnet_model": "Sonnet 模型",
+    "router_agent_team": "Agent Team 模式",
+    "router_config_json": "設定 JSON",
+    "router_enable": "啟用",
+    "router_in_use": "使用中",
+    "router_default": "Default",
+    "router_activate_confirm": "確認啟用此設定？這將覆寫 ~/.claude/settings.json",
+    "router_no_configs": "暫無設定，點擊新增按鈕建立"
   },
   "plugins": {
     "title": "外掛（MCP 伺服器）",

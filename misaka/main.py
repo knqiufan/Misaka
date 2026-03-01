@@ -9,31 +9,33 @@ dependency injection and graceful shutdown handling.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
 import flet as ft
 
+import misaka.i18n as i18n
 from misaka.config import LOG_PATH, SettingKeys, ensure_data_dir
-from misaka.db.database import create_database, DatabaseBackend
+from misaka.db.database import DatabaseBackend, create_database
 from misaka.services.claude_service import ClaudeService
+from misaka.services.cli_settings_service import CliSettingsService
 from misaka.services.env_check_service import EnvCheckService
+from misaka.services.file_service import FileService
 from misaka.services.mcp_service import MCPService
 from misaka.services.message_service import MessageService
 from misaka.services.permission_service import PermissionService
 from misaka.services.provider_service import ProviderService
-from misaka.services.file_service import FileService
+from misaka.services.router_config_service import RouterConfigService
+from misaka.services.session_import_service import SessionImportService
 from misaka.services.session_service import SessionService
 from misaka.services.settings_service import SettingsService
+from misaka.services.skill_service import SkillService
 from misaka.services.task_service import TaskService
 from misaka.services.update_check_service import UpdateCheckService
-from misaka.services.skill_service import SkillService
-from misaka.services.session_import_service import SessionImportService
-from misaka.services.cli_settings_service import CliSettingsService
 from misaka.state import AppState
 from misaka.ui.app_shell import AppShell
 from misaka.ui.theme import apply_theme
-import misaka.i18n as i18n
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,9 @@ class ServiceContainer:
         self.skill_service = SkillService()
         self.session_import_service = SessionImportService()
         self.cli_settings_service = CliSettingsService()
+        self.router_config_service = RouterConfigService(
+            db, self.cli_settings_service
+        )
 
     async def close(self) -> None:
         """Release resources held by services."""
@@ -94,8 +99,12 @@ def _setup_logging() -> None:
     """Configure application logging.
 
     Logs to both stderr and a file in the data directory.
+    When MISAKA_DEBUG is set, logging level is DEBUG.
     """
     ensure_data_dir()
+
+    is_debug = bool(os.environ.get("MISAKA_DEBUG"))
+    level = logging.DEBUG if is_debug else logging.INFO
 
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
 
@@ -107,7 +116,7 @@ def _setup_logging() -> None:
         print(f"Warning: could not open log file {LOG_PATH}: {exc}", file=sys.stderr)
 
     logging.basicConfig(
-        level=logging.INFO,
+        level=level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=handlers,
     )
@@ -127,6 +136,9 @@ def _main(page: ft.Page) -> None:
 
     # --- Create service container ---
     services = ServiceContainer(db)
+
+    # --- Ensure default router config exists ---
+    services.router_config_service.ensure_default_config()
 
     # --- Set up page properties ---
     page.title = "Misaka"
