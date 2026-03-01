@@ -82,6 +82,7 @@ class SettingKeys:
     PERMISSION_MODE = "permission_mode"
     MAX_THINKING_TOKENS = "max_thinking_tokens"
     DANGEROUSLY_SKIP_PERMISSIONS = "dangerously_skip_permissions"
+    CLAUDE_DEBUG_LOG = "claude_debug_log"
     LANGUAGE = "language"
     ACCENT_COLOR = "accent_color"
 

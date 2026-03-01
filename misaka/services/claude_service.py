@@ -59,6 +59,17 @@ class ClaudeService:
         self._client: Any = None  # ClaudeSDKClient instance
         self._is_streaming: bool = False
         self._abort_event: asyncio.Event = asyncio.Event()
+        self._debug_log_enabled: bool = False
+        self._saw_text_delta_in_turn: bool = False
+
+    def _is_debug_log_enabled(self) -> bool:
+        """Return whether Claude SDK debug logging is enabled."""
+        return self._db.get_setting(SettingKeys.CLAUDE_DEBUG_LOG) == "true"
+
+    def _debug_log(self, message: str, *args: Any) -> None:
+        """Write concise Claude SDK debug logs when enabled."""
+        if self._debug_log_enabled:
+            logger.info("[ClaudeSDK] " + message, *args)
 
     def _build_env(self, provider: ApiProvider | None = None) -> dict[str, str]:
         """Build the subprocess environment for the Claude CLI.
@@ -163,18 +174,10 @@ class ClaudeService:
         # Find Claude binary path
         claude_path = find_claude_binary()
         if claude_path:
-            ext = os.path.splitext(claude_path)[1].lower()
-            if ext in (".cmd", ".bat"):
-                script_path = _resolve_script_from_cmd(claude_path)
-                if script_path:
-                    options.cli_path = script_path
-                else:
-                    logger.warning(
-                        "Could not resolve .js path from .cmd wrapper: %s",
-                        claude_path,
-                    )
-            else:
-                options.cli_path = claude_path
+            # SDK transport executes cli_path directly as a process.
+            # On Windows, passing a resolved .js path causes WinError 193.
+            # Keep the actual executable/wrapper path (e.g. claude.cmd / claude.exe).
+            options.cli_path = claude_path
 
         return options
 
@@ -213,9 +216,19 @@ class ClaudeService:
 
         self._is_streaming = True
         self._abort_event.clear()
+        self._debug_log_enabled = self._is_debug_log_enabled()
+        self._saw_text_delta_in_turn = False
 
         # Get active provider
         provider = self._db.get_active_provider()
+        message_counts: dict[str, int] = {
+            "assistant": 0,
+            "user": 0,
+            "result": 0,
+            "system": 0,
+            "stream_event": 0,
+            "other": 0,
+        }
 
         can_use_tool = None
         if on_permission_request:
@@ -230,6 +243,14 @@ class ClaudeService:
             permission_mode=permission_mode,
             provider=provider,
             can_use_tool=can_use_tool,
+        )
+        self._debug_log(
+            "start sid=%s model=%s cwd=%s resume=%s mcp=%s",
+            session_id,
+            model or "(default)",
+            working_directory or "(home)",
+            bool(sdk_session_id),
+            bool(mcp_servers),
         )
 
         try:
@@ -247,6 +268,8 @@ class ClaudeService:
                 async for message in response_stream:
                     if not self._is_streaming or self._abort_event.is_set():
                         break
+                    kind = self._classify_message_kind(message)
+                    message_counts[kind] = message_counts.get(kind, 0) + 1
 
                     self._dispatch_message(
                         message,
@@ -294,8 +317,28 @@ class ClaudeService:
                 on_error(error_msg)
 
         finally:
+            self._debug_log(
+                "done sid=%s counts=%s",
+                session_id,
+                json.dumps(message_counts, ensure_ascii=False),
+            )
             self._is_streaming = False
             self._client = None
+            self._debug_log_enabled = False
+            self._saw_text_delta_in_turn = False
+
+    @staticmethod
+    def _classify_message_kind(message: Any) -> str:
+        """Classify SDK message into a stable, concise label."""
+        name = type(message).__name__
+        mapping = {
+            "AssistantMessage": "assistant",
+            "UserMessage": "user",
+            "ResultMessage": "result",
+            "SystemMessage": "system",
+            "StreamEvent": "stream_event",
+        }
+        return mapping.get(name, "other")
 
     def _make_permission_callback(
         self,
@@ -355,16 +398,21 @@ class ClaudeService:
         on_result: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """Dispatch a single SDK message to the appropriate callback."""
+        AssistantMessage = ResultMessage = SystemMessage = UserMessage = None
+        StreamEvent = None
         try:
             from claude_agent_sdk import (
                 AssistantMessage,
                 ResultMessage,
-                StreamEvent,
                 SystemMessage,
                 UserMessage,
             )
         except Exception:
-            AssistantMessage = ResultMessage = StreamEvent = SystemMessage = UserMessage = None
+            pass
+        try:
+            from claude_agent_sdk.types import StreamEvent
+        except Exception:
+            pass
 
         if AssistantMessage and isinstance(message, AssistantMessage):
             self._handle_assistant_message(message, on_text=on_text, on_tool_use=on_tool_use)
@@ -401,6 +449,8 @@ class ClaudeService:
 
         elif msg_type == "tool_progress":
             self._handle_tool_progress(message, on_status=on_status)
+        else:
+            self._debug_log("unhandled message type=%s class=%s", msg_type, type(message).__name__)
 
     def _handle_assistant_message(
         self,
@@ -416,12 +466,16 @@ class ClaudeService:
             content = getattr(msg_content, "content", []) if msg_content else []
 
         try:
-            from claude_agent_sdk import TextBlock, ToolUseBlock
+            from claude_agent_sdk.types import TextBlock, ToolUseBlock
         except Exception:
             TextBlock = ToolUseBlock = None
 
         for block in content:
             if TextBlock and isinstance(block, TextBlock) and on_text:
+                if self._saw_text_delta_in_turn:
+                    # Prevent duplicate output: when partial text deltas were already streamed,
+                    # assistant full text blocks would repeat the same content.
+                    continue
                 if block.text:
                     on_text(block.text)
                 continue
@@ -433,6 +487,8 @@ class ClaudeService:
             if isinstance(block, dict):
                 block_type = block.get("type", block_type)
             if block_type == "text" and on_text:
+                if self._saw_text_delta_in_turn:
+                    continue
                 text = block.get("text", "") if isinstance(block, dict) else getattr(block, "text", "")
                 if text:
                     on_text(text)
@@ -461,7 +517,7 @@ class ClaudeService:
             return
 
         try:
-            from claude_agent_sdk import ToolResultBlock
+            from claude_agent_sdk.types import ToolResultBlock
         except Exception:
             ToolResultBlock = None
 
@@ -580,6 +636,7 @@ class ClaudeService:
                 if delta_type == "text_delta":
                     text = delta.get("text", "") if isinstance(delta, dict) else getattr(delta, "text", "")
                     if text:
+                        self._saw_text_delta_in_turn = True
                         on_text(text)
 
     def _handle_tool_progress(

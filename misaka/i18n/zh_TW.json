@@ -131,7 +131,9 @@
     "misaka_update": "Misaka 更新",
     "misaka_update_desc": "檢查 Misaka 應用更新",
     "misaka_version": "當前版本",
-    "update_not_configured": "更新伺服器尚未配置"
+    "update_not_configured": "更新伺服器尚未配置",
+    "claude_debug_log": "Claude 偵錯日誌",
+    "claude_debug_log_desc": "輸出精簡的 SDK 偵錯資訊（開始/結束/訊息統計/異常），便於排查對話問題。"
   },
   "plugins": {
     "title": "外掛（MCP 伺服器）",

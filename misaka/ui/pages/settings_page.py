@@ -308,6 +308,7 @@ class SettingsPage(ft.Column):
                         opacity=0.6,
                     ),
                     radio_group,
+                    self._build_claude_debug_log_toggle(),
                 ],
                 spacing=12,
             ),
@@ -318,6 +319,45 @@ class SettingsPage(ft.Column):
         mode = e.data or e.control.value
         if mode and self.db:
             self.db.set_setting("permission_mode", mode)
+
+    def _build_claude_debug_log_toggle(self) -> ft.Control:
+        """Build switch for concise Claude SDK debug logs."""
+        enabled = False
+        if self.db:
+            enabled = self.db.get_setting("claude_debug_log") == "true"
+
+        switch = ft.Switch(
+            value=enabled,
+            on_change=self._toggle_claude_debug_log,
+        )
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Column(
+                        controls=[
+                            ft.Text(t("settings.claude_debug_log"), size=13, weight=ft.FontWeight.W_500),
+                            ft.Text(t("settings.claude_debug_log_desc"), size=11, opacity=0.6),
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                    switch,
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=8,
+            ),
+            padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+            border_radius=10,
+            bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)),
+        )
+
+    def _toggle_claude_debug_log(self, e: ft.ControlEvent) -> None:
+        """Persist Claude SDK debug-log switch."""
+        if not self.db:
+            return
+        enabled = bool(e.control.value)
+        self.db.set_setting("claude_debug_log", "true" if enabled else "false")
 
     # ---------------------------------------------------------------
     # Claude Code Router section

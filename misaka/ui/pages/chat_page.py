@@ -794,6 +794,7 @@ class ChatPage(ft.Stack):
         result_sdk_session_id: str | None,
         stream_error: str | None,
     ) -> None:
+        active_sdk_session_id = result_sdk_session_id or session.sdk_session_id or None
         content, _ = self._serialize_stream_blocks()
         if content:
             usage_json = json.dumps(result_usage) if result_usage else None
@@ -810,7 +811,68 @@ class ChatPage(ft.Stack):
             session.sdk_session_id = result_sdk_session_id
             self.state.sdk_session_id = result_sdk_session_id
             self.db.update_sdk_session_id(session.id, result_sdk_session_id)
+        self._maybe_sync_session_title(session, active_sdk_session_id)
         if stream_error:
             self.state.error_message = stream_error
         self._reset_stream_state()
         self._refresh_stream_ui()
+
+    def _maybe_sync_session_title(
+        self,
+        session: ChatSession,
+        sdk_session_id: str | None,
+    ) -> None:
+        """Auto-sync session title after first successful round."""
+        if not self._is_default_session_title(session.title):
+            return
+
+        new_title = self._title_from_claude_session(sdk_session_id)
+        if not new_title:
+            new_title = self._title_from_first_user_message()
+        if not new_title:
+            return
+
+        new_title = new_title.strip()
+        if not new_title or new_title == session.title:
+            return
+
+        session.title = new_title
+        self.db.update_session_title(session.id, new_title)
+        if self._chat_list:
+            self._chat_list.refresh()
+        if self._chat_view:
+            self._chat_view.refresh()
+
+    @staticmethod
+    def _is_default_session_title(title: str) -> bool:
+        normalized = (title or "").strip().lower()
+        return normalized in {"", "new chat"}
+
+    def _title_from_claude_session(self, sdk_session_id: str | None) -> str | None:
+        if not sdk_session_id:
+            return None
+        services = getattr(self.state, "services", None)
+        import_svc = getattr(services, "session_import_service", None) if services else None
+        if not import_svc:
+            return None
+        try:
+            return import_svc.get_session_title(sdk_session_id)
+        except Exception:
+            return None
+
+    def _title_from_first_user_message(self) -> str | None:
+        for msg in self.state.messages:
+            if msg.role != "user":
+                continue
+            for block in msg.parse_content():
+                if block.type != "text" or not block.text:
+                    continue
+                first_line = block.text.strip().splitlines()[0].strip()
+                if not first_line:
+                    continue
+                words = first_line.split()
+                if len(words) <= 12 and len(first_line) <= 60:
+                    return first_line
+                short = " ".join(words[:12]).strip()
+                return (short + "...") if short else None
+        return None

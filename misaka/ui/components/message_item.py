@@ -105,22 +105,52 @@ class MessageItem(ft.Container):
     def _render_assistant_blocks(
         self, blocks: list[MessageContentBlock]
     ) -> list[ft.Control]:
-        paired_tools, text_blocks, code_blocks = self._categorise_blocks(blocks)
         controls: list[ft.Control] = []
+        result_map: dict[str, MessageContentBlock] = {
+            b.tool_use_id: b
+            for b in blocks
+            if b.type == "tool_result" and b.tool_use_id
+        }
+        consumed_results: set[str] = set()
 
-        for block in text_blocks:
-            text = block.text or ""
-            if not text.strip():
+        for block in blocks:
+            if block.type == "text":
+                text = block.text or ""
+                if not text.strip():
+                    continue
+                ctrl = self._smart_render_text(text)
+                if ctrl:
+                    controls.append(ctrl)
                 continue
-            ctrl = self._smart_render_text(text)
-            if ctrl:
-                controls.append(ctrl)
 
-        if paired_tools:
-            controls.append(self._render_tool_group(paired_tools))
+            if block.type == "tool_use" and block.name:
+                result_block = result_map.get(block.id or "") if block.id else None
+                if block.id and result_block:
+                    consumed_results.add(block.id)
+                controls.append(
+                    ToolCallBlock(
+                        tool_name=block.name,
+                        tool_input=block.input if isinstance(block.input, dict) else None,
+                        tool_output=result_block.content if result_block else None,
+                        is_error=result_block.is_error if result_block else False,
+                    )
+                )
+                continue
 
-        for block in code_blocks:
-            if block.code:
+            if block.type == "tool_result":
+                if block.tool_use_id and block.tool_use_id in consumed_results:
+                    continue
+                controls.append(
+                    ToolCallBlock(
+                        tool_name="tool_result",
+                        tool_input=None,
+                        tool_output=block.content,
+                        is_error=block.is_error,
+                    )
+                )
+                continue
+
+            if block.type == "code" and block.code:
                 controls.append(
                     CodeBlock(code=block.code, language=block.language or "plaintext")
                 )

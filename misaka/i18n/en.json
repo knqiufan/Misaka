@@ -131,7 +131,9 @@
     "misaka_update": "Misaka Update",
     "misaka_update_desc": "Check for Misaka application updates",
     "misaka_version": "Current Version",
-    "update_not_configured": "Update server not configured yet"
+    "update_not_configured": "Update server not configured yet",
+    "claude_debug_log": "Claude Debug Log",
+    "claude_debug_log_desc": "Emit concise SDK debug info (start/end/message stats/errors) for troubleshooting."
   },
   "plugins": {
     "title": "Plugins (MCP Servers)",

@@ -75,24 +75,13 @@ def _is_hot_reload_mode() -> bool:
 
 
 def _launch_flet_hot_reload(script_path: Path) -> int:
-    """Run app via Flet CLI with hot reload and verbose output."""
+    """Run app via Flet CLI with hot reload."""
     env = os.environ.copy()
     env["MISAKA_FLET_CLI_CHILD"] = "1"
     env["MISAKA_DEBUG"] = env.get("MISAKA_DEBUG", "1")
-    env["MISAKA_VERBOSE_LOG"] = env.get("MISAKA_VERBOSE_LOG", "1")
     project_root = script_path.parent.parent
     relative_script = script_path.relative_to(project_root)
     commands = [
-        [
-            "flet",
-            "run",
-            "-v",
-            "-d",
-            "-r",
-            "--assets",
-            "assets",
-            str(relative_script),
-        ],
         [
             "flet",
             "run",
@@ -196,8 +185,9 @@ def _setup_logging() -> None:
     """
     ensure_data_dir()
 
-    is_debug = _is_debug_mode() or _is_truthy_env("MISAKA_VERBOSE_LOG")
-    level = logging.DEBUG if is_debug else logging.INFO
+    # Keep default logs concise. Enable full DEBUG only when explicitly requested.
+    verbose_log = _is_truthy_env("MISAKA_VERBOSE_LOG")
+    level = logging.DEBUG if verbose_log else logging.INFO
 
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
 
@@ -213,10 +203,14 @@ def _setup_logging() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         handlers=handlers,
     )
-    if is_debug:
+    if verbose_log:
         logging.getLogger("flet").setLevel(logging.DEBUG)
         logging.getLogger("watchdog").setLevel(logging.DEBUG)
         logging.getLogger("claude_agent_sdk").setLevel(logging.DEBUG)
+    else:
+        logging.getLogger("flet").setLevel(logging.WARNING)
+        logging.getLogger("watchdog").setLevel(logging.WARNING)
+        logging.getLogger("claude_agent_sdk").setLevel(logging.INFO)
 
 
 def _main(page: ft.Page) -> None:

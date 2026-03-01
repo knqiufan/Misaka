@@ -382,6 +382,21 @@ class SessionImportService:
         logger.info("Found %d CLI sessions in %s", len(sessions), self._projects_dir)
         return sessions
 
+    def get_session_title(self, session_id: str) -> str | None:
+        """Read a live CLI session title from JSONL metadata/summary."""
+        file_path = self._find_session_file(session_id)
+        if file_path is None:
+            return None
+
+        summary_title = self._read_summary_title(file_path)
+        if summary_title:
+            return summary_title
+
+        info = _parse_jsonl_metadata(file_path)
+        if info is None:
+            return None
+        return _make_title(info.project_name, info.preview)
+
     def import_session(self, session_id: str, db: DatabaseBackend) -> ChatSession:
         """Import a Claude Code CLI session into the Misaka database.
 
@@ -471,3 +486,28 @@ class SessionImportService:
             logger.warning("Error searching for session %s: %s", session_id, exc)
 
         return None
+
+    @staticmethod
+    def _read_summary_title(file_path: Path) -> str | None:
+        """Read the latest title-like summary entry from a JSONL transcript."""
+        latest_summary: str | None = None
+        try:
+            with file_path.open("r", encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(entry, dict):
+                        continue
+                    if entry.get("type") != "summary":
+                        continue
+                    summary = str(entry.get("summary", "")).strip()
+                    if summary:
+                        latest_summary = summary
+        except OSError:
+            return None
+        return latest_summary
