@@ -8,6 +8,7 @@ based on navigation selection.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 import flet as ft
@@ -257,6 +258,9 @@ class AppShell(ft.Row):
             env_svc = getattr(self.state.services, 'env_check_service', None)
             if env_svc:
                 async def _do_recheck():
+                    # Yield so the recheck button's click handling completes before we
+                    # replace dialog content (avoids "Control must be added to the page first").
+                    await asyncio.sleep(0)
                     result = await env_svc.check_all()
                     self.state.env_check_result = result
                     if self._env_check_dialog:

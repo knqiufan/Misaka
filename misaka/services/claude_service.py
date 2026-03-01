@@ -167,14 +167,14 @@ class ClaudeService:
             if ext in (".cmd", ".bat"):
                 script_path = _resolve_script_from_cmd(claude_path)
                 if script_path:
-                    options.path_to_claude_code_executable = script_path
+                    options.cli_path = script_path
                 else:
                     logger.warning(
                         "Could not resolve .js path from .cmd wrapper: %s",
                         claude_path,
                     )
             else:
-                options.path_to_claude_code_executable = claude_path
+                options.cli_path = claude_path
 
         return options
 
@@ -311,6 +311,7 @@ class ClaudeService:
         async def _can_use_tool(
             tool_name: str,
             tool_input: dict[str, Any],
+            context: Any = None,
         ) -> Any:
             from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
 
@@ -324,6 +325,7 @@ class ClaudeService:
                 "permission_id": permission_id,
                 "tool_name": tool_name,
                 "tool_input": tool_input,
+                "suggestions": getattr(context, "suggestions", None) if context else None,
             })
 
             # Wait for user decision
@@ -353,6 +355,33 @@ class ClaudeService:
         on_result: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """Dispatch a single SDK message to the appropriate callback."""
+        try:
+            from claude_agent_sdk import (
+                AssistantMessage,
+                ResultMessage,
+                StreamEvent,
+                SystemMessage,
+                UserMessage,
+            )
+        except Exception:
+            AssistantMessage = ResultMessage = StreamEvent = SystemMessage = UserMessage = None
+
+        if AssistantMessage and isinstance(message, AssistantMessage):
+            self._handle_assistant_message(message, on_text=on_text, on_tool_use=on_tool_use)
+            return
+        if UserMessage and isinstance(message, UserMessage):
+            self._handle_user_message(message, on_tool_result=on_tool_result)
+            return
+        if ResultMessage and isinstance(message, ResultMessage):
+            self._handle_result_message(message, on_result=on_result)
+            return
+        if SystemMessage and isinstance(message, SystemMessage):
+            self._handle_system_message(message, on_status=on_status)
+            return
+        if StreamEvent and isinstance(message, StreamEvent):
+            self._handle_stream_event(message, on_text=on_text)
+            return
+
         msg_type = getattr(message, "type", None)
 
         if msg_type == "assistant":
@@ -381,24 +410,37 @@ class ClaudeService:
         on_tool_use: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """Handle an AssistantMessage from the SDK."""
-        msg_content = getattr(message, "message", None)
-        if msg_content is None:
-            return
+        content = getattr(message, "content", None)
+        if content is None:
+            msg_content = getattr(message, "message", None)
+            content = getattr(msg_content, "content", []) if msg_content else []
 
-        content = getattr(msg_content, "content", [])
+        try:
+            from claude_agent_sdk import TextBlock, ToolUseBlock
+        except Exception:
+            TextBlock = ToolUseBlock = None
+
         for block in content:
-            block_type = getattr(block, "type", None)
+            if TextBlock and isinstance(block, TextBlock) and on_text:
+                if block.text:
+                    on_text(block.text)
+                continue
+            if ToolUseBlock and isinstance(block, ToolUseBlock) and on_tool_use:
+                on_tool_use({"id": block.id, "name": block.name, "input": block.input})
+                continue
 
+            block_type = getattr(block, "type", None)
+            if isinstance(block, dict):
+                block_type = block.get("type", block_type)
             if block_type == "text" and on_text:
-                text = getattr(block, "text", "")
+                text = block.get("text", "") if isinstance(block, dict) else getattr(block, "text", "")
                 if text:
                     on_text(text)
-
             elif block_type == "tool_use" and on_tool_use:
                 on_tool_use({
-                    "id": getattr(block, "id", ""),
-                    "name": getattr(block, "name", ""),
-                    "input": getattr(block, "input", {}),
+                    "id": block.get("id", "") if isinstance(block, dict) else getattr(block, "id", ""),
+                    "name": block.get("name", "") if isinstance(block, dict) else getattr(block, "name", ""),
+                    "input": block.get("input", {}) if isinstance(block, dict) else getattr(block, "input", {}),
                 })
 
     def _handle_user_message(
@@ -411,32 +453,57 @@ class ClaudeService:
         if not on_tool_result:
             return
 
-        msg_content = getattr(message, "message", None)
-        if msg_content is None:
+        content = getattr(message, "content", None)
+        if content is None:
+            msg_content = getattr(message, "message", None)
+            content = getattr(msg_content, "content", []) if msg_content else []
+        if isinstance(content, str) or not isinstance(content, list):
             return
 
-        content = getattr(msg_content, "content", [])
-        if not isinstance(content, list):
-            return
+        try:
+            from claude_agent_sdk import ToolResultBlock
+        except Exception:
+            ToolResultBlock = None
 
         for block in content:
-            block_type = getattr(block, "type", None)
-            if block_type == "tool_result":
-                block_content = getattr(block, "content", "")
+            if ToolResultBlock and isinstance(block, ToolResultBlock):
+                block_content = block.content
                 if isinstance(block_content, list):
-                    # Extract text from content blocks
                     texts = []
                     for c in block_content:
-                        if getattr(c, "type", None) == "text":
-                            texts.append(getattr(c, "text", ""))
+                        if isinstance(c, dict) and c.get("type") == "text":
+                            texts.append(c.get("text", ""))
+                    block_content = "\n".join(texts)
+                elif block_content is None:
+                    block_content = ""
+                elif not isinstance(block_content, str):
+                    block_content = str(block_content) if block_content else ""
+
+                on_tool_result({
+                    "tool_use_id": block.tool_use_id,
+                    "content": block_content,
+                    "is_error": bool(block.is_error),
+                })
+                continue
+
+            block_type = getattr(block, "type", None)
+            if isinstance(block, dict):
+                block_type = block.get("type", block_type)
+            if block_type == "tool_result":
+                block_content = block.get("content", "") if isinstance(block, dict) else getattr(block, "content", "")
+                if isinstance(block_content, list):
+                    texts = []
+                    for c in block_content:
+                        if isinstance(c, dict) and c.get("type") == "text":
+                            texts.append(c.get("text", ""))
                     block_content = "\n".join(texts)
                 elif not isinstance(block_content, str):
                     block_content = str(block_content) if block_content else ""
 
                 on_tool_result({
-                    "tool_use_id": getattr(block, "tool_use_id", ""),
+                    "tool_use_id": block.get("tool_use_id", "") if isinstance(block, dict) else getattr(block, "tool_use_id", ""),
                     "content": block_content,
-                    "is_error": getattr(block, "is_error", False),
+                    "is_error": block.get("is_error", False) if isinstance(block, dict) else getattr(block, "is_error", False),
                 })
 
     def _handle_result_message(
@@ -452,11 +519,12 @@ class ClaudeService:
         usage = getattr(message, "usage", None)
         token_usage = None
         if usage:
+            usage_get = usage.get if isinstance(usage, dict) else lambda k, d=0: getattr(usage, k, d)
             token_usage = {
-                "input_tokens": getattr(usage, "input_tokens", 0),
-                "output_tokens": getattr(usage, "output_tokens", 0),
-                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", 0),
-                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0),
+                "input_tokens": usage_get("input_tokens", 0),
+                "output_tokens": usage_get("output_tokens", 0),
+                "cache_read_input_tokens": usage_get("cache_read_input_tokens", 0),
+                "cache_creation_input_tokens": usage_get("cache_creation_input_tokens", 0),
                 "cost_usd": getattr(message, "total_cost_usd", None),
             }
 
@@ -481,11 +549,12 @@ class ClaudeService:
 
         subtype = getattr(message, "subtype", "")
         data: dict[str, Any] = {"type": "system", "subtype": subtype}
+        payload = getattr(message, "data", {}) or {}
 
         if subtype == "init":
-            data["session_id"] = getattr(message, "session_id", "")
-            data["model"] = getattr(message, "model", "")
-            data["tools"] = getattr(message, "tools", [])
+            data["session_id"] = payload.get("session_id", getattr(message, "session_id", ""))
+            data["model"] = payload.get("model", getattr(message, "model", ""))
+            data["tools"] = payload.get("tools", getattr(message, "tools", []))
 
         on_status(data)
 
@@ -503,13 +572,15 @@ class ClaudeService:
         if event is None:
             return
 
-        event_type = getattr(event, "type", "")
+        event_type = event.get("type", "") if isinstance(event, dict) else getattr(event, "type", "")
         if event_type == "content_block_delta":
-            delta = getattr(event, "delta", None)
+            delta = event.get("delta", None) if isinstance(event, dict) else getattr(event, "delta", None)
             if delta:
-                text = getattr(delta, "text", "")
-                if text:
-                    on_text(text)
+                delta_type = delta.get("type", "") if isinstance(delta, dict) else getattr(delta, "type", "")
+                if delta_type == "text_delta":
+                    text = delta.get("text", "") if isinstance(delta, dict) else getattr(delta, "text", "")
+                    if text:
+                        on_text(text)
 
     def _handle_tool_progress(
         self,

@@ -42,6 +42,7 @@ class MessageInput(ft.Container):
         self._send_btn: ft.IconButton | None = None
         self._command_menu: ft.Column | None = None
         self._command_menu_container: ft.Container | None = None
+        self._input_shell: ft.Container | None = None
         self._badge_container: ft.Container | None = None
         self._model_indicator: ft.Container | None = None
         self._active_badge: SlashCommand | None = None
@@ -52,7 +53,7 @@ class MessageInput(ft.Container):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        from misaka.ui.theme import make_icon_button, make_text_field as _mtf
+        from misaka.ui.theme import make_text_field as _mtf
         self._text_field = _mtf(
             hint_text=t("chat.type_message"),
             expand=True,
@@ -62,8 +63,11 @@ class MessageInput(ft.Container):
             shift_enter=True,
             on_submit=self._handle_send,
             on_change=self._handle_text_change,
-            border_radius=14,
-            content_padding=ft.Padding.symmetric(horizontal=16, vertical=12),
+            border=ft.InputBorder.NONE,
+            border_radius=0,
+            border_width=0,
+            filled=False,
+            content_padding=ft.Padding.symmetric(horizontal=10, vertical=10),
             text_size=13,
         )
 
@@ -73,7 +77,7 @@ class MessageInput(ft.Container):
             icon=(
                 ft.Icons.STOP_CIRCLE_ROUNDED
                 if is_streaming
-                else ft.Icons.ARROW_UPWARD_ROUNDED
+                else ft.Icons.SEND_ROUNDED
             ),
             tooltip=t("chat.stop") if is_streaming else t("chat.send"),
             on_click=self._handle_action,
@@ -83,30 +87,33 @@ class MessageInput(ft.Container):
             style=ft.ButtonStyle(shape=ft.CircleBorder(), padding=8),
         )
 
-        attach_btn = make_icon_button(
-            ft.Icons.ATTACH_FILE_ROUNDED,
+        attach_btn = self._build_utility_button(
+            icon=ft.Icons.ATTACH_FILE_ROUNDED,
             tooltip=t("chat.attach_file"),
             on_click=self._handle_attach,
         )
 
-        command_btn = make_icon_button(
-            ft.Icons.TERMINAL_ROUNDED,
+        command_btn = self._build_utility_button(
+            icon=ft.Icons.TERMINAL_ROUNDED,
             tooltip=t("chat.command_menu"),
-            on_click=lambda e: self._show_command_menu(filter_commands("")),
+            on_click=self._toggle_command_menu,
         )
 
         self._command_menu = ft.Column(spacing=0, tight=True)
         self._command_menu_container = ft.Container(
             content=self._command_menu,
             visible=False,
-            border_radius=12,
-            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE)),
+            border_radius=14,
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.12, ft.Colors.ON_SURFACE)),
             bgcolor=ft.Colors.SURFACE_CONTAINER,
-            padding=ft.Padding.symmetric(vertical=4),
+            padding=ft.Padding.symmetric(vertical=6),
+            width=360,
+            margin=ft.Margin.only(left=52, bottom=8),
             shadow=ft.BoxShadow(
-                blur_radius=12,
-                spread_radius=0,
-                color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK),
+                blur_radius=16,
+                spread_radius=-2,
+                offset=ft.Offset(0, 6),
+                color=ft.Colors.with_opacity(0.16, ft.Colors.BLACK),
             ),
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
@@ -118,16 +125,58 @@ class MessageInput(ft.Container):
         input_row = ft.Row(
             controls=[attach_btn, command_btn, self._model_indicator,
                       self._badge_container, self._text_field, self._send_btn],
-            spacing=4,
-            vertical_alignment=ft.CrossAxisAlignment.END,
+            spacing=6,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+        self._input_shell = ft.Container(
+            content=input_row,
+            padding=ft.Padding.symmetric(horizontal=10, vertical=4),
+            border_radius=18,
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.10, ft.Colors.ON_SURFACE)),
+            # bgcolor=ft.Colors.with_opacity(0.3, ft.Colors.ON_SURFACE),
+            # shadow=ft.BoxShadow(
+            #     blur_radius=10,
+            #     spread_radius=-3,
+            #     offset=ft.Offset(0, 2),
+            #     color=ft.Colors.with_opacity(0.10, ft.Colors.BLACK),
+            # ),
         )
 
         self.content = ft.Column(
-            controls=[self._command_menu_container, input_row],
-            spacing=4,
+            controls=[self._command_menu_container, self._input_shell],
+            spacing=0,
             tight=True,
         )
-        self.padding = ft.Padding.symmetric(horizontal=12, vertical=10)
+        self.padding = ft.Padding.symmetric(horizontal=12, vertical=8)
+
+    @staticmethod
+    def _build_utility_button(
+        *,
+        icon: str,
+        tooltip: str,
+        on_click: object,
+    ) -> ft.Container:
+        """Build modern utility icon button for input tools."""
+        return ft.Container(
+            content=ft.IconButton(
+                icon=icon,
+                tooltip=tooltip,
+                on_click=on_click,
+                icon_size=16,
+                style=ft.ButtonStyle(
+                    shape=ft.CircleBorder(),
+                    padding=6,
+                    overlay_color=ft.Colors.with_opacity(0.10, ft.Colors.PRIMARY),
+                ),
+            ),
+            width=36,
+            height=36,
+            alignment=ft.Alignment.CENTER,
+            border_radius=20,
+            bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE)),
+        )
 
     # ------------------------------------------------------------------
     # Slash-command menu
@@ -157,6 +206,15 @@ class MessageInput(ft.Container):
         self._command_menu.controls = items
         self._command_menu_container.visible = True
         self._command_menu_container.update()
+
+    def _toggle_command_menu(self, e: ft.ControlEvent) -> None:
+        """Toggle command menu when clicking the command button."""
+        if self._command_menu_container and self._command_menu_container.visible:
+            self._hide_command_menu()
+            return
+        self._show_command_menu(filter_commands(""))
+        if self._text_field:
+            self._text_field.focus()
 
     def _hide_command_menu(self) -> None:
         if self._command_menu_container and self._command_menu_container.visible:
@@ -422,24 +480,62 @@ class MessageInput(ft.Container):
         if self._on_send:
             self._on_send(user_text)
 
-    async def _handle_attach(self, e: ft.ControlEvent) -> None:
+    def _handle_attach(self, e: ft.ControlEvent) -> None:
+        """Open a manual file-path dialog (stable fallback UX)."""
         page = getattr(self.state, "page", None)
         if not page:
             return
-        picker = ft.FilePicker()
-        page.overlay.append(picker)
-        page.update()
-        try:
-            files = await picker.pick_files(allow_multiple=True)
-        finally:
-            page.overlay.remove(picker)
-            page.update()
-        if files and self._text_field:
-            for f in files:
-                current = self._text_field.value or ""
-                separator = "\n" if current else ""
-                self._text_field.value = f"{current}{separator}[File: {f.path}]"
-            self._text_field.update()
+
+        from misaka.ui.theme import make_button, make_dialog, make_text_button
+
+        path_field = ft.TextField(
+            label=t("chat.attach_file"),
+            hint_text="C:/path/to/file.txt\nD:/path/to/image.png",
+            multiline=True,
+            min_lines=3,
+            max_lines=6,
+            autofocus=True,
+        )
+
+        def do_confirm(ev: ft.ControlEvent) -> None:
+            raw = (path_field.value or "").strip()
+            if not raw:
+                return
+            parts = raw.replace(";", "\n").splitlines()
+            paths = [p.strip().strip('"') for p in parts if p.strip()]
+            self._append_file_paths(paths)
+            page.pop_dialog()
+            if self._text_field:
+                self._text_field.focus()
+
+        dialog = make_dialog(
+            title=t("chat.attach_file"),
+            content=ft.Column(
+                controls=[
+                    ft.Text("输入文件绝对路径，可多行粘贴或使用分号分隔。", size=12, opacity=0.7),
+                    path_field,
+                ],
+                spacing=12,
+                tight=True,
+                width=460,
+            ),
+            actions=[
+                make_text_button(t("common.cancel"), on_click=lambda ev: page.pop_dialog()),
+                make_button(t("common.confirm"), on_click=do_confirm),
+            ],
+            modal=True,
+        )
+        page.show_dialog(dialog)
+
+    def _append_file_paths(self, paths: list[str]) -> None:
+        """Append selected file markers into input box."""
+        if not paths or not self._text_field:
+            return
+        for path in paths:
+            current = self._text_field.value or ""
+            separator = "\n" if current else ""
+            self._text_field.value = f"{current}{separator}[File: {path}]"
+        self._text_field.update()
 
     # ------------------------------------------------------------------
     # Refresh / focus
@@ -449,7 +545,7 @@ class MessageInput(ft.Container):
         if self._send_btn:
             is_streaming = self.state.is_streaming
             self._send_btn.icon = (
-                ft.Icons.STOP_CIRCLE_ROUNDED if is_streaming else ft.Icons.ARROW_UPWARD_ROUNDED
+                ft.Icons.STOP_CIRCLE_ROUNDED if is_streaming else ft.Icons.SEND_ROUNDED
             )
             self._send_btn.tooltip = t("chat.stop") if is_streaming else t("chat.send")
             self._send_btn.bgcolor = ft.Colors.ERROR if is_streaming else ft.Colors.PRIMARY

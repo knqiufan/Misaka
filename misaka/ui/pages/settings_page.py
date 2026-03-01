@@ -1180,7 +1180,7 @@ class SettingsPage(ft.Column):
         """Show a placeholder snackbar for Misaka update check."""
         if not e.page:
             return
-        e.page.open(
+        e.page.show_dialog(
             ft.SnackBar(
                 content=ft.Text(t("settings.update_not_configured")),
                 duration=3000,
