@@ -17,6 +17,15 @@ from misaka.services.session_import_service import (
     SessionImportService,
     ClaudeSessionInfo,
 )
+from misaka.ui.theme import (
+    SUCCESS_GREEN,
+    make_badge,
+    make_button,
+    make_dialog,
+    make_divider,
+    make_text_button,
+    make_text_field,
+)
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -116,11 +125,11 @@ class ImportSessionDialog:
         ]
 
     def _build_dialog(self) -> None:
-        search_field = ft.TextField(
+        search_field = make_text_field(
             hint_text=t("import_session.search"),
             prefix_icon=ft.Icons.SEARCH,
             dense=True,
-            border_radius=8,
+            border_radius=12,
             content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
             on_change=self._on_search_changed,
         )
@@ -135,18 +144,18 @@ class ImportSessionDialog:
 
         content = ft.Container(
             content=ft.Column(
-                controls=[search_field, ft.Divider(height=1), self._session_list],
+                controls=[search_field, make_divider(), self._session_list],
                 spacing=8,
                 tight=True,
             ),
             width=480,
         )
 
-        self._dialog = ft.AlertDialog(
-            title=ft.Text(t("import_session.title"), size=18, weight=ft.FontWeight.BOLD),
+        self._dialog = make_dialog(
+            title=t("import_session.title"),
             content=content,
             actions=[
-                ft.TextButton(t("common.cancel"), on_click=lambda e: self.close()),
+                make_text_button(t("common.cancel"), on_click=lambda e: self.close()),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -194,14 +203,10 @@ class ImportSessionDialog:
         ]
         if session.git_branch:
             title_controls.append(
-                ft.Container(
-                    content=ft.Text(
-                        session.git_branch, size=10,
-                        color=ft.Colors.WHITE, weight=ft.FontWeight.W_500,
-                    ),
-                    bgcolor=ft.Colors.BLUE_GREY,
-                    border_radius=4,
-                    padding=ft.Padding.symmetric(horizontal=6, vertical=1),
+                make_badge(
+                    session.git_branch,
+                    bgcolor="#64748b",
+                    size=10,
                 )
             )
 
@@ -256,18 +261,13 @@ class ImportSessionDialog:
                 spacing=6, tight=True,
             )
         elif self._is_already_imported(session.session_id):
-            action = ft.Container(
-                content=ft.Text(
-                    t("import_session.already_imported"),
-                    size=10, color=ft.Colors.GREEN, weight=ft.FontWeight.W_500,
-                ),
-                border=ft.Border.all(1, ft.Colors.GREEN),
-                border_radius=4,
-                padding=ft.Padding.symmetric(horizontal=8, vertical=3),
+            action = make_badge(
+                t("import_session.already_imported"),
+                bgcolor=SUCCESS_GREEN,
             )
         else:
-            action = ft.Button(
-                content=t("import_session.import_btn"),
+            action = make_button(
+                t("import_session.import_btn"),
                 icon=ft.Icons.DOWNLOAD,
                 on_click=lambda e, sid=session.session_id: self._handle_import(sid),
             )
@@ -278,8 +278,11 @@ class ImportSessionDialog:
         )
 
         return ft.Container(
-            content=card, padding=10, border_radius=8,
-            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT), ink=True,
+            content=card, padding=12, border_radius=12,
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            ),
+            ink=True,
         )
 
     def _is_already_imported(self, session_id: str) -> bool:

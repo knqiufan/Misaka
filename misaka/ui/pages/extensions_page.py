@@ -13,6 +13,16 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
+from misaka.ui.theme import (
+    make_badge,
+    make_button,
+    make_danger_button,
+    make_dialog,
+    make_divider,
+    make_outlined_button,
+    make_text_button,
+    make_text_field,
+)
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -75,13 +85,13 @@ class ExtensionsPage(ft.Column):
                         weight=ft.FontWeight.W_600,
                         expand=True,
                     ),
-                    ft.OutlinedButton(
-                        content=t("extensions.refresh_skills"),
+                    make_outlined_button(
+                        t("extensions.refresh_skills"),
                         icon=ft.Icons.REFRESH,
                         on_click=self._refresh_all_skills,
                     ),
-                    ft.Button(
-                        content=t("extensions.install_from_zip"),
+                    make_button(
+                        t("extensions.install_from_zip"),
                         icon=ft.Icons.UPLOAD_FILE,
                         on_click=self._pick_zip_and_install,
                     ),
@@ -100,12 +110,11 @@ class ExtensionsPage(ft.Column):
             padding=ft.Padding.symmetric(horizontal=24, vertical=4),
         )
 
-        # --- Search ---
-        search_field = ft.TextField(
+        search_field = make_text_field(
             hint_text=t("extensions.search_skills"),
             prefix_icon=ft.Icons.SEARCH,
             dense=True,
-            border_radius=10,
+            border_radius=12,
             content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
             on_change=self._on_search,
         )
@@ -138,13 +147,12 @@ class ExtensionsPage(ft.Column):
             ),
         )
 
-        # --- Right panel: editor ---
-        self._editor_field = ft.TextField(
+        self._editor_field = make_text_field(
             multiline=True,
             min_lines=20,
             max_lines=40,
             expand=True,
-            border_radius=10,
+            border_radius=12,
         )
 
         self._editor_panel = ft.Container(
@@ -203,22 +211,15 @@ class ExtensionsPage(ft.Column):
             "plugin": t("extensions.source_plugin"),
         }
         source_colors = {
-            "global": ft.Colors.BLUE,
-            "project": ft.Colors.GREEN,
-            "installed": ft.Colors.ORANGE,
-            "plugin": ft.Colors.PURPLE,
+            "global": "#2563eb",
+            "project": "#10b981",
+            "installed": "#f59e0b",
+            "plugin": "#7c3aed",
         }
 
-        badge = ft.Container(
-            content=ft.Text(
-                source_labels.get(skill.source, skill.source),
-                size=10,
-                color=ft.Colors.WHITE,
-                weight=ft.FontWeight.BOLD,
-            ),
-            bgcolor=source_colors.get(skill.source, ft.Colors.GREY),
-            border_radius=4,
-            padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+        badge = make_badge(
+            source_labels.get(skill.source, skill.source),
+            bgcolor=source_colors.get(skill.source, "#6b7280"),
         )
 
         # Header
@@ -256,18 +257,17 @@ class ExtensionsPage(ft.Column):
         action_buttons: list[ft.Control] = []
         if not is_readonly:
             action_buttons.append(
-                ft.Button(
+                make_button(
                     t("extensions.save_skill"),
                     icon=ft.Icons.SAVE,
                     on_click=self._save_skill,
                 )
             )
             action_buttons.append(
-                ft.OutlinedButton(
+                make_danger_button(
                     t("extensions.delete_skill"),
                     icon=ft.Icons.DELETE,
                     on_click=self._confirm_delete_skill,
-                    style=ft.ButtonStyle(color=ft.Colors.ERROR),
                 )
             )
         else:
@@ -285,7 +285,7 @@ class ExtensionsPage(ft.Column):
                 editor_header,
                 desc_row,
                 path_row,
-                ft.Divider(height=1),
+                make_divider(),
                 self._editor_field,
                 ft.Row(
                     controls=action_buttons,
@@ -485,7 +485,7 @@ class ExtensionsPage(ft.Column):
             root.destroy()
 
     def _show_zip_path_dialog(self, page: ft.Page) -> None:
-        zip_path_field = ft.TextField(
+        zip_path_field = make_text_field(
             label=t("extensions.zip_path_label"),
             hint_text=t("extensions.zip_path_hint"),
             autofocus=True,
@@ -499,8 +499,8 @@ class ExtensionsPage(ft.Column):
             page.pop_dialog()
             self._install_skill_from_zip_path(page, zip_path)
 
-        dialog = ft.AlertDialog(
-            title=ft.Text(t("extensions.install_from_zip")),
+        dialog = make_dialog(
+            title=t("extensions.install_from_zip"),
             content=ft.Column(
                 controls=[
                     ft.Text(t("extensions.install_zip_manual_notice"), size=12, opacity=0.7),
@@ -511,8 +511,10 @@ class ExtensionsPage(ft.Column):
                 width=420,
             ),
             actions=[
-                ft.TextButton(t("common.cancel"), on_click=lambda ev: page.pop_dialog()),
-                ft.Button(t("common.confirm"), on_click=do_install),
+                make_text_button(
+                    t("common.cancel"), on_click=lambda ev: page.pop_dialog(),
+                ),
+                make_button(t("common.confirm"), on_click=do_install),
             ],
         )
         page.show_dialog(dialog)
@@ -587,20 +589,15 @@ class ExtensionsPage(ft.Column):
                 except Exception as exc:
                     logger.error("Failed to delete skill: %s", exc)
 
-        dialog = ft.AlertDialog(
-            title=ft.Text(t("extensions.delete_skill_title")),
+        dialog = make_dialog(
+            title=t("extensions.delete_skill_title"),
             content=ft.Text(t("extensions.delete_skill_confirm")),
             actions=[
-                ft.TextButton(
+                make_text_button(
                     t("common.cancel"),
                     on_click=lambda ev: page.pop_dialog(),
                 ),
-                ft.Button(
-                    t("common.delete"),
-                    on_click=do_delete,
-                    color=ft.Colors.WHITE,
-                    bgcolor=ft.Colors.ERROR,
-                ),
+                make_danger_button(t("common.delete"), on_click=do_delete),
             ],
         )
         page.show_dialog(dialog)

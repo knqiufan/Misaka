@@ -1,8 +1,12 @@
 """
-Theme configuration for Misaka.
+Theme configuration for Misaka — Misaka Design System.
 
-Defines Material Design 3 themes with Misaka's color palette
-for dark, light, and system modes. Modern minimalist tech aesthetic.
+Defines Material Design 3 themes with a modern, refined aesthetic
+inspired by fletmint's visual language: dual-border inputs, soft shadows,
+pill-shaped buttons, and badge-style status indicators.
+
+All component factories use semantic MD3 color tokens so they adapt
+automatically to dark / light / system modes.
 """
 
 from __future__ import annotations
@@ -15,11 +19,9 @@ import flet as ft
 # Color palette — Neo Minimal Tech
 # ---------------------------------------------------------------------------
 
-# Primary accent — indigo-500, vibrant yet restrained
 ACCENT_BLUE = "#6366f1"
 ACCENT_BLUE_LIGHT = "#818cf8"
 
-# Dark theme — deep, immersive, near-black
 DARK_BG = "#08080c"
 DARK_SURFACE = "#101018"
 DARK_SURFACE_VARIANT = "#1a1a24"
@@ -27,7 +29,6 @@ DARK_ON_SURFACE = "#e8e8ed"
 DARK_ON_SURFACE_VARIANT = "#9494a0"
 DARK_BORDER = "#2a2a36"
 
-# Light theme — crisp whites with cool undertones
 LIGHT_BG = "#f6f7fa"
 LIGHT_SURFACE = "#ffffff"
 LIGHT_SURFACE_VARIANT = "#f0f1f5"
@@ -35,27 +36,21 @@ LIGHT_ON_SURFACE = "#111118"
 LIGHT_ON_SURFACE_VARIANT = "#64647a"
 LIGHT_BORDER = "#dddde6"
 
-# Semantic colors — softer, more refined
 SUCCESS_GREEN = "#10b981"
 WARNING_AMBER = "#f59e0b"
 ERROR_RED = "#ef4444"
 
-# Consistent border radius — larger for modern feel
 RADIUS_SM = 8
 RADIUS_MD = 10
 RADIUS_LG = 14
 RADIUS_XL = 18
 
-# Preferred UI font family.
-# NOTE:
-# Flet/Flutter expects a single font-family name here rather than a CSS-style
-# comma-separated fallback list. Using a CSS font stack causes lookup failure,
-# then engine fallback may mix glyph providers per character (especially CJK),
-# which can render words like "关于" with inconsistent glyph shapes.
+# ---------------------------------------------------------------------------
+# Font resolution
+# ---------------------------------------------------------------------------
+
 def _resolve_ui_font_family() -> str:
-    """Return a stable platform-native UI font family."""
     if sys.platform.startswith("win"):
-        # Full CJK coverage and stable weight rendering on Windows.
         return "Microsoft YaHei UI"
     if sys.platform == "darwin":
         return "PingFang SC"
@@ -63,7 +58,6 @@ def _resolve_ui_font_family() -> str:
 
 
 def _resolve_mono_font_family() -> str:
-    """Return a stable platform-native monospace font family."""
     if sys.platform.startswith("win"):
         return "Consolas"
     if sys.platform == "darwin":
@@ -78,10 +72,6 @@ MONO_FONT_FAMILY = _resolve_mono_font_family()
 # ---------------------------------------------------------------------------
 # Theme factory
 # ---------------------------------------------------------------------------
-
-def _input_border(color: str) -> ft.InputBorder:
-    return ft.InputBorder.OUTLINE
-
 
 def _make_expansion_tile_theme() -> ft.ExpansionTileTheme:
     return ft.ExpansionTileTheme(
@@ -131,11 +121,13 @@ def get_light_theme() -> ft.Theme:
 
 
 # ---------------------------------------------------------------------------
-# Modern input component factories
+# Component factories — Misaka Design System
 # ---------------------------------------------------------------------------
 
+# ---- Text field -----------------------------------------------------------
+
 def make_text_field(**kwargs) -> ft.TextField:
-    """Create a modern styled TextField with consistent look across the app."""
+    """Create a modern styled TextField with refined focus glow."""
     defaults = dict(
         border=ft.InputBorder.OUTLINE,
         border_radius=RADIUS_MD,
@@ -153,8 +145,10 @@ def make_text_field(**kwargs) -> ft.TextField:
     return ft.TextField(**defaults)
 
 
+# ---- Dropdown -------------------------------------------------------------
+
 def make_dropdown(**kwargs) -> ft.Dropdown:
-    """Create a modern styled Dropdown with consistent look across the app."""
+    """Create a modern styled Dropdown matching text-field aesthetics."""
     defaults = dict(
         border=ft.InputBorder.OUTLINE,
         border_radius=RADIUS_MD,
@@ -171,6 +165,251 @@ def make_dropdown(**kwargs) -> ft.Dropdown:
     defaults.update(kwargs)
     return ft.Dropdown(**defaults)
 
+
+# ---- Card container -------------------------------------------------------
+
+def make_card(
+    content: ft.Control,
+    *,
+    padding: int | ft.Padding = 0,
+    margin: int | ft.Margin | None = None,
+    on_click: object = None,
+    **kwargs,
+) -> ft.Container:
+    """Wrap *content* in a card with soft shadow and refined border."""
+    return ft.Container(
+        content=content,
+        padding=padding,
+        margin=margin or ft.Margin.symmetric(horizontal=16, vertical=4),
+        border_radius=RADIUS_LG,
+        border=ft.Border.all(
+            1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+        ),
+        shadow=ft.BoxShadow(
+            blur_radius=8,
+            spread_radius=-2,
+            color=ft.Colors.with_opacity(0.04, ft.Colors.BLACK),
+            offset=ft.Offset(0, 2),
+        ),
+        on_click=on_click,
+        **kwargs,
+    )
+
+
+# ---- Section card (settings / config pages) -------------------------------
+
+def make_section_card(content: ft.Control, **kwargs) -> ft.Container:
+    """Card variant used for full-width settings sections."""
+    return make_card(content, padding=0, **kwargs)
+
+
+# ---- Buttons --------------------------------------------------------------
+
+_BUTTON_SHAPE = ft.ContinuousRectangleBorder(radius=28)
+
+
+def make_button(
+    text: str,
+    *,
+    icon: str | None = None,
+    on_click: object = None,
+    color: str | None = None,
+    bgcolor: str | None = None,
+    **kwargs,
+) -> ft.Button:
+    """Primary filled button with pill shape."""
+    return ft.Button(
+        content=text,
+        icon=icon,
+        on_click=on_click,
+        color=color,
+        bgcolor=bgcolor,
+        style=ft.ButtonStyle(
+            shape=_BUTTON_SHAPE,
+            padding=ft.Padding.symmetric(horizontal=20, vertical=10),
+        ),
+        **kwargs,
+    )
+
+
+def make_outlined_button(
+    text: str,
+    *,
+    icon: str | None = None,
+    on_click: object = None,
+    **kwargs,
+) -> ft.OutlinedButton:
+    """Secondary outlined button with pill shape."""
+    return ft.OutlinedButton(
+        text,
+        icon=icon,
+        on_click=on_click,
+        style=ft.ButtonStyle(
+            shape=_BUTTON_SHAPE,
+            padding=ft.Padding.symmetric(horizontal=20, vertical=10),
+            side=ft.BorderSide(
+                1, ft.Colors.with_opacity(0.15, ft.Colors.ON_SURFACE),
+            ),
+        ),
+        **kwargs,
+    )
+
+
+def make_text_button(
+    text: str,
+    *,
+    on_click: object = None,
+    **kwargs,
+) -> ft.TextButton:
+    """Subtle text button with pill shape."""
+    return ft.TextButton(
+        text,
+        on_click=on_click,
+        style=ft.ButtonStyle(
+            shape=_BUTTON_SHAPE,
+            padding=ft.Padding.symmetric(horizontal=16, vertical=8),
+        ),
+        **kwargs,
+    )
+
+
+def make_icon_button(
+    icon: str,
+    *,
+    tooltip: str | None = None,
+    on_click: object = None,
+    icon_size: int = 18,
+    icon_color: str | None = None,
+    **kwargs,
+) -> ft.IconButton:
+    """Consistent icon button with compact padding."""
+    return ft.IconButton(
+        icon=icon,
+        tooltip=tooltip,
+        on_click=on_click,
+        icon_size=icon_size,
+        icon_color=icon_color,
+        style=ft.ButtonStyle(padding=6, shape=ft.CircleBorder()),
+        **kwargs,
+    )
+
+
+def make_danger_button(
+    text: str,
+    *,
+    icon: str | None = None,
+    on_click: object = None,
+    **kwargs,
+) -> ft.Button:
+    """Destructive action button (red)."""
+    return ft.Button(
+        content=text,
+        icon=icon,
+        on_click=on_click,
+        color=ft.Colors.WHITE,
+        bgcolor=ERROR_RED,
+        style=ft.ButtonStyle(
+            shape=_BUTTON_SHAPE,
+            padding=ft.Padding.symmetric(horizontal=20, vertical=10),
+        ),
+        **kwargs,
+    )
+
+
+# ---- Badge / status tag ---------------------------------------------------
+
+def make_badge(
+    text: str,
+    *,
+    color: str = "#ffffff",
+    bgcolor: str = SUCCESS_GREEN,
+    icon: str | None = None,
+    size: int = 10,
+) -> ft.Container:
+    """Small pill-shaped status badge (success / warning / error / info)."""
+    row_controls: list[ft.Control] = []
+    if icon:
+        row_controls.append(ft.Icon(icon, size=size + 2, color=color))
+    row_controls.append(
+        ft.Text(text, size=size, weight=ft.FontWeight.BOLD, color=color),
+    )
+    return ft.Container(
+        content=ft.Row(controls=row_controls, spacing=4, tight=True),
+        bgcolor=bgcolor,
+        border_radius=6,
+        padding=ft.Padding.symmetric(horizontal=8, vertical=2),
+    )
+
+
+def make_success_badge(text: str, **kw) -> ft.Container:
+    return make_badge(text, bgcolor=SUCCESS_GREEN, **kw)
+
+
+def make_warning_badge(text: str, **kw) -> ft.Container:
+    return make_badge(text, bgcolor=WARNING_AMBER, **kw)
+
+
+def make_error_badge(text: str, **kw) -> ft.Container:
+    return make_badge(text, bgcolor=ERROR_RED, **kw)
+
+
+def make_info_badge(text: str, **kw) -> ft.Container:
+    return make_badge(text, bgcolor=ACCENT_BLUE, **kw)
+
+
+# ---- Dialog ---------------------------------------------------------------
+
+def make_dialog(
+    *,
+    title: str,
+    content: ft.Control,
+    actions: list[ft.Control] | None = None,
+    **kwargs,
+) -> ft.AlertDialog:
+    """Consistently styled AlertDialog with rounded corners."""
+    return ft.AlertDialog(
+        title=ft.Text(title, weight=ft.FontWeight.W_600),
+        content=content,
+        actions=actions or [],
+        shape=ft.ContinuousRectangleBorder(radius=32),
+        **kwargs,
+    )
+
+
+# ---- Divider --------------------------------------------------------------
+
+def make_divider() -> ft.Divider:
+    """Subtle horizontal divider."""
+    return ft.Divider(
+        height=1,
+        color=ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+    )
+
+
+# ---- Code block theme (GitHub Dark / One Dark Pro palettes) ---------------
+
+CODE_THEME_GITHUB_DARK = {
+    "bg": "#0d1117",
+    "keyword": "#ff7b72",
+    "function": "#d2a8ff",
+    "string": "#a5d6ff",
+    "comment": "#8b949e",
+    "number": "#79c0ff",
+}
+
+CODE_THEME_ONE_DARK = {
+    "bg": "#282c34",
+    "keyword": "#c678dd",
+    "function": "#61afef",
+    "string": "#98c379",
+    "comment": "#5c6370",
+    "number": "#d19a66",
+}
+
+
+# ---------------------------------------------------------------------------
+# Page-level theme application
+# ---------------------------------------------------------------------------
 
 def apply_theme(page: ft.Page, mode: str) -> None:
     """Apply a theme mode to the Flet page.

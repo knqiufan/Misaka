@@ -61,15 +61,17 @@ class FolderPicker:
             on_submit=lambda e: self._navigate_to(self._path_field.value),
         )
 
-        go_button = ft.Button(
-            content=t("folder_picker.go"),
+        from misaka.ui.theme import make_button, make_icon_button
+        go_button = make_button(
+            t("folder_picker.go"),
             on_click=lambda e: self._navigate_to(self._path_field.value),
         )
 
-        parent_button = ft.IconButton(
-            icon=ft.Icons.ARROW_UPWARD,
+        parent_button = make_icon_button(
+            ft.Icons.ARROW_UPWARD,
             tooltip=t("folder_picker.parent"),
             on_click=self._go_parent,
+            icon_size=20,
         )
 
         path_row = ft.Row(
@@ -115,8 +117,10 @@ class FolderPicker:
         dir_container = ft.Container(
             content=self._dir_list,
             height=350,
-            border=ft.Border.all(1, ft.Colors.OUTLINE),
-            border_radius=6,
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE),
+            ),
+            border_radius=10,
             padding=4,
         )
 
@@ -136,29 +140,24 @@ class FolderPicker:
             padding=ft.Padding.only(top=8),
         )
 
-        # --- Action buttons ---
-        select_button = ft.Button(
-            content=t("folder_picker.select"),
+        from misaka.ui.theme import make_dialog, make_outlined_button
+        select_button = make_button(
+            t("folder_picker.select"),
             icon=ft.Icons.CHECK,
             on_click=self._handle_select,
-            style=ft.ButtonStyle(
-                bgcolor=ft.Colors.PRIMARY,
-                color=ft.Colors.ON_PRIMARY,
-            ),
         )
 
-        cancel_button = ft.OutlinedButton(
-            content=t("folder_picker.cancel"),
+        cancel_button = make_outlined_button(
+            t("folder_picker.cancel"),
             icon=ft.Icons.CLOSE,
             on_click=self._handle_cancel,
         )
 
-        # --- Build AlertDialog ---
-        self._dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text(t("folder_picker.title"), weight=ft.FontWeight.BOLD),
+        self._dialog = make_dialog(
+            title=t("folder_picker.title"),
             content=content,
             actions=[cancel_button, select_button],
+            modal=True,
             actions_alignment=ft.MainAxisAlignment.END,
         )
 

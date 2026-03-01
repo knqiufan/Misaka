@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Callable
 import flet as ft
 
 from misaka.i18n import t
+from misaka.ui.theme import ACCENT_BLUE, make_button, make_icon_button
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -61,24 +62,19 @@ class UpdateBanner(ft.Container):
             )
             banner_icon = ft.Icon(ft.Icons.INFO_OUTLINE, size=18, color=ft.Colors.BLUE)
 
-        # Update button
-        update_btn = ft.Button(
-            content=t("update.update_now"),
+        update_btn = make_button(
+            t("update.update_now"),
             on_click=self._handle_update,
             disabled=updating,
-            style=ft.ButtonStyle(
-                bgcolor=ft.Colors.BLUE,
-                color=ft.Colors.WHITE,
-            ),
+            color=ft.Colors.WHITE,
+            bgcolor=ACCENT_BLUE,
         )
 
-        # Dismiss button
-        dismiss_btn = ft.IconButton(
-            icon=ft.Icons.CLOSE,
-            icon_size=16,
+        dismiss_btn = make_icon_button(
+            ft.Icons.CLOSE,
             on_click=self._handle_dismiss,
-            style=ft.ButtonStyle(padding=4),
             tooltip=t("update.dismiss"),
+            icon_size=16,
         )
 
         self.content = ft.Container(
@@ -97,7 +93,7 @@ class UpdateBanner(ft.Container):
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=ft.Padding.symmetric(horizontal=16, vertical=8),
-            bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.BLUE),
+            bgcolor=ft.Colors.with_opacity(0.08, ACCENT_BLUE),
             border_radius=0,
         )
 

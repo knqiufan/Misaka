@@ -10,7 +10,7 @@ import flet as ft
 
 from misaka.i18n import t
 from misaka.db.models import FilePreview as FilePreviewModel
-from misaka.ui.theme import MONO_FONT_FAMILY
+from misaka.ui.theme import MONO_FONT_FAMILY, make_icon_button
 
 
 class FilePreview(ft.Column):
@@ -76,21 +76,19 @@ class FilePreview(ft.Column):
                         size=11,
                         opacity=0.5,
                     ),
-                    ft.IconButton(
-                        icon=ft.Icons.CONTENT_COPY,
-                        icon_size=16,
+                    make_icon_button(
+                        ft.Icons.CONTENT_COPY,
                         tooltip=t("right_panel.copy_content"),
                         on_click=self._copy_content,
-                        style=ft.ButtonStyle(padding=4),
+                        icon_size=16,
                     ),
                     *(
                         [
-                            ft.IconButton(
-                                icon=ft.Icons.CLOSE,
-                                icon_size=16,
+                            make_icon_button(
+                                ft.Icons.CLOSE,
                                 tooltip=t("right_panel.close_preview"),
                                 on_click=self._on_close,
-                                style=ft.ButtonStyle(padding=4),
+                                icon_size=16,
                             ),
                         ]
                         if self._on_close

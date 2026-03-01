@@ -14,7 +14,22 @@ import flet as ft
 
 import misaka.i18n as i18n
 from misaka.i18n import t
-from misaka.ui.theme import make_dropdown, make_text_field
+from misaka.ui.theme import (
+    ACCENT_BLUE,
+    ERROR_RED,
+    SUCCESS_GREEN,
+    WARNING_AMBER,
+    make_badge,
+    make_button,
+    make_danger_button,
+    make_dialog,
+    make_dropdown,
+    make_icon_button,
+    make_outlined_button,
+    make_section_card,
+    make_text_button,
+    make_text_field,
+)
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -123,14 +138,7 @@ class SettingsPage(ft.Column):
     @staticmethod
     def _wrap_card(content: ft.Control) -> ft.Control:
         """Wrap a section in a card-like container that fills the available width."""
-        return ft.Container(
-            content=content,
-            margin=ft.Margin.symmetric(horizontal=16, vertical=4),
-            border_radius=12,
-            border=ft.Border.all(
-                1, ft.Colors.with_opacity(0.05, ft.Colors.ON_SURFACE),
-            ),
-        )
+        return make_section_card(content)
 
     # ---------------------------------------------------------------
     # Provider section
@@ -140,8 +148,8 @@ class SettingsPage(ft.Column):
         self._provider_list = ft.Column(spacing=4)
         self._refresh_provider_list()
 
-        add_btn = ft.Button(
-            content=t("settings.add_provider"),
+        add_btn = make_button(
+            t("settings.add_provider"),
             icon=ft.Icons.ADD,
             on_click=self._show_add_provider_dialog,
         )
@@ -197,19 +205,16 @@ class SettingsPage(ft.Column):
     def _build_provider_card(self, provider: ApiProvider) -> ft.Control:
         is_active = provider.is_active == 1
 
-        status_badge = ft.Container(
-            content=ft.Text(
-                t("settings.active") if is_active else t("settings.inactive"),
-                size=10,
-                weight=ft.FontWeight.BOLD,
-                color=ft.Colors.WHITE if is_active else ft.Colors.ON_SURFACE_VARIANT,
-            ),
-            bgcolor=ft.Colors.GREEN if is_active else ft.Colors.GREY,
-            border_radius=4,
-            padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+        status_badge = (
+            make_badge(t("settings.active"), bgcolor=SUCCESS_GREEN)
+            if is_active
+            else make_badge(
+                t("settings.inactive"),
+                bgcolor="#6b7280",
+                color=ft.Colors.WHITE,
+            )
         )
 
-        # Mask API key
         masked_key = ""
         if provider.api_key:
             if len(provider.api_key) > 8:
@@ -249,9 +254,9 @@ class SettingsPage(ft.Column):
                     ),
                     ft.Row(
                         controls=[
-                            ft.IconButton(
-                                icon=ft.Icons.POWER_SETTINGS_NEW,
-                                icon_color=ft.Colors.GREEN if not is_active else ft.Colors.GREY,
+                            make_icon_button(
+                                ft.Icons.POWER_SETTINGS_NEW,
+                                icon_color=SUCCESS_GREEN if not is_active else "#6b7280",
                                 tooltip=(
                                     t("settings.activate")
                                     if not is_active
@@ -260,16 +265,16 @@ class SettingsPage(ft.Column):
                                 on_click=lambda e, pid=provider.id: self._toggle_provider(pid),
                                 icon_size=20,
                             ),
-                            ft.IconButton(
-                                icon=ft.Icons.EDIT,
+                            make_icon_button(
+                                ft.Icons.EDIT,
                                 tooltip=t("settings.edit"),
                                 on_click=lambda e, p=provider: self._show_edit_provider_dialog(p),
                                 icon_size=20,
                             ),
-                            ft.IconButton(
-                                icon=ft.Icons.DELETE,
+                            make_icon_button(
+                                ft.Icons.DELETE,
                                 tooltip=t("settings.delete"),
-                                icon_color=ft.Colors.ERROR,
+                                icon_color=ERROR_RED,
                                 on_click=lambda e, pid=provider.id: self._delete_provider(pid),
                                 icon_size=20,
                             ),
@@ -280,7 +285,7 @@ class SettingsPage(ft.Column):
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=14,
-            border_radius=10,
+            border_radius=12,
             border=ft.Border.all(
                 1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
@@ -359,8 +364,8 @@ class SettingsPage(ft.Column):
             page.pop_dialog()
             self.state.update()
 
-        dialog = ft.AlertDialog(
-            title=ft.Text(t("settings.edit_provider") if is_edit else t("settings.add_provider")),
+        dialog = make_dialog(
+            title=t("settings.edit_provider") if is_edit else t("settings.add_provider"),
             content=ft.Column(
                 controls=[name_field, type_field, key_field, url_field, env_field, notes_field],
                 spacing=12,
@@ -369,8 +374,8 @@ class SettingsPage(ft.Column):
                 width=400,
             ),
             actions=[
-                ft.TextButton(t("settings.cancel"), on_click=lambda ev: page.pop_dialog()),
-                ft.Button(t("settings.save"), on_click=save),
+                make_text_button(t("settings.cancel"), on_click=lambda ev: page.pop_dialog()),
+                make_button(t("settings.save"), on_click=save),
             ],
         )
         page.show_dialog(dialog)
@@ -513,8 +518,8 @@ class SettingsPage(ft.Column):
         self._router_list = ft.Column(spacing=4)
         self._refresh_router_list()
 
-        add_btn = ft.Button(
-            content=t("settings.router_add"),
+        add_btn = make_button(
+            t("settings.router_add"),
             icon=ft.Icons.ADD,
             on_click=self._show_add_router_dialog,
         )
@@ -580,18 +585,10 @@ class SettingsPage(ft.Column):
     def _build_router_card(self, config: RouterConfig) -> ft.Control:
         is_active = config.is_active == 1
 
-        status_badge = ft.Container(
-            content=ft.Text(
-                t("settings.router_in_use") if is_active else "",
-                size=10,
-                weight=ft.FontWeight.BOLD,
-                color=ft.Colors.WHITE,
-            ),
-            bgcolor=ft.Colors.GREEN if is_active else ft.Colors.TRANSPARENT,
-            border_radius=4,
-            padding=ft.Padding.symmetric(horizontal=6, vertical=2),
-            visible=is_active,
-        )
+        status_badge = make_badge(
+            t("settings.router_in_use"),
+            bgcolor=SUCCESS_GREEN,
+        ) if is_active else ft.Container(width=0, height=0)
 
         model_info = config.main_model or ""
         if model_info:
@@ -624,25 +621,25 @@ class SettingsPage(ft.Column):
                     ),
                     ft.Row(
                         controls=[
-                            ft.OutlinedButton(
+                            make_outlined_button(
                                 t("settings.router_enable"),
                                 on_click=lambda e, cid=config.id: (
                                     self._activate_router(cid)
                                 ),
                                 visible=not is_active,
                             ) if not is_active else ft.Container(width=0),
-                            ft.IconButton(
-                                icon=ft.Icons.EDIT,
+                            make_icon_button(
+                                ft.Icons.EDIT,
                                 tooltip=t("common.edit"),
                                 on_click=lambda e, c=config: (
                                     self._show_edit_router_dialog(c)
                                 ),
                                 icon_size=20,
                             ),
-                            ft.IconButton(
-                                icon=ft.Icons.DELETE,
+                            make_icon_button(
+                                ft.Icons.DELETE,
                                 tooltip=t("common.delete"),
-                                icon_color=ft.Colors.ERROR,
+                                icon_color=ERROR_RED,
                                 on_click=lambda e, cid=config.id: (
                                     self._delete_router(cid)
                                 ),
@@ -655,10 +652,10 @@ class SettingsPage(ft.Column):
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=14,
-            border_radius=10,
+            border_radius=12,
             border=ft.Border.all(
                 1,
-                "#10b981" if is_active
+                SUCCESS_GREEN if is_active
                 else ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
         )
@@ -801,8 +798,8 @@ class SettingsPage(ft.Column):
             page.pop_dialog()
             self.state.update()
 
-        dialog = ft.AlertDialog(
-            title=ft.Text(
+        dialog = make_dialog(
+            title=(
                 t("settings.router_edit") if is_edit
                 else t("settings.router_add")
             ),
@@ -824,11 +821,11 @@ class SettingsPage(ft.Column):
                 width=450,
             ),
             actions=[
-                ft.TextButton(
+                make_text_button(
                     t("common.cancel"),
                     on_click=lambda ev: page.pop_dialog(),
                 ),
-                ft.Button(t("common.save"), on_click=save),
+                make_button(t("common.save"), on_click=save),
             ],
         )
         page.show_dialog(dialog)
@@ -996,30 +993,14 @@ class SettingsPage(ft.Column):
     @staticmethod
     def _make_version_status_badge(has_update: bool) -> ft.Control:
         if has_update:
-            return ft.Container(
-                content=ft.Text(
-                    t("settings.update_available"),
-                    size=10,
-                    weight=ft.FontWeight.BOLD,
-                    color=ft.Colors.WHITE,
-                ),
-                bgcolor=ft.Colors.ORANGE,
-                border_radius=4,
-                padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+            return make_badge(
+                t("settings.update_available"),
+                bgcolor=WARNING_AMBER,
             )
-        return ft.Container(
-            content=ft.Row(
-                controls=[
-                    ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN, size=14),
-                    ft.Text(
-                        t("settings.up_to_date"),
-                        size=10,
-                        weight=ft.FontWeight.BOLD,
-                        color=ft.Colors.GREEN,
-                    ),
-                ],
-                spacing=4,
-            ),
+        return make_badge(
+            t("settings.up_to_date"),
+            bgcolor=SUCCESS_GREEN,
+            icon=ft.Icons.CHECK_CIRCLE,
         )
 
     def _build_update_action_button(
@@ -1040,13 +1021,13 @@ class SettingsPage(ft.Column):
             )
 
         if has_update:
-            return ft.Button(
+            return make_button(
                 t("update.update_now"),
                 icon=ft.Icons.SYSTEM_UPDATE,
                 on_click=self._handle_perform_update,
             )
 
-        return ft.OutlinedButton(
+        return make_outlined_button(
             t("settings.check_update"),
             icon=ft.Icons.REFRESH,
             on_click=self._handle_check_update,
@@ -1149,7 +1130,7 @@ class SettingsPage(ft.Column):
                 ],
                 spacing=6,
             )
-        return ft.OutlinedButton(
+        return make_outlined_button(
             t("settings.recheck"),
             icon=ft.Icons.REFRESH,
             on_click=self._handle_env_recheck,
@@ -1179,7 +1160,7 @@ class SettingsPage(ft.Column):
 
         status_icon = ft.Icon(
             ft.Icons.CHECK_CIRCLE if is_installed else ft.Icons.CANCEL,
-            color=ft.Colors.GREEN if is_installed else ft.Colors.ERROR,
+            color=SUCCESS_GREEN if is_installed else ERROR_RED,
             size=22,
         )
 
@@ -1211,10 +1192,10 @@ class SettingsPage(ft.Column):
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=ft.Padding.symmetric(horizontal=12, vertical=8),
-            border_radius=10,
+            border_radius=12,
             border=ft.Border.all(
                 1,
-                "#10b981" if is_installed
+                SUCCESS_GREEN if is_installed
                 else ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
         )
@@ -1223,17 +1204,7 @@ class SettingsPage(ft.Column):
         self, tool, is_installed: bool, is_installing: bool,
     ) -> ft.Control:
         if is_installed:
-            return ft.Container(
-                content=ft.Text(
-                    t("env_check.installed"),
-                    size=10,
-                    weight=ft.FontWeight.BOLD,
-                    color=ft.Colors.WHITE,
-                ),
-                bgcolor=ft.Colors.GREEN,
-                border_radius=4,
-                padding=ft.Padding.symmetric(horizontal=8, vertical=2),
-            )
+            return make_badge(t("env_check.installed"), bgcolor=SUCCESS_GREEN)
         if is_installing:
             return ft.Row(
                 controls=[
@@ -1242,14 +1213,10 @@ class SettingsPage(ft.Column):
                 ],
                 spacing=6,
             )
-        return ft.Button(
+        return make_button(
             t("env_check.install"),
             icon=ft.Icons.DOWNLOAD,
             on_click=lambda e, name=tool.name: self._handle_env_install(e, name),
-            style=ft.ButtonStyle(
-                bgcolor=ft.Colors.PRIMARY,
-                color=ft.Colors.ON_PRIMARY,
-            ),
         )
 
     def _handle_env_recheck(self, e: ft.ControlEvent) -> None:

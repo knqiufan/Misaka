@@ -72,7 +72,7 @@ class ChatView(ft.Column):
         )
 
         # Mode selector dropdown
-        from misaka.ui.theme import make_dropdown as _mdd_mode
+        from misaka.ui.theme import make_dropdown as _mdd_mode, make_icon_button
         current_mode = session.mode if session else "code"
         self._mode_dropdown = _mdd_mode(
             value=current_mode,
@@ -88,44 +88,36 @@ class ChatView(ft.Column):
             text_size=12,
         )
 
-        # Left panel toggle
-        left_toggle = ft.IconButton(
-            icon=ft.Icons.MENU_ROUNDED,
+        left_toggle = make_icon_button(
+            ft.Icons.MENU_ROUNDED,
             tooltip=t("chat.toggle_left_panel"),
             on_click=lambda e: self._on_toggle_left_panel() if self._on_toggle_left_panel else None,
             icon_size=20,
-            style=ft.ButtonStyle(padding=6),
         )
 
-        # Right panel toggle
-        right_toggle = ft.IconButton(
-            icon=ft.Icons.VERTICAL_SPLIT_ROUNDED,
+        right_toggle = make_icon_button(
+            ft.Icons.VERTICAL_SPLIT_ROUNDED,
             tooltip=t("chat.toggle_right_panel"),
             on_click=lambda e: (
                 self._on_toggle_right_panel()
                 if self._on_toggle_right_panel else None
             ),
             icon_size=20,
-            style=ft.ButtonStyle(padding=6),
         )
 
-        # Clear messages button
-        clear_btn = ft.IconButton(
-            icon=ft.Icons.DELETE_SWEEP_ROUNDED,
+        clear_btn = make_icon_button(
+            ft.Icons.DELETE_SWEEP_ROUNDED,
             tooltip=t("chat.clear_messages"),
             on_click=lambda e: self._on_clear_messages() if self._on_clear_messages else None,
             icon_size=20,
-            style=ft.ButtonStyle(padding=6),
             visible=has_session,
         )
 
-        # Folder picker button
-        folder_btn = ft.IconButton(
-            icon=ft.Icons.FOLDER_OPEN_ROUNDED,
+        folder_btn = make_icon_button(
+            ft.Icons.FOLDER_OPEN_ROUNDED,
             tooltip=t("chat.open_folder"),
             on_click=lambda e: self._on_open_folder() if self._on_open_folder else None,
             icon_size=20,
-            style=ft.ButtonStyle(padding=6),
             visible=has_session,
         )
 
@@ -263,11 +255,10 @@ class ChatView(ft.Column):
                             size=12,
                             color=ft.Colors.ERROR,
                         ),
-                        ft.IconButton(
-                            icon=ft.Icons.CLOSE_ROUNDED,
-                            icon_size=14,
+                        make_icon_button(
+                            ft.Icons.CLOSE_ROUNDED,
                             on_click=self._dismiss_error,
-                            style=ft.ButtonStyle(padding=4),
+                            icon_size=14,
                         ),
                     ],
                     spacing=8,

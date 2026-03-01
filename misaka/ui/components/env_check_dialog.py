@@ -12,6 +12,16 @@ from typing import TYPE_CHECKING, Callable
 import flet as ft
 
 from misaka.i18n import t
+from misaka.ui.theme import (
+    ERROR_RED,
+    RADIUS_LG,
+    SUCCESS_GREEN,
+    make_badge,
+    make_button,
+    make_divider,
+    make_icon_button,
+    make_outlined_button,
+)
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -57,15 +67,14 @@ class EnvCheckDialog(ft.Column):
         for tool in check_result.tools:
             tool_cards.append(self._build_tool_card(tool))
 
-        # All-ready message
         all_ready_msg = ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Icon(ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN, size=20),
+                    ft.Icon(ft.Icons.CHECK_CIRCLE, color=SUCCESS_GREEN, size=20),
                     ft.Text(
                         t("env_check.all_ready"),
                         size=14,
-                        color=ft.Colors.GREEN,
+                        color=SUCCESS_GREEN,
                         weight=ft.FontWeight.W_500,
                     ),
                 ],
@@ -75,13 +84,12 @@ class EnvCheckDialog(ft.Column):
             visible=check_result.all_installed,
         )
 
-        # Action buttons
-        skip_btn = ft.OutlinedButton(
-            content=t("env_check.skip"),
+        skip_btn = make_outlined_button(
+            t("env_check.skip"),
             on_click=self._handle_dismiss,
         )
-        recheck_btn = ft.Button(
-            content=t("env_check.check_again"),
+        recheck_btn = make_button(
+            t("env_check.check_again"),
             icon=ft.Icons.REFRESH,
             on_click=self._handle_recheck,
         )
@@ -109,11 +117,10 @@ class EnvCheckDialog(ft.Column):
                                 weight=ft.FontWeight.BOLD,
                             ),
                             ft.Container(expand=True),
-                            ft.IconButton(
-                                icon=ft.Icons.CLOSE,
-                                icon_size=20,
+                            make_icon_button(
+                                ft.Icons.CLOSE,
                                 on_click=self._handle_dismiss,
-                                style=ft.ButtonStyle(padding=4),
+                                icon_size=20,
                             ),
                         ],
                         spacing=12,
@@ -124,26 +131,28 @@ class EnvCheckDialog(ft.Column):
                         size=13,
                         opacity=0.7,
                     ),
-                    ft.Divider(height=1),
-                    # Tool cards
+                    make_divider(),
                     ft.Column(
                         controls=tool_cards,
                         spacing=8,
                     ),
                     all_ready_msg,
-                    ft.Divider(height=1),
+                    make_divider(),
                     actions,
                 ],
                 spacing=12,
             ),
             width=520,
             padding=24,
-            border_radius=12,
+            border_radius=RADIUS_LG,
             bgcolor=ft.Colors.SURFACE,
             shadow=ft.BoxShadow(
                 spread_radius=0,
-                blur_radius=20,
-                color=ft.Colors.with_opacity(0.3, ft.Colors.BLACK),
+                blur_radius=24,
+                color=ft.Colors.with_opacity(0.25, ft.Colors.BLACK),
+            ),
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
         )
 
@@ -170,29 +179,19 @@ class EnvCheckDialog(ft.Column):
         is_installed = tool.is_installed
         is_installing = self._installing_tool == tool.name
 
-        # Status icon
         if is_installed:
             status_icon = ft.Icon(
-                ft.Icons.CHECK_CIRCLE, color=ft.Colors.GREEN, size=24
+                ft.Icons.CHECK_CIRCLE, color=SUCCESS_GREEN, size=24,
             )
         else:
             status_icon = ft.Icon(
-                ft.Icons.CANCEL, color=ft.Colors.ERROR, size=24
+                ft.Icons.CANCEL, color=ERROR_RED, size=24,
             )
 
-        # Version / status text
         if is_installed:
             version_text = f"v{tool.version}" if tool.version else t("env_check.installed")
-            status_badge = ft.Container(
-                content=ft.Text(
-                    t("env_check.installed"),
-                    size=11,
-                    color=ft.Colors.WHITE,
-                    weight=ft.FontWeight.BOLD,
-                ),
-                bgcolor=ft.Colors.GREEN,
-                border_radius=4,
-                padding=ft.Padding.symmetric(horizontal=8, vertical=2),
+            status_badge = make_badge(
+                t("env_check.installed"), bgcolor=SUCCESS_GREEN,
             )
         else:
             version_text = t("env_check.not_installed")
@@ -205,19 +204,10 @@ class EnvCheckDialog(ft.Column):
                     spacing=6,
                 )
             else:
-                status_badge = ft.Row(
-                    controls=[
-                        ft.Button(
-                            content=t("env_check.install"),
-                            icon=ft.Icons.DOWNLOAD,
-                            on_click=lambda e, name=tool.name: self._handle_install(name),
-                            style=ft.ButtonStyle(
-                                bgcolor=ft.Colors.PRIMARY,
-                                color=ft.Colors.ON_PRIMARY,
-                            ),
-                        ),
-                    ],
-                    spacing=6,
+                status_badge = make_button(
+                    t("env_check.install"),
+                    icon=ft.Icons.DOWNLOAD,
+                    on_click=lambda e, name=tool.name: self._handle_install(name),
                 )
 
         return ft.Container(
@@ -246,10 +236,11 @@ class EnvCheckDialog(ft.Column):
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=12,
-            border_radius=8,
+            border_radius=RADIUS_LG,
             border=ft.Border.all(
                 1,
-                ft.Colors.GREEN if is_installed else ft.Colors.OUTLINE,
+                SUCCESS_GREEN if is_installed
+                else ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
         )
 

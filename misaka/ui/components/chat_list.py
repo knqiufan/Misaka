@@ -46,12 +46,12 @@ class ChatList(ft.Column):
         self._build_ui()
 
     def _build_ui(self) -> None:
-        from misaka.ui.theme import make_text_field as _mtf
+        from misaka.ui.theme import make_icon_button, make_text_field as _mtf
         self._search_field = _mtf(
             hint_text=t("chat.search_sessions"),
             prefix_icon=ft.Icons.SEARCH,
             dense=True,
-            border_radius=10,
+            border_radius=12,
             content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
             on_change=self._on_search,
         )
@@ -65,19 +65,16 @@ class ChatList(ft.Column):
                         weight=ft.FontWeight.W_600,
                         expand=True,
                     ),
-                    ft.IconButton(
-                        icon=ft.Icons.DOWNLOAD_ROUNDED,
+                    make_icon_button(
+                        ft.Icons.DOWNLOAD_ROUNDED,
                         tooltip=t("chat.import_session"),
                         on_click=self._handle_import,
-                        icon_size=18,
-                        style=ft.ButtonStyle(padding=6),
                     ),
-                    ft.IconButton(
-                        icon=ft.Icons.ADD_ROUNDED,
+                    make_icon_button(
+                        ft.Icons.ADD_ROUNDED,
                         tooltip=t("chat.new_chat"),
                         on_click=self._handle_new_chat,
                         icon_size=20,
-                        style=ft.ButtonStyle(padding=6),
                     ),
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -213,6 +210,8 @@ class ChatList(ft.Column):
 
     def _build_session_item(self, session: ChatSession) -> ft.Control:
         """Build a single session list item with hover-visible delete button."""
+        from misaka.ui.theme import ACCENT_BLUE, SUCCESS_GREEN, WARNING_AMBER
+
         is_selected = session.id == self.state.current_session_id
 
         subtitle_parts: list[str] = []
@@ -223,9 +222,9 @@ class ChatList(ft.Column):
         subtitle = " \u00b7 ".join(subtitle_parts) if subtitle_parts else ""
 
         mode_colors = {
-            "code": "#6366f1",
-            "plan": "#f59e0b",
-            "ask": "#10b981",
+            "code": ACCENT_BLUE,
+            "plan": WARNING_AMBER,
+            "ask": SUCCESS_GREEN,
         }
         mode_color = mode_colors.get(session.mode, "#6b7280")
 
@@ -260,8 +259,8 @@ class ChatList(ft.Column):
                                         weight=ft.FontWeight.W_600,
                                     ),
                                     bgcolor=mode_color,
-                                    border_radius=4,
-                                    padding=ft.Padding.symmetric(horizontal=5, vertical=1),
+                                    border_radius=5,
+                                    padding=ft.Padding.symmetric(horizontal=6, vertical=1),
                                 ),
                                 ft.Text(
                                     subtitle,
@@ -292,23 +291,35 @@ class ChatList(ft.Column):
             delete_btn.visible = False
             delete_btn.update()
 
+        def on_item_hover(e) -> None:
+            hovering = e.data == "true"
+            if not is_selected:
+                inner.bgcolor = (
+                    ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE)
+                    if hovering
+                    else ft.Colors.TRANSPARENT
+                )
+                inner.update()
+
         inner = ft.Container(
             content=item_content,
-            padding=ft.Padding.only(left=10, right=6, top=8, bottom=8),
-            border_radius=10,
+            padding=ft.Padding.only(left=12, right=6, top=8, bottom=8),
+            border_radius=12,
             bgcolor=(
-                ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY)
+                ft.Colors.with_opacity(0.10, ft.Colors.PRIMARY)
                 if is_selected
                 else ft.Colors.TRANSPARENT
             ),
             border=ft.Border.all(
                 1,
-                ft.Colors.with_opacity(0.1, ft.Colors.PRIMARY)
+                ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)
                 if is_selected
                 else ft.Colors.TRANSPARENT,
             ),
             on_click=lambda e, sid=session.id: self._handle_select(sid),
             on_long_press=lambda e, sid=session.id: self._show_context_menu(e, sid),
+            on_hover=on_item_hover,
+            animate=ft.Animation(150, ft.AnimationCurve.EASE_OUT),
             ink=True,
         )
 
@@ -407,35 +418,39 @@ class ChatList(ft.Column):
 
     def _confirm_delete(self, session_id: str, page: ft.Page) -> None:
         """Show a confirmation dialog before deleting a session."""
+        from misaka.ui.theme import make_danger_button, make_dialog, make_text_button
+
         def do_delete(ev):
             page.pop_dialog()
             if self._on_delete:
                 self._on_delete(session_id)
 
-        dialog = ft.AlertDialog(
-            title=ft.Text(t("chat.delete")),
+        dialog = make_dialog(
+            title=t("chat.delete"),
             content=ft.Text(t("chat.confirm_delete")),
             actions=[
-                ft.TextButton(t("common.cancel"), on_click=lambda ev: page.pop_dialog()),
-                ft.Button(
-                    t("common.delete"),
-                    on_click=do_delete,
-                    color=ft.Colors.WHITE,
-                    bgcolor=ft.Colors.ERROR,
-                ),
+                make_text_button(t("common.cancel"), on_click=lambda ev: page.pop_dialog()),
+                make_danger_button(t("common.delete"), on_click=do_delete),
             ],
         )
         page.show_dialog(dialog)
 
     def _start_rename(self, session_id: str, page: ft.Page) -> None:
         """Show a rename dialog for the session."""
+        from misaka.ui.theme import (
+            make_button,
+            make_dialog,
+            make_text_button,
+            make_text_field,
+        )
+
         session = next(
             (s for s in self.state.sessions if s.id == session_id), None
         )
         if not session:
             return
 
-        rename_field = ft.TextField(
+        rename_field = make_text_field(
             value=session.title,
             autofocus=True,
             dense=True,
@@ -447,12 +462,14 @@ class ChatList(ft.Column):
                 self._on_rename(session_id, new_title)
             page.pop_dialog()
 
-        dialog = ft.AlertDialog(
-            title=ft.Text(t("chat.rename_session")),
+        dialog = make_dialog(
+            title=t("chat.rename_session"),
             content=rename_field,
             actions=[
-                ft.TextButton(t("common.cancel"), on_click=lambda ev: page.pop_dialog()),
-                ft.Button(t("chat.rename"), on_click=do_rename),
+                make_text_button(
+                    t("common.cancel"), on_click=lambda ev: page.pop_dialog(),
+                ),
+                make_button(t("chat.rename"), on_click=do_rename),
             ],
         )
         page.show_dialog(dialog)

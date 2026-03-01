@@ -68,11 +68,11 @@ class MessageItem(ft.Container):
         )
         self.padding = ft.Padding.symmetric(horizontal=20, vertical=12)
         self.margin = ft.Margin.only(bottom=2)
-        self.border_radius = 10
+        self.border_radius = 12
         if is_user:
             self.bgcolor = ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE)
             self.border = ft.Border.all(
-                1, ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE)
+                1, ft.Colors.with_opacity(0.05, ft.Colors.ON_SURFACE),
             )
 
     def _build_header(self, is_user: bool) -> ft.Control:

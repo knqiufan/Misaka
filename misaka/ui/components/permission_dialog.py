@@ -13,7 +13,14 @@ from typing import TYPE_CHECKING, Callable
 import flet as ft
 
 from misaka.i18n import t
-from misaka.ui.theme import MONO_FONT_FAMILY
+from misaka.ui.theme import (
+    MONO_FONT_FAMILY,
+    RADIUS_LG,
+    WARNING_AMBER,
+    make_button,
+    make_divider,
+    make_outlined_button,
+)
 
 if TYPE_CHECKING:
     from misaka.state import AppState, PermissionRequest
@@ -62,16 +69,14 @@ class PermissionDialog(ft.Container):
         if len(input_display) > 1000:
             input_display = input_display[:1000] + "\n... (truncated)"
 
-        # Build the dialog content
         dialog_content = ft.Column(
             controls=[
-                # Icon and title
                 ft.Row(
                     controls=[
                         ft.Icon(
                             ft.Icons.SECURITY,
                             size=24,
-                            color=ft.Colors.ORANGE,
+                            color=WARNING_AMBER,
                         ),
                         ft.Text(
                             t("permission.title"),
@@ -81,14 +86,12 @@ class PermissionDialog(ft.Container):
                     ],
                     spacing=12,
                 ),
-                ft.Divider(height=1),
-                # Tool info
+                make_divider(),
                 ft.Text(
                     t("permission.tool_request", tool_name=request.tool_name),
                     size=14,
                     weight=ft.FontWeight.W_500,
                 ),
-                # Input details
                 ft.Container(
                     content=ft.Text(
                         input_display,
@@ -98,7 +101,7 @@ class PermissionDialog(ft.Container):
                         no_wrap=False,
                     ),
                     padding=12,
-                    border_radius=6,
+                    border_radius=RADIUS_LG,
                     bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
                     max_height=300,
                 ),
@@ -117,32 +120,23 @@ class PermissionDialog(ft.Container):
                         ft.Text(desc, size=12, italic=True, opacity=0.7)
                     )
 
-        # Action buttons
         actions = ft.Row(
             controls=[
                 ft.Container(expand=True),
-                ft.OutlinedButton(
-                    content=t("permission.deny"),
+                make_outlined_button(
+                    t("permission.deny"),
                     icon=ft.Icons.CLOSE,
                     on_click=self._handle_deny,
-                    style=ft.ButtonStyle(
-                        color=ft.Colors.ERROR,
-                    ),
                 ),
-                ft.Button(
-                    content=t("permission.allow"),
+                make_button(
+                    t("permission.allow"),
                     icon=ft.Icons.CHECK,
                     on_click=self._handle_allow,
-                    style=ft.ButtonStyle(
-                        bgcolor=ft.Colors.PRIMARY,
-                        color=ft.Colors.ON_PRIMARY,
-                    ),
                 ),
             ],
             spacing=12,
         )
 
-        # Modal overlay
         self.content = ft.Container(
             content=ft.Container(
                 content=ft.Column(
@@ -151,12 +145,15 @@ class PermissionDialog(ft.Container):
                 ),
                 width=500,
                 padding=24,
-                border_radius=12,
+                border_radius=RADIUS_LG,
                 bgcolor=ft.Colors.SURFACE,
                 shadow=ft.BoxShadow(
                     spread_radius=0,
-                    blur_radius=20,
-                    color=ft.Colors.with_opacity(0.3, ft.Colors.BLACK),
+                    blur_radius=24,
+                    color=ft.Colors.with_opacity(0.25, ft.Colors.BLACK),
+                ),
+                border=ft.Border.all(
+                    1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
                 ),
             ),
             alignment=ft.Alignment.CENTER,

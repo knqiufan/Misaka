@@ -10,7 +10,12 @@ import json
 
 import flet as ft
 
-from misaka.ui.theme import MONO_FONT_FAMILY
+from misaka.ui.theme import (
+    ERROR_RED,
+    MONO_FONT_FAMILY,
+    SUCCESS_GREEN,
+    WARNING_AMBER,
+)
 
 _TOOL_ICONS = {
     "Read": ft.Icons.DESCRIPTION_OUTLINED,
@@ -26,9 +31,9 @@ _TOOL_ICONS = {
 }
 
 _STATUS_COLORS = {
-    "success": "#10b981",
-    "error": "#ef4444",
-    "pending": "#f59e0b",
+    "success": SUCCESS_GREEN,
+    "error": ERROR_RED,
+    "pending": WARNING_AMBER,
 }
 
 
@@ -103,21 +108,27 @@ class ToolCallBlock(ft.Container):
             controls=[
                 ft.Container(
                     content=summary_row,
-                    padding=ft.Padding.symmetric(horizontal=8, vertical=6),
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=7),
                     on_click=self._toggle,
                     ink=True,
-                    border_radius=6,
+                    border_radius=8,
                 ),
                 self._detail_container,
             ],
             spacing=0,
             tight=True,
         )
-        self.border_radius = 8
-        self.margin = ft.Margin.only(top=1, bottom=1)
+        self.border_radius = 10
+        self.margin = ft.Margin.only(top=2, bottom=2)
         self.bgcolor = ft.Colors.with_opacity(0.02, ft.Colors.ON_SURFACE)
         self.border = ft.Border.all(
-            1, ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
+            1, ft.Colors.with_opacity(0.05, ft.Colors.ON_SURFACE),
+        )
+        self.shadow = ft.BoxShadow(
+            blur_radius=4,
+            spread_radius=-2,
+            color=ft.Colors.with_opacity(0.02, ft.Colors.BLACK),
+            offset=ft.Offset(0, 1),
         )
 
     def _build_detail_controls(self) -> list[ft.Control]:

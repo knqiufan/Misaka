@@ -12,7 +12,15 @@ from typing import TYPE_CHECKING, Any
 import flet as ft
 
 from misaka.i18n import t
-from misaka.ui.theme import MONO_FONT_FAMILY
+from misaka.ui.theme import (
+    MONO_FONT_FAMILY,
+    make_badge,
+    make_button,
+    make_dialog,
+    make_divider,
+    make_icon_button,
+    make_text_button,
+)
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -51,8 +59,8 @@ class PluginsPage(ft.Column):
                         weight=ft.FontWeight.W_600,
                         expand=True,
                     ),
-                    ft.Button(
-                        content=t("plugins.add_server"),
+                    make_button(
+                        t("plugins.add_server"),
                         icon=ft.Icons.ADD,
                         on_click=self._show_add_dialog,
                     ),
@@ -83,7 +91,7 @@ class PluginsPage(ft.Column):
         config_info = ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Divider(height=1),
+                    make_divider(),
                     ft.Text(
                         t("plugins.config_files"),
                         size=14,
@@ -95,8 +103,8 @@ class PluginsPage(ft.Column):
                         opacity=0.6,
                         font_family=MONO_FONT_FAMILY,
                     ),
-                    ft.Button(
-                        content=t("plugins.reload_config"),
+                    make_button(
+                        t("plugins.reload_config"),
                         icon=ft.Icons.REFRESH,
                         on_click=self._reload_config,
                     ),
@@ -182,9 +190,9 @@ class PluginsPage(ft.Column):
             detail = f"Type: {server_type}"
 
         type_colors = {
-            "stdio": ft.Colors.BLUE,
-            "sse": ft.Colors.ORANGE,
-            "http": ft.Colors.GREEN,
+            "stdio": "#2563eb",
+            "sse": "#f59e0b",
+            "http": "#10b981",
         }
 
         return ft.Container(
@@ -200,16 +208,10 @@ class PluginsPage(ft.Column):
                                         size=14,
                                         weight=ft.FontWeight.W_500,
                                     ),
-                                    ft.Container(
-                                        content=ft.Text(
-                                            server_type.upper(),
-                                            size=9,
-                                            weight=ft.FontWeight.BOLD,
-                                            color=ft.Colors.WHITE,
-                                        ),
-                                        bgcolor=type_colors.get(server_type, ft.Colors.GREY),
-                                        border_radius=3,
-                                        padding=ft.Padding.symmetric(horizontal=4, vertical=1),
+                                    make_badge(
+                                        server_type.upper(),
+                                        bgcolor=type_colors.get(server_type, "#6b7280"),
+                                        size=9,
                                     ),
                                 ],
                                 spacing=8,
@@ -225,10 +227,9 @@ class PluginsPage(ft.Column):
                         spacing=2,
                         expand=True,
                     ),
-                    ft.IconButton(
-                        icon=ft.Icons.DELETE_OUTLINE,
+                    make_icon_button(
+                        ft.Icons.DELETE_OUTLINE,
                         tooltip=t("plugins.remove"),
-                        icon_size=18,
                         on_click=lambda e, n=name: self._remove_server(n),
                     ),
                 ],
@@ -236,7 +237,7 @@ class PluginsPage(ft.Column):
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=14,
-            border_radius=10,
+            border_radius=12,
             border=ft.Border.all(
                 1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
@@ -282,8 +283,8 @@ class PluginsPage(ft.Column):
             e.page.pop_dialog()
             self.state.update()
 
-        dialog = ft.AlertDialog(
-            title=ft.Text(t("plugins.add_mcp_server")),
+        dialog = make_dialog(
+            title=t("plugins.add_mcp_server"),
             content=ft.Column(
                 controls=[name_field, type_dropdown, command_field, args_field, url_field],
                 spacing=12,
@@ -291,8 +292,10 @@ class PluginsPage(ft.Column):
                 width=400,
             ),
             actions=[
-                ft.TextButton(t("common.cancel"), on_click=lambda ev: e.page.pop_dialog()),
-                ft.Button(t("plugins.add"), on_click=save),
+                make_text_button(
+                    t("common.cancel"), on_click=lambda ev: e.page.pop_dialog(),
+                ),
+                make_button(t("plugins.add"), on_click=save),
             ],
         )
         e.page.show_dialog(dialog)

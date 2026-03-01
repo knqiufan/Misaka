@@ -56,13 +56,14 @@ class TaskList(ft.Column):
         self._build_ui()
 
     def _build_ui(self) -> None:
+        from misaka.ui.theme import make_text_field
+
         controls: list[ft.Control] = []
 
-        # New task input
-        new_task_field = ft.TextField(
+        new_task_field = make_text_field(
             hint_text=t("right_panel.add_task"),
             dense=True,
-            border_radius=6,
+            border_radius=8,
             content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
             on_submit=self._handle_create,
         )

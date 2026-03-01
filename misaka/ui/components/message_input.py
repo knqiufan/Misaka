@@ -52,7 +52,7 @@ class MessageInput(ft.Container):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        from misaka.ui.theme import make_text_field as _mtf
+        from misaka.ui.theme import make_icon_button, make_text_field as _mtf
         self._text_field = _mtf(
             hint_text=t("chat.type_message"),
             expand=True,
@@ -62,8 +62,8 @@ class MessageInput(ft.Container):
             shift_enter=True,
             on_submit=self._handle_send,
             on_change=self._handle_text_change,
-            border_radius=12,
-            content_padding=ft.Padding.symmetric(horizontal=14, vertical=10),
+            border_radius=14,
+            content_padding=ft.Padding.symmetric(horizontal=16, vertical=12),
             text_size=13,
         )
 
@@ -83,20 +83,16 @@ class MessageInput(ft.Container):
             style=ft.ButtonStyle(shape=ft.CircleBorder(), padding=8),
         )
 
-        attach_btn = ft.IconButton(
-            icon=ft.Icons.ATTACH_FILE_ROUNDED,
+        attach_btn = make_icon_button(
+            ft.Icons.ATTACH_FILE_ROUNDED,
             tooltip=t("chat.attach_file"),
             on_click=self._handle_attach,
-            icon_size=18,
-            style=ft.ButtonStyle(padding=6),
         )
 
-        command_btn = ft.IconButton(
-            icon=ft.Icons.TERMINAL_ROUNDED,
+        command_btn = make_icon_button(
+            ft.Icons.TERMINAL_ROUNDED,
             tooltip=t("chat.command_menu"),
             on_click=lambda e: self._show_command_menu(filter_commands("")),
-            icon_size=18,
-            style=ft.ButtonStyle(padding=6),
         )
 
         self._command_menu = ft.Column(spacing=0, tight=True)

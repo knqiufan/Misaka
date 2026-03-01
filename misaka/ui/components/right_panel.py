@@ -55,26 +55,15 @@ class RightPanel(ft.Column):
             or (session.working_directory if session else "")
         )
 
-        files_btn = ft.TextButton(
-            content=t("right_panel.files"),
-            icon=ft.Icons.FOLDER_ROUNDED if is_files else ft.Icons.FOLDER_OUTLINED,
+        from misaka.ui.theme import make_text_button
+        files_btn = make_text_button(
+            t("right_panel.files"),
             on_click=lambda e: self._switch_tab("files"),
-            style=ft.ButtonStyle(
-                color=ft.Colors.PRIMARY if is_files else ft.Colors.ON_SURFACE_VARIANT,
-            ),
         )
 
-        tasks_btn = ft.TextButton(
-            content=t("right_panel.tasks"),
-            icon=(
-                ft.Icons.CHECKLIST_ROUNDED
-                if not is_files
-                else ft.Icons.CHECKLIST_RTL_ROUNDED
-            ),
+        tasks_btn = make_text_button(
+            t("right_panel.tasks"),
             on_click=lambda e: self._switch_tab("tasks"),
-            style=ft.ButtonStyle(
-                color=ft.Colors.PRIMARY if not is_files else ft.Colors.ON_SURFACE_VARIANT,
-            ),
         )
 
         tab_bar = ft.Container(
@@ -96,16 +85,14 @@ class RightPanel(ft.Column):
             self._file_preview = FilePreview(preview=self._current_preview)
 
             if self._current_preview:
-                # Show preview with back button
+                from misaka.ui.theme import make_icon_button
                 back_btn = ft.Container(
                     content=ft.Row(
                         controls=[
-                            ft.IconButton(
-                                icon=ft.Icons.ARROW_BACK_ROUNDED,
-                                icon_size=18,
+                            make_icon_button(
+                                ft.Icons.ARROW_BACK_ROUNDED,
                                 on_click=self._close_preview,
                                 tooltip=t("right_panel.back_to_tree"),
-                                style=ft.ButtonStyle(padding=4),
                             ),
                             ft.Text(
                                 t("right_panel.file_preview"),

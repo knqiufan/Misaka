@@ -2,6 +2,7 @@
 
 Shows the current connection state to the Claude SDK,
 including model name and streaming status.
+Badge-style pill indicator with semantic colors.
 """
 
 from __future__ import annotations
@@ -9,10 +10,11 @@ from __future__ import annotations
 import flet as ft
 
 from misaka.i18n import t
+from misaka.ui.theme import ERROR_RED, SUCCESS_GREEN, WARNING_AMBER
 
 
 class ConnectionStatus(ft.Row):
-    """Small status indicator showing SDK connection state."""
+    """Badge-style status indicator showing SDK connection state."""
 
     def __init__(
         self,
@@ -28,24 +30,42 @@ class ConnectionStatus(ft.Row):
 
     def _build_ui(self) -> None:
         if self._is_streaming:
-            color = "#f59e0b"
+            dot_color = WARNING_AMBER
         elif self._connected:
-            color = "#10b981"
+            dot_color = SUCCESS_GREEN
         else:
-            color = "#6b7280"
+            dot_color = ERROR_RED
 
         label = self._model or (
             t("chat.connected") if self._connected else t("chat.disconnected")
         )
 
         self._dot = ft.Container(
-            width=6,
-            height=6,
-            border_radius=3,
-            bgcolor=color,
+            width=7,
+            height=7,
+            border_radius=4,
+            bgcolor=dot_color,
+            shadow=ft.BoxShadow(
+                blur_radius=4,
+                spread_radius=0,
+                color=ft.Colors.with_opacity(0.4, dot_color),
+            ),
         )
         self._label = ft.Text(label, size=11, opacity=0.6)
-        self.controls = [self._dot, self._label]
+
+        badge = ft.Container(
+            content=ft.Row(
+                controls=[self._dot, self._label],
+                spacing=6,
+                tight=True,
+            ),
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE),
+            ),
+            border_radius=8,
+            padding=ft.Padding.symmetric(horizontal=8, vertical=3),
+        )
+        self.controls = [badge]
 
     def set_status(
         self,
