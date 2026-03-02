@@ -96,23 +96,26 @@ class FileTree(ft.Column):
     def _build_ui(self) -> None:
         if not self._nodes:
             self.controls = [
-                ft.Container(
-                    content=ft.Column(
-                        controls=[
-                            ft.Icon(ft.Icons.FOLDER_OPEN, size=28, opacity=0.25),
-                            ft.Text(
-                                t("right_panel.no_files"),
-                                italic=True,
-                                size=12,
-                                opacity=0.4,
-                                text_align=ft.TextAlign.CENTER,
-                            ),
-                        ],
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=6,
+                ft.GestureDetector(
+                    content=ft.Container(
+                        content=ft.Column(
+                            controls=[
+                                ft.Icon(ft.Icons.FOLDER_OPEN, size=28, opacity=0.25),
+                                ft.Text(
+                                    t("right_panel.no_files"),
+                                    italic=True,
+                                    size=12,
+                                    opacity=0.4,
+                                    text_align=ft.TextAlign.CENTER,
+                                ),
+                            ],
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                            spacing=6,
+                        ),
+                        padding=24,
+                        alignment=ft.Alignment.CENTER,
                     ),
-                    padding=24,
-                    alignment=ft.Alignment.CENTER,
+                    on_tap=lambda _: shared_context_menu.dismiss(),
                 )
             ]
             return
@@ -123,7 +126,12 @@ class FileTree(ft.Column):
             spacing=0,
             padding=ft.Padding.only(left=4, right=4, top=2, bottom=4),
         )
-        self.controls = [tree_view]
+        self.controls = [
+            ft.GestureDetector(
+                content=tree_view,
+                on_tap=lambda _: shared_context_menu.dismiss(),
+            )
+        ]
 
     # ------------------------------------------------------------------
     # Node building
@@ -296,6 +304,7 @@ class FileTree(ft.Column):
         return _NAME_STYLE.get(stem, _DEFAULT_FILE_STYLE)
 
     def _handle_click(self, path: str, row: ft.Container) -> None:
+        shared_context_menu.dismiss()
         if self._selected_file_row is not None and self._selected_file_row is not row:
             self._selected_file_row.bgcolor = ft.Colors.TRANSPARENT
             self._selected_file_row.update()

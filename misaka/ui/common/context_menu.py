@@ -29,12 +29,28 @@ class FloatingContextMenu:
     """Manages a single floating context menu rendered via ``page.overlay``.
 
     Opening a new menu automatically dismisses the previous one.
-    A transparent full-screen backdrop closes the menu on any outside click.
     """
 
     def __init__(self) -> None:
-        self._overlay_stack: ft.Stack | None = None
+        self._menu_overlay: ft.Container | None = None
         self._page: ft.Page | None = None
+        self._last_items: list[ContextMenuItem] | None = None
+
+    def _on_menu_secondary_tap(self, e: ft.TapEvent) -> None:
+        """On right-click over menu: reopen it at the new pointer position."""
+        page = self._page
+        items = self._last_items
+        if not page or not items:
+            self.dismiss()
+            return
+        pos = e.global_position
+        self.dismiss()
+        self.show(
+            page,
+            global_x=pos.x,
+            global_y=pos.y,
+            items=items,
+        )
 
     def show(
         self,
@@ -47,10 +63,11 @@ class FloatingContextMenu:
         """Open the menu at (*global_x*, *global_y*) with the given items."""
         self.dismiss()
         self._page = page
+        self._last_items = items
 
         menu_rows = [self._build_item(item) for item in items]
 
-        menu_panel = ft.Container(
+        menu_panel_inner = ft.Container(
             content=ft.Column(controls=menu_rows, spacing=0, tight=True),
             bgcolor=ft.Colors.SURFACE_CONTAINER,
             border_radius=14,
@@ -65,35 +82,33 @@ class FloatingContextMenu:
                 color=ft.Colors.with_opacity(0.16, ft.Colors.BLACK),
             ),
             width=100,
-            left=global_x,
-            top=global_y,
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
-
-        backdrop = ft.GestureDetector(
-            content=ft.Container(bgcolor=ft.Colors.TRANSPARENT),
-            expand=True,
-            on_tap=lambda _: self.dismiss(),
+        # Container with left/top can be placed directly in page.overlay
+        menu_panel = ft.Container(
+            content=ft.GestureDetector(
+                content=menu_panel_inner,
+                on_secondary_tap_down=self._on_menu_secondary_tap,
+            ),
+            left=global_x,
+            top=global_y,
         )
 
-        self._overlay_stack = ft.Stack(
-            controls=[backdrop, menu_panel],
-            expand=True,
-        )
-
-        page.overlay.append(self._overlay_stack)
+        self._menu_overlay = menu_panel
+        page.overlay.append(menu_panel)
         page.update()
 
     def dismiss(self) -> None:
         """Close the menu and remove overlay controls."""
-        if not self._page or not self._overlay_stack:
+        if not self._page or not self._menu_overlay:
             return
-        if self._overlay_stack in self._page.overlay:
-            self._page.overlay.remove(self._overlay_stack)
+        if self._menu_overlay in self._page.overlay:
+            self._page.overlay.remove(self._menu_overlay)
             with contextlib.suppress(Exception):
                 self._page.update()
-        self._overlay_stack = None
+        self._menu_overlay = None
         self._page = None
+        self._last_items = None
 
     def _build_item(self, item: ContextMenuItem) -> ft.Control:
         return ft.Container(

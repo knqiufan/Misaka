@@ -13,10 +13,15 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
+from misaka.ui.common.context_menu import ContextMenuItem, FloatingContextMenu
 
 if TYPE_CHECKING:
     from misaka.db.models import ChatSession
     from misaka.state import AppState
+
+
+# Module-level context menu instance
+_context_menu = FloatingContextMenu()
 
 
 class ChatList(ft.Column):
@@ -96,10 +101,15 @@ class ChatList(ft.Column):
             padding=ft.Padding.symmetric(horizontal=6, vertical=6),
         )
 
+        list_surface = ft.GestureDetector(
+            content=self._session_list,
+            on_tap=lambda _: _context_menu.dismiss(),
+        )
+
         self.controls = [
             header,
             search_bar,
-            self._session_list,
+            list_surface,
         ]
 
         self._refresh_list()
@@ -231,16 +241,6 @@ class ChatList(ft.Column):
         }
         mode_color = mode_colors.get(session.mode, "#6b7280")
 
-        delete_btn = ft.IconButton(
-            icon=ft.Icons.CLOSE_ROUNDED,
-            icon_size=14,
-            icon_color=ft.Colors.ON_SURFACE_VARIANT,
-            tooltip=t("chat.delete"),
-            on_click=lambda e, sid=session.id: self._confirm_delete(sid, e.page),
-            style=ft.ButtonStyle(padding=2),
-            visible=False,
-        )
-
         item_content = ft.Row(
             controls=[
                 ft.Column(
@@ -280,19 +280,10 @@ class ChatList(ft.Column):
                     spacing=3,
                     expand=True,
                 ),
-                delete_btn,
             ],
             spacing=4,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
-
-        def show_delete(e) -> None:
-            delete_btn.visible = True
-            delete_btn.update()
-
-        def hide_delete(e) -> None:
-            delete_btn.visible = False
-            delete_btn.update()
 
         def on_item_hover(e) -> None:
             hovering = e.data == "true"
@@ -320,7 +311,6 @@ class ChatList(ft.Column):
                 else ft.Colors.TRANSPARENT,
             ),
             on_click=lambda e, sid=session.id: self._handle_select(sid),
-            on_long_press=lambda e, sid=session.id: self._show_context_menu(e, sid),
             on_hover=on_item_hover,
             animate=ft.Animation(150, ft.AnimationCurve.EASE_OUT),
             ink=True,
@@ -328,30 +318,33 @@ class ChatList(ft.Column):
 
         return ft.GestureDetector(
             content=inner,
-            on_enter=show_delete,
-            on_exit=hide_delete,
+            on_secondary_tap_down=lambda e, sid=session.id: self._show_context_menu(e, sid),
         )
 
     def _handle_select(self, session_id: str) -> None:
+        _context_menu.dismiss()
         if self._on_select:
             self._on_select(session_id)
 
     def _handle_new_chat(self, e: ft.ControlEvent) -> None:
+        _context_menu.dismiss()
         if self._on_new_chat:
             self._on_new_chat()
 
     def _handle_import(self, e: ft.ControlEvent) -> None:
+        _context_menu.dismiss()
         if self._on_import:
             self._on_import()
 
     def _on_search(self, e: ft.ControlEvent) -> None:
+        _context_menu.dismiss()
         self._search_query = (e.data or "").strip()
         self._refresh_list()
         if self._session_list:
             self._session_list.update()
 
-    def _show_context_menu(self, e: ft.ControlEvent, session_id: str) -> None:
-        """Show context menu for session operations."""
+    def _show_context_menu(self, e: ft.TapEvent, session_id: str) -> None:
+        """Show context menu for session operations using floating menu."""
         if not e.page:
             return
 
@@ -363,69 +356,54 @@ class ChatList(ft.Column):
 
         page = e.page
 
-        def close_menu(action_fn=None, *args):
-            def handler(ev):
-                page.pop_dialog()
+        def handle_action(action_fn, *args):
+            def handler():
+                # Dismiss menu first
+                _context_menu.dismiss()
+                # Then execute action
                 if action_fn:
                     action_fn(*args)
             return handler
 
-        bottom_sheet = ft.BottomSheet(
-            content=ft.Container(
-                content=ft.Column(
-                    controls=[
-                        ft.Text(
-                            session.title,
-                            size=14,
-                            weight=ft.FontWeight.W_600,
-                            max_lines=1,
-                            overflow=ft.TextOverflow.ELLIPSIS,
-                        ),
-                        ft.Divider(height=1),
-                        ft.ListTile(
-                            leading=ft.Icon(ft.Icons.EDIT, size=20),
-                            title=ft.Text(t("chat.rename"), size=13),
-                            on_click=close_menu(self._start_rename, session_id, page),
-                        ),
-                        ft.ListTile(
-                            leading=ft.Icon(ft.Icons.ARCHIVE, size=20),
-                            title=ft.Text(t("chat.archive"), size=13),
-                            on_click=(
-                                close_menu(self._on_archive, session_id)
-                                if self._on_archive else None
-                            ),
-                        ),
-                        ft.ListTile(
-                            leading=ft.Icon(ft.Icons.REMOVE_CIRCLE_OUTLINE, size=20),
-                            title=ft.Text(t("chat.remove_from_list"), size=13),
-                            on_click=(
-                                close_menu(self._on_remove_from_list, session_id)
-                                if self._on_remove_from_list else None
-                            ),
-                        ),
-                        ft.ListTile(
-                            leading=ft.Icon(
-                                ft.Icons.DELETE, size=20, color=ft.Colors.ERROR,
-                            ),
-                            title=ft.Text(
-                                t("chat.delete"), size=13, color=ft.Colors.ERROR,
-                            ),
-                            on_click=(
-                                close_menu(
-                                    self._confirm_delete, session_id, page,
-                                )
-                                if self._on_delete else None
-                            ),
-                        ),
-                    ],
-                    tight=True,
-                    spacing=0,
-                ),
-                padding=16,
+        # Build menu items
+        items: list[ContextMenuItem] = [
+            ContextMenuItem(
+                icon=ft.Icons.EDIT,
+                label=t("chat.rename"),
+                on_click=handle_action(self._start_rename, session_id, page),
             ),
-        )
+        ]
 
-        page.show_dialog(bottom_sheet)
+        if self._on_archive:
+            items.append(ContextMenuItem(
+                icon=ft.Icons.ARCHIVE,
+                label=t("chat.archive"),
+                on_click=handle_action(self._on_archive, session_id),
+            ))
+
+        if self._on_remove_from_list:
+            items.append(ContextMenuItem(
+                icon=ft.Icons.REMOVE_CIRCLE_OUTLINE,
+                label=t("chat.remove_from_list"),
+                on_click=handle_action(self._on_remove_from_list, session_id),
+            ))
+
+        if self._on_delete:
+            items.append(ContextMenuItem(
+                icon=ft.Icons.DELETE,
+                label=t("chat.delete"),
+                on_click=handle_action(self._confirm_delete, session_id, page),
+                icon_color=ft.Colors.ERROR,
+            ))
+
+        # Position menu at the right-click location (TapEvent.global_position)
+        pos = e.global_position
+        _context_menu.show(
+            page,
+            global_x=pos.x,
+            global_y=pos.y,
+            items=items,
+        )
 
     def _confirm_delete(self, session_id: str, page: ft.Page) -> None:
         """Show a confirmation dialog before deleting a session."""
