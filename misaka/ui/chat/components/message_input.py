@@ -1,7 +1,7 @@
 """Message input component.
 
 Multi-line text input area with send button, file attachment support,
-slash-command menu, and keyboard shortcut handling.
+slash-command menu, @ file picker overlay, and keyboard shortcut handling.
 Supports Shift+Enter for newline and Enter to send.
 """
 
@@ -14,11 +14,15 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.commands import SlashCommand, filter_commands
+from misaka.db.models import FileTreeNode
 from misaka.i18n import t
 from misaka.ui.common.theme import MONO_FONT_FAMILY
 
 if TYPE_CHECKING:
     from misaka.state import AppState
+
+_FOLDER_COLOR = "#f59e0b"
+_MAX_FILE_RESULTS = 15
 
 
 class MessageInput(ft.Container):
@@ -46,6 +50,11 @@ class MessageInput(ft.Container):
         self._badge_container: ft.Container | None = None
         self._model_indicator: ft.Container | None = None
         self._active_badge: SlashCommand | None = None
+        self._file_menu: ft.Column | None = None
+        self._file_menu_container: ft.Container | None = None
+        self._at_start_pos: int = -1
+        self._file_menu_active: bool = False
+        self._suppress_focus_close: bool = False
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -63,6 +72,7 @@ class MessageInput(ft.Container):
             shift_enter=True,
             on_submit=self._handle_send,
             on_change=self._handle_text_change,
+            on_focus=self._handle_focus,
             border=ft.InputBorder.NONE,
             border_radius=0,
             border_width=0,
@@ -118,6 +128,26 @@ class MessageInput(ft.Container):
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
 
+        # File menu for @ file picking
+        self._file_menu = ft.Column(spacing=0, tight=True)
+        self._file_menu_container = ft.Container(
+            content=self._file_menu,
+            visible=False,
+            border_radius=14,
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.12, ft.Colors.ON_SURFACE)),
+            bgcolor=ft.Colors.SURFACE_CONTAINER,
+            padding=ft.Padding.symmetric(vertical=6),
+            width=360,
+            margin=ft.Margin.only(left=52, bottom=8),
+            shadow=ft.BoxShadow(
+                blur_radius=16,
+                spread_radius=-2,
+                offset=ft.Offset(0, 6),
+                color=ft.Colors.with_opacity(0.16, ft.Colors.BLACK),
+            ),
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        )
+
         self._badge_container = ft.Container(visible=False)
 
         self._model_indicator = self._build_model_indicator()
@@ -134,17 +164,11 @@ class MessageInput(ft.Container):
             padding=ft.Padding.symmetric(horizontal=10, vertical=4),
             border_radius=18,
             border=ft.Border.all(1, ft.Colors.with_opacity(0.10, ft.Colors.ON_SURFACE)),
-            # bgcolor=ft.Colors.with_opacity(0.3, ft.Colors.ON_SURFACE),
-            # shadow=ft.BoxShadow(
-            #     blur_radius=10,
-            #     spread_radius=-3,
-            #     offset=ft.Offset(0, 2),
-            #     color=ft.Colors.with_opacity(0.10, ft.Colors.BLACK),
-            # ),
+            on_click=self._handle_shell_click,
         )
 
         self.content = ft.Column(
-            controls=[self._command_menu_container, self._input_shell],
+            controls=[self._command_menu_container, self._file_menu_container, self._input_shell],
             spacing=0,
             tight=True,
         )
@@ -183,14 +207,29 @@ class MessageInput(ft.Container):
     # ------------------------------------------------------------------
 
     def _handle_text_change(self, e: ft.ControlEvent) -> None:
-        """Detect '/' prefix and show/update the command menu."""
+        """Detect '/' prefix or '@' for commands and file picking."""
         value = e.data or ""
+
+        self._detect_at_file_picker(value)
+
         if value.startswith("/"):
-            query = value[1:]
-            matches = filter_commands(query)
+            matches = filter_commands(value[1:])
             self._show_command_menu(matches)
         else:
             self._hide_command_menu()
+
+    def _handle_focus(self, e: ft.ControlEvent) -> None:
+        """Close file menu when the text field regains focus (e.g. user clicks inside)."""
+        if self._suppress_focus_close:
+            self._suppress_focus_close = False
+            return
+        if self._file_menu_active:
+            self._hide_file_menu()
+
+    def _handle_shell_click(self, e: ft.ControlEvent) -> None:
+        """Close file menu when the input shell area is clicked."""
+        if self._file_menu_active:
+            self._hide_file_menu()
 
     def _show_command_menu(self, commands: list[SlashCommand]) -> None:
         if not self._command_menu or not self._command_menu_container:
@@ -273,6 +312,236 @@ class MessageInput(ft.Container):
                 self._text_field.value = ""
                 self._text_field.update()
                 self._text_field.focus()
+
+    # ------------------------------------------------------------------
+    # File menu (@ file picking)
+    # ------------------------------------------------------------------
+
+    def _detect_at_file_picker(self, value: str) -> None:
+        """Detect @ token and show/hide the file picker overlay."""
+        at_pos = self._find_active_at(value)
+        if at_pos < 0:
+            if self._file_menu_active:
+                self._hide_file_menu()
+            return
+
+        query = value[at_pos + 1:]
+        if " " in query or "\n" in query:
+            if self._file_menu_active:
+                self._hide_file_menu()
+            return
+
+        self._at_start_pos = at_pos
+        self._file_menu_active = True
+        self._show_file_menu(query)
+
+    @staticmethod
+    def _find_active_at(text: str) -> int:
+        """Find the position of the last valid @ trigger in *text*.
+
+        A valid @ is either at position 0 or preceded by whitespace.
+        Returns -1 if none found.
+        """
+        pos = len(text)
+        while pos > 0:
+            pos = text.rfind("@", 0, pos)
+            if pos < 0:
+                return -1
+            if pos == 0 or text[pos - 1] in " \n\t":
+                return pos
+        return -1
+
+    def _show_file_menu(self, query: str) -> None:
+        """Show the file picking overlay with filtered results."""
+        if not self._file_menu or not self._file_menu_container:
+            return
+
+        nodes = self._resolve_file_nodes(query)
+        if nodes is None:
+            self._render_file_menu_items([])
+            return
+        self._render_file_menu_items(nodes)
+
+    def _resolve_file_nodes(self, query: str) -> list[FileTreeNode] | None:
+        """Resolve visible file nodes based on the query path.
+
+        Supports incremental navigation:
+        - "" → show top-level nodes
+        - "mis" → filter top-level nodes by "mis"
+        - "misaka\\" → show children of "misaka" folder
+        - "misaka\\ui\\" → show children of misaka/ui folder
+        - "misaka\\ui\\ch" → filter children of misaka/ui by "ch"
+        """
+        root_nodes = self._get_root_nodes()
+        if not root_nodes:
+            return None
+
+        normalized = query.replace("/", "\\")
+        segments = normalized.split("\\")
+
+        current_nodes = root_nodes
+        for i, segment in enumerate(segments):
+            is_last = i == len(segments) - 1
+            if is_last:
+                return self._filter_nodes_by_name(current_nodes, segment)
+            matched_dir = self._find_directory_node(current_nodes, segment)
+            if matched_dir is None:
+                return []
+            current_nodes = matched_dir.children or []
+        return current_nodes
+
+    def _get_root_nodes(self) -> list[FileTreeNode]:
+        """Get the top-level file tree nodes from state."""
+        raw_nodes = self.state.file_tree_nodes or []
+        result: list[FileTreeNode] = []
+        for node in raw_nodes:
+            if isinstance(node, FileTreeNode):
+                result.append(node)
+        return result
+
+    @staticmethod
+    def _filter_nodes_by_name(
+        nodes: list[FileTreeNode],
+        fragment: str,
+    ) -> list[FileTreeNode]:
+        """Filter nodes whose name contains *fragment* (case-insensitive)."""
+        if not fragment:
+            return nodes[:_MAX_FILE_RESULTS]
+        frag_lower = fragment.lower()
+        return [n for n in nodes if frag_lower in n.name.lower()][:_MAX_FILE_RESULTS]
+
+    @staticmethod
+    def _find_directory_node(
+        nodes: list[FileTreeNode],
+        name: str,
+    ) -> FileTreeNode | None:
+        """Find a directory node by exact name (case-insensitive)."""
+        name_lower = name.lower()
+        for n in nodes:
+            if n.type == "directory" and n.name.lower() == name_lower:
+                return n
+        return None
+
+    def _render_file_menu_items(self, nodes: list[FileTreeNode]) -> None:
+        """Render file items into the overlay menu."""
+        if not self._file_menu or not self._file_menu_container:
+            return
+        if not nodes:
+            self._file_menu.controls = [
+                ft.Container(
+                    content=ft.Text(
+                        t("right_panel.no_files"), size=12, opacity=0.5,
+                    ),
+                    padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+                )
+            ]
+        else:
+            self._file_menu.controls = [
+                self._build_file_item(n) for n in nodes
+            ]
+        self._file_menu_container.visible = True
+        self._file_menu_container.update()
+        if self._text_field:
+            self._suppress_focus_close = True
+            self._text_field.focus()
+
+    def _build_file_item(self, node: FileTreeNode) -> ft.Control:
+        """Build a single file row for the popup menu."""
+        is_dir = node.type == "directory"
+        icon = ft.Icons.FOLDER_ROUNDED if is_dir else ft.Icons.DESCRIPTION_OUTLINED
+        icon_color = _FOLDER_COLOR if is_dir else "#94a3b8"
+
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(icon, size=15, color=icon_color),
+                    ft.Text(
+                        node.name,
+                        size=12,
+                        weight=ft.FontWeight.W_500,
+                        expand=True,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
+                    ft.Icon(
+                        ft.Icons.CHEVRON_RIGHT,
+                        size=14,
+                        opacity=0.3,
+                        visible=is_dir,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=7),
+            on_click=lambda e, n=node: self._select_file_node(n),
+            ink=True,
+        )
+
+    def _select_file_node(self, node: FileTreeNode) -> None:
+        """Handle file/folder selection from the file menu."""
+        if not self._text_field:
+            return
+        text = self._text_field.value or ""
+
+        if self._at_start_pos < 0 or self._at_start_pos >= len(text):
+            return
+
+        before = text[:self._at_start_pos]
+        old_query = text[self._at_start_pos + 1:]
+
+        if node.type == "directory":
+            new_query = self._build_dir_query(old_query, node.name)
+            self._text_field.value = f"{before}@{new_query}"
+            self._text_field.update()
+            self._suppress_focus_close = True
+            self._text_field.focus()
+            self._show_file_menu(new_query)
+            return
+
+        self._text_field.value = f"{before}@{node.path} "
+        self._text_field.update()
+        self._text_field.focus()
+        self._hide_file_menu()
+
+    @staticmethod
+    def _build_dir_query(old_query: str, dir_name: str) -> str:
+        """Build the new query string after selecting a directory.
+
+        Examples:
+            old_query="mis", dir_name="misaka" → "misaka\\"
+            old_query="misaka\\u", dir_name="ui" → "misaka\\ui\\"
+        """
+        normalized = old_query.replace("/", "\\")
+        parts = normalized.split("\\")
+        parts[-1] = dir_name
+        return "\\".join(parts) + "\\"
+
+    def _hide_file_menu(self) -> None:
+        """Hide the file picker overlay and reset state."""
+        self._file_menu_active = False
+        self._at_start_pos = -1
+        if self._file_menu_container and self._file_menu_container.visible:
+            self._file_menu_container.visible = False
+            self._file_menu_container.update()
+
+    # ------------------------------------------------------------------
+    # Insert file path from external source (right-click menu)
+    # ------------------------------------------------------------------
+
+    def insert_at_symbol(self, path: str) -> None:
+        """Insert a file path prefixed with @ into the input field.
+
+        Trailing space prevents the @ file picker from re-activating.
+        """
+        if not self._text_field:
+            return
+
+        current = self._text_field.value or ""
+        separator = " " if current and not current.endswith((" ", "\n")) else ""
+        self._text_field.value = f"{current}{separator}@{path} "
+        self._text_field.update()
+        self._suppress_focus_close = True
+        self._text_field.focus()
 
     # ------------------------------------------------------------------
     # Model sub-menu
@@ -476,6 +745,7 @@ class MessageInput(ft.Container):
         self._text_field.value = ""
         self._text_field.update()
         self._hide_command_menu()
+        self._hide_file_menu()
         if self._on_send:
             self._on_send(user_text)
 

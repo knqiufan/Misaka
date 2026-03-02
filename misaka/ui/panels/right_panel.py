@@ -29,6 +29,7 @@ class RightPanel(ft.Column):
         self,
         state: AppState,
         on_file_click: Callable[[str], None] | None = None,
+        on_file_select: Callable[[str], None] | None = None,
         on_task_status_change: Callable[[str, str], None] | None = None,
         on_task_create: Callable[[str], None] | None = None,
         on_task_delete: Callable[[str], None] | None = None,
@@ -36,6 +37,7 @@ class RightPanel(ft.Column):
         super().__init__(spacing=0, expand=True)
         self.state = state
         self._on_file_click = on_file_click
+        self._on_file_select = on_file_select
         self._on_task_status_change = on_task_status_change
         self._on_task_create = on_task_create
         self._on_task_delete = on_task_delete
@@ -84,6 +86,7 @@ class RightPanel(ft.Column):
             self._file_tree = FileTree(
                 nodes=file_nodes,
                 on_file_click=self._handle_file_click,
+                on_file_select=self._handle_file_select,
             )
             self._file_preview = FilePreview(preview=self._current_preview)
 
@@ -219,6 +222,10 @@ class RightPanel(ft.Column):
     def _handle_file_click(self, path: str) -> None:
         if self._on_file_click:
             self._on_file_click(path)
+
+    def _handle_file_select(self, path: str) -> None:
+        if self._on_file_select:
+            self._on_file_select(path)
 
     def _close_preview(self, e: ft.ControlEvent) -> None:
         self._current_preview = None

@@ -328,3 +328,8 @@ class ChatView(ft.Column):
         if self._connection_status:
             self._connection_status.set_status(is_streaming=self.state.is_streaming)
         self._refresh_error_banner()
+
+    def insert_file_path(self, path: str) -> None:
+        """Insert a file path into the message input field."""
+        if self._message_input:
+            self._message_input.insert_at_symbol(path)

@@ -102,6 +102,7 @@ class ChatPage(ft.Stack):
         self._right_panel = RightPanel(
             state=self.state,
             on_file_click=self._on_file_click,
+            on_file_select=self._on_file_select,
             on_task_status_change=self._on_task_status_change,
             on_task_create=self._on_task_create,
             on_task_delete=self._on_task_delete,
@@ -485,6 +486,11 @@ class ChatPage(ft.Stack):
                 logger.warning("Failed to read file preview for %s: %s", path, exc)
 
         self.state.page.run_task(_do_preview)
+
+    def _on_file_select(self, path: str) -> None:
+        """Handle file/folder selection from right-click menu - insert path into input."""
+        if self._chat_view:
+            self._chat_view.insert_file_path(path)
 
     def _on_task_status_change(self, task_id: str, new_status: str) -> None:
         """Handle task status change."""

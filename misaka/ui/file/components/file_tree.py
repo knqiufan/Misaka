@@ -2,20 +2,21 @@
 
 Renders a hierarchical file tree using nested ExpansionTile controls
 for directories and clickable items for files. Uses colorful modern
-icons to distinguish file types at a glance.
+icons to distinguish file types at a glance. Right-click on any node
+shows a custom floating context menu matching the Misaka design system.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import flet as ft
 
 from misaka.db.models import FileTreeNode
 from misaka.i18n import t
+from misaka.ui.common.context_menu import ContextMenuItem, shared_context_menu
 
-# Compact layout tokens (kept centralized for consistent spacing)
 _ROW_HEIGHT = 26
 _BASE_LEFT_PADDING = 6
 _DEPTH_INDENT = 10
@@ -23,8 +24,6 @@ _FILE_ICON_SIZE = 15
 _FOLDER_ICON_SIZE = 16
 _SELECTED_BG = ft.Colors.with_opacity(0.14, ft.Colors.PRIMARY)
 
-
-# (icon, color) per extension — modernized and less noisy
 _EXT_STYLE: dict[str, tuple[str, str]] = {
     ".py": (ft.Icons.CODE, "#4f46e5"),
     ".js": (ft.Icons.JAVASCRIPT, "#f59e0b"),
@@ -77,7 +76,6 @@ _NAME_STYLE: dict[str, tuple[str, str]] = {
     "makefile": (ft.Icons.BUILD, "#64748b"),
 }
 
-
 class FileTree(ft.Column):
     """Hierarchical file tree display with expand/collapse support."""
 
@@ -85,10 +83,12 @@ class FileTree(ft.Column):
         self,
         nodes: list[FileTreeNode] | None = None,
         on_file_click: Callable[[str], None] | None = None,
+        on_file_select: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(spacing=0, expand=True)
         self._nodes = nodes or []
         self._on_file_click = on_file_click
+        self._on_file_select = on_file_select
         self._selected_file_path: str | None = None
         self._selected_file_row: ft.Container | None = None
         self._build_ui()
@@ -125,10 +125,61 @@ class FileTree(ft.Column):
         )
         self.controls = [tree_view]
 
+    # ------------------------------------------------------------------
+    # Node building
+    # ------------------------------------------------------------------
+
     def _build_node(self, node: FileTreeNode, depth: int) -> ft.Control:
         if node.type == "directory":
             return self._build_directory_node(node, depth)
         return self._build_file_node(node, depth)
+
+    def _wrap_with_right_click(
+        self,
+        node: FileTreeNode,
+        content: ft.Control,
+    ) -> ft.GestureDetector:
+        """Wrap *content* so that right-click opens the custom context menu."""
+        return ft.GestureDetector(
+            content=content,
+            on_secondary_tap_down=lambda e, n=node: self._open_context_menu(e, n),
+        )
+
+    def _open_context_menu(
+        self,
+        e: ft.TapEvent,
+        node: FileTreeNode,
+    ) -> None:
+        page = self.page
+        if not page:
+            return
+        is_dir = node.type == "directory"
+        type_icon = ft.Icons.FOLDER_ROUNDED if is_dir else ft.Icons.DESCRIPTION_OUTLINED
+        type_color = _FOLDER_COLOR if is_dir else "#94a3b8"
+
+        pos = e.global_position
+        shared_context_menu.show(
+            page,
+            global_x=pos.x,
+            global_y=pos.y,
+            items=[
+                ContextMenuItem(
+                    icon=type_icon,
+                    label=t("right_panel.select"),
+                    on_click=lambda: self._handle_select(node.path),
+                    icon_color=type_color,
+                ),
+            ],
+        )
+
+    def _handle_select(self, path: str) -> None:
+        shared_context_menu.dismiss()
+        if self._on_file_select:
+            self._on_file_select(path)
+
+    # ------------------------------------------------------------------
+    # Directory node
+    # ------------------------------------------------------------------
 
     def _build_directory_node(self, node: FileTreeNode, depth: int) -> ft.Control:
         children = [self._build_node(c, depth + 1) for c in node.children]
@@ -139,7 +190,7 @@ class FileTree(ft.Column):
             radius=0,
         )
 
-        title_container = ft.Container(
+        title_content = ft.Container(
             content=ft.Row(
                 controls=[
                     ft.Icon(
@@ -162,9 +213,10 @@ class FileTree(ft.Column):
             padding=ft.Padding.symmetric(horizontal=6, vertical=4),
             bgcolor=ft.Colors.TRANSPARENT,
         )
+        title_with_menu = self._wrap_with_right_click(node, title_content)
 
         return ft.ExpansionTile(
-            title=title_container,
+            title=title_with_menu,
             leading=None,
             controls=children if children else [
                 ft.Container(
@@ -179,6 +231,10 @@ class FileTree(ft.Column):
             shape=no_border,
             collapsed_shape=no_border,
         )
+
+    # ------------------------------------------------------------------
+    # File node
+    # ------------------------------------------------------------------
 
     def _build_file_node(self, node: FileTreeNode, depth: int) -> ft.Control:
         icon_name, icon_color = self._resolve_file_style(node)
@@ -210,7 +266,8 @@ class FileTree(ft.Column):
             height=_ROW_HEIGHT,
             bgcolor=(
                 _SELECTED_BG
-                if self._selected_file_path is not None and self._selected_file_path == node.path
+                if self._selected_file_path is not None
+                and self._selected_file_path == node.path
                 else ft.Colors.TRANSPARENT
             ),
             data=node.path,
@@ -218,7 +275,11 @@ class FileTree(ft.Column):
         row.on_click = lambda e, p=node.path, c=row: self._handle_click(p, c)
         if self._selected_file_path is not None and self._selected_file_path == node.path:
             self._selected_file_row = row
-        return row
+        return self._wrap_with_right_click(node, row)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _resolve_file_style(node: FileTreeNode) -> tuple[str, str]:
