@@ -7,15 +7,14 @@ from ~/.claude/projects/ into Misaka.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Callable
 
 import flet as ft
 
 from misaka.i18n import t
 from misaka.services.session_import_service import (
-    SessionImportService,
     ClaudeSessionInfo,
+    SessionImportService,
 )
 from misaka.ui.theme import (
     SUCCESS_GREEN,
@@ -26,51 +25,13 @@ from misaka.ui.theme import (
     make_text_button,
     make_text_field,
 )
+from misaka.utils.file_utils import format_file_size as _format_file_size
+from misaka.utils.time_utils import format_relative_time as _format_relative_time
 
 if TYPE_CHECKING:
     from misaka.state import AppState
 
 logger = logging.getLogger(__name__)
-
-
-def _format_file_size(size_bytes: int) -> str:
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    if size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    return f"{size_bytes / (1024 * 1024):.1f} MB"
-
-
-def _format_relative_time(iso_str: str) -> str:
-    if not iso_str:
-        return ""
-    try:
-        cleaned = iso_str.replace("Z", "+00:00")
-        dt = datetime.fromisoformat(cleaned)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        delta = now - dt
-        total_seconds = int(delta.total_seconds())
-        if total_seconds < 0:
-            return iso_str[:10]
-        if total_seconds < 60:
-            return f"{total_seconds}s ago"
-        minutes = total_seconds // 60
-        if minutes < 60:
-            return f"{minutes}m ago"
-        hours = minutes // 60
-        if hours < 24:
-            return f"{hours}h ago"
-        days = hours // 24
-        if days < 30:
-            return f"{days}d ago"
-        months = days // 30
-        if months < 12:
-            return f"{months}mo ago"
-        return f"{days // 365}y ago"
-    except (ValueError, TypeError, AttributeError):
-        return iso_str[:10] if len(iso_str) >= 10 else iso_str
 
 
 class ImportSessionDialog:

@@ -15,7 +15,6 @@ import flet as ft
 from misaka.db.models import FileTreeNode
 from misaka.i18n import t
 
-
 # Compact layout tokens (kept centralized for consistent spacing)
 _ROW_HEIGHT = 26
 _BASE_LEFT_PADDING = 6

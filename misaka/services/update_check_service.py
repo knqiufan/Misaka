@@ -14,8 +14,8 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable
-from urllib.request import urlopen, Request
 from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from misaka.config import IS_WINDOWS, get_expanded_path
 
@@ -129,10 +129,9 @@ class UpdateCheckService:
                 # Clear cached claude binary path
                 try:
                     from misaka.utils.platform import clear_claude_cache
-
                     clear_claude_cache()
-                except Exception:
-                    pass
+                except (ImportError, OSError) as exc:
+                    logger.debug("Failed to clear claude cache: %s", exc)
 
                 if on_progress:
                     on_progress("Update completed successfully")

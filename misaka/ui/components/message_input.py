@@ -281,21 +281,20 @@ class MessageInput(ft.Container):
     def _get_model_options(self) -> list[tuple[str, str]]:
         """Read model names from settings and build option list."""
         options: list[tuple[str, str]] = [("default", "Default")]
-        if hasattr(self.state, "services") and self.state.services:
-            cli_svc = getattr(self.state.services, "cli_settings_service", None)
-            if cli_svc:
-                settings = cli_svc.read_settings()
-                env = settings.get("env", {})
-                sonnet = env.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "Sonnet")
-                opus = env.get("ANTHROPIC_DEFAULT_OPUS_MODEL", "Opus")
-                haiku = env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL", "Haiku")
-                main = env.get("ANTHROPIC_MODEL", "")
-                if main and main != options[0][1]:
-                    options[0] = ("default", f"Default ({main})")
-                options.append(("sonnet", sonnet if sonnet != "Sonnet" else "Sonnet"))
-                options.append(("opus", opus if opus != "Opus" else "Opus"))
-                options.append(("haiku", haiku if haiku != "Haiku" else "Haiku"))
-                return options
+        cli_svc = self.state.get_service("cli_settings_service")
+        if cli_svc:
+            settings = cli_svc.read_settings()
+            env = settings.get("env", {})
+            sonnet = env.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "Sonnet")
+            opus = env.get("ANTHROPIC_DEFAULT_OPUS_MODEL", "Opus")
+            haiku = env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL", "Haiku")
+            main = env.get("ANTHROPIC_MODEL", "")
+            if main and main != options[0][1]:
+                options[0] = ("default", f"Default ({main})")
+            options.append(("sonnet", sonnet if sonnet != "Sonnet" else "Sonnet"))
+            options.append(("opus", opus if opus != "Opus" else "Opus"))
+            options.append(("haiku", haiku if haiku != "Haiku" else "Haiku"))
+            return options
         options.extend([("sonnet", "Sonnet"), ("opus", "Opus"), ("haiku", "Haiku")])
         return options
 

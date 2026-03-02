@@ -14,23 +14,18 @@ from typing import TYPE_CHECKING
 
 import flet as ft
 
-from misaka.state import (
-    PermissionRequest,
-    StreamingTextBlock,
-    StreamingToolUseBlock,
-    TokenUsageInfo,
-)
 from misaka.ui.components.chat_list import ChatList
 from misaka.ui.components.chat_view import ChatView
-from misaka.ui.components.import_session_dialog import ImportSessionDialog
 from misaka.ui.components.folder_picker import FolderPicker
+from misaka.ui.components.import_session_dialog import ImportSessionDialog
 from misaka.ui.components.permission_dialog import PermissionDialog
 from misaka.ui.components.resize_handle import ResizeHandle
 from misaka.ui.components.right_panel import RightPanel
+from misaka.ui.pages.stream_handler import StreamHandler
 
 if TYPE_CHECKING:
-    from misaka.db.models import ChatSession
     from misaka.db.database import DatabaseBackend
+    from misaka.db.models import ChatSession
     from misaka.state import AppState
 
 
@@ -60,6 +55,13 @@ class ChatPage(ft.Stack):
         self._left_container: ft.Container | None = None
         self._right_container: ft.Container | None = None
         self._import_dialog: ImportSessionDialog | None = None
+
+        self._stream_handler = StreamHandler(
+            state=state,
+            db=db,
+            ui_refresh=self._refresh_stream_ui,
+            on_title_changed=self._on_title_changed,
+        )
 
         self._build_ui()
 
@@ -147,9 +149,7 @@ class ChatPage(ft.Stack):
 
         self.controls = [main_row, self._permission_overlay]
 
-    # ---------------------------------------------------------------
-    # Session operations
-    # ---------------------------------------------------------------
+    # ---- Session operations ----
 
     def _on_session_select(self, session_id: str) -> None:
         """Handle session selection from the chat list."""
@@ -185,7 +185,7 @@ class ChatPage(ft.Stack):
         self.state.messages = []
         self.state.has_more_messages = False
         self.state.tasks = []
-        self._reset_stream_state()
+        self._stream_handler.reset_stream_state()
         self._scan_file_tree_async(path)
         self._rebuild_all()
         self.state.update()
@@ -366,6 +366,7 @@ class ChatPage(ft.Stack):
         """Insert a local-only assistant message into the current view."""
         import uuid
         from datetime import datetime, timezone
+
         from misaka.db.models import Message
 
         msg = Message(
@@ -380,40 +381,21 @@ class ChatPage(ft.Stack):
             self._chat_view.refresh_messages()
         self.state.update()
 
-    # ---------------------------------------------------------------
-    # Message operations
-    # ---------------------------------------------------------------
+    # ---- Message operations ----
 
     def _on_send_message(self, text: str) -> None:
         """Handle sending a message."""
         if not self.state.current_session_id:
             return
-
-        content_json = json.dumps([{"type": "text", "text": text}])
-        msg = self.db.add_message(
-            self.state.current_session_id,
-            "user",
-            content_json,
-        )
-        self.state.messages.append(msg)
-        self._start_streaming()
+        self._stream_handler.persist_user_message(text)
         if self._chat_view:
             self._chat_view.refresh_messages()
         self.state.update()
-
-        if hasattr(self, '_claude_send_callback') and self._claude_send_callback:
-            self.state.page.run_task(
-                self._claude_send_callback, text
-            )
-            return
-        self.state.page.run_task(self.send_to_claude, text)
+        self.state.page.run_task(*self._stream_handler.get_send_coroutine(text))
 
     def _on_abort(self) -> None:
         """Abort the current streaming operation."""
-        if hasattr(self, '_claude_abort_callback') and self._claude_abort_callback:
-            self.state.page.run_task(self._claude_abort_callback)
-            return
-        self.state.page.run_task(self.abort_claude)
+        self.state.page.run_task(*self._stream_handler.get_abort_coroutine())
 
     def _on_clear_messages(self) -> None:
         """Clear all messages for the current session."""
@@ -426,7 +408,7 @@ class ChatPage(ft.Stack):
         session = self.state.current_session
         if session:
             session.sdk_session_id = ""
-        self._reset_stream_state()
+        self._stream_handler.reset_stream_state()
         if self._chat_view:
             self._chat_view.refresh_messages()
         self.state.update()
@@ -453,9 +435,7 @@ class ChatPage(ft.Stack):
             self._chat_view.refresh()
         self.state.update()
 
-    # ---------------------------------------------------------------
-    # Panel operations
-    # ---------------------------------------------------------------
+    # ---- Panel operations ----
 
     def _toggle_left_panel(self) -> None:
         self.state.left_panel_open = not self.state.left_panel_open
@@ -484,14 +464,11 @@ class ChatPage(ft.Stack):
             self._right_container.width = new_width
             self._right_container.update()
 
-    # ---------------------------------------------------------------
-    # File and task operations
-    # ---------------------------------------------------------------
+    # ---- File and task operations ----
 
     def _on_file_click(self, path: str) -> None:
         """Handle file click in the file tree."""
-        services = getattr(self.state, "services", None)
-        file_svc = getattr(services, "file_service", None) if services else None
+        file_svc = self.state.get_service("file_service")
         if not file_svc or not self._right_panel:
             return
 
@@ -543,21 +520,15 @@ class ChatPage(ft.Stack):
             self._right_panel.refresh()
         self.state.update()
 
-    # ---------------------------------------------------------------
-    # Permission operations
-    # ---------------------------------------------------------------
+    # ---- Permission operations ----
 
     def _on_permission_allow(self) -> None:
-        """Handle permission allow action."""
-        self._resolve_pending_permission(True)
+        self._stream_handler.resolve_permission(True)
 
     def _on_permission_deny(self) -> None:
-        """Handle permission deny action."""
-        self._resolve_pending_permission(False)
+        self._stream_handler.resolve_permission(False)
 
-    # ---------------------------------------------------------------
-    # Helpers
-    # ---------------------------------------------------------------
+    # ---- Helpers ----
 
     def _rebuild_all(self) -> None:
         """Rebuild all sub-components."""
@@ -571,7 +542,6 @@ class ChatPage(ft.Stack):
             self._permission_overlay.refresh()
 
     def refresh(self) -> None:
-        """Full refresh of the chat page."""
         self._rebuild_all()
 
     def set_claude_callbacks(
@@ -580,106 +550,20 @@ class ChatPage(ft.Stack):
         abort_callback=None,
     ) -> None:
         """Set callbacks for Claude service integration."""
-        self._claude_send_callback = send_callback
-        self._claude_abort_callback = abort_callback
-
-    def _start_streaming(self) -> None:
-        self.state.is_streaming = True
-        self.state.streaming_blocks = []
-        self.state.streaming_session_id = self.state.current_session_id
-        self.state.error_message = None
-
-    def _reset_stream_state(self) -> None:
-        self.state.clear_streaming()
-        self.state.pending_permission = None
-
-    def _resolve_pending_permission(self, allow: bool) -> None:
-        req = self.state.pending_permission
-        self.state.pending_permission = None
-        services = getattr(self.state, "services", None)
-        perm_svc = getattr(services, "permission_service", None) if services else None
-        if req and perm_svc:
-            decision = {"behavior": "allow"} if allow else {
-                "behavior": "deny",
-                "message": "User denied permission",
-            }
-            perm_svc.resolve(req.id, decision)
-        if self._permission_overlay:
-            self._permission_overlay.refresh()
-        self.state.update()
+        self._stream_handler.set_callbacks(send_callback, abort_callback)
 
     def _abort_if_streaming(self) -> None:
         if not self.state.is_streaming:
             return
-        self.state.page.run_task(self.abort_claude)
-
-    def _append_stream_text(self, text: str) -> None:
-        if not self.state.streaming_blocks:
-            self.state.streaming_blocks.append(StreamingTextBlock())
-        last = self.state.streaming_blocks[-1]
-        if isinstance(last, StreamingTextBlock):
-            last.text += text
-            return
-        self.state.streaming_blocks.append(StreamingTextBlock(text=text))
-
-    def _append_tool_use(self, payload: dict) -> None:
-        self.state.streaming_blocks.append(
-            StreamingToolUseBlock(
-                id=payload.get("id", ""),
-                name=payload.get("name", ""),
-                input=payload.get("input", {}) or {},
-            )
-        )
-
-    def _append_tool_result(self, payload: dict) -> None:
-        tool_id = payload.get("tool_use_id", "")
-        for block in reversed(self.state.streaming_blocks):
-            if isinstance(block, StreamingToolUseBlock) and block.id == tool_id:
-                block.output = payload.get("content", "")
-                block.is_error = bool(payload.get("is_error"))
-                return
-
-    def _serialize_stream_blocks(self) -> tuple[str, str]:
-        blocks: list[dict] = []
-        plain_parts: list[str] = []
-        has_tool = False
-        for block in self.state.streaming_blocks:
-            if isinstance(block, StreamingTextBlock) and block.text:
-                blocks.append({"type": "text", "text": block.text})
-                plain_parts.append(block.text)
-            elif isinstance(block, StreamingToolUseBlock):
-                has_tool = True
-                blocks.append({
-                    "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
-                })
-                if block.output is not None:
-                    blocks.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": block.output,
-                        "is_error": block.is_error,
-                    })
-        if has_tool:
-            return json.dumps(blocks, ensure_ascii=False), "json"
-        return "".join(plain_parts).strip(), "text"
+        self.state.page.run_task(self._stream_handler.abort_claude)
 
     def _refresh_stream_ui(self) -> None:
+        """Refresh message list and permission overlay after stream events."""
         if self._chat_view:
             self._chat_view.refresh_messages()
         if self._permission_overlay:
             self._permission_overlay.refresh()
         self.state.update()
-
-    @staticmethod
-    def _permission_mode_for(session: ChatSession) -> str:
-        if session.mode == "plan":
-            return "plan"
-        if session.mode == "ask":
-            return "default"
-        return "acceptEdits"
 
     def _load_file_tree(self, session: ChatSession) -> None:
         wd = (session.working_directory or "").strip()
@@ -690,8 +574,7 @@ class ChatPage(ft.Stack):
         self._scan_file_tree_async(wd)
 
     def _scan_file_tree_async(self, working_dir: str) -> None:
-        services = getattr(self.state, "services", None)
-        file_svc = getattr(services, "file_service", None) if services else None
+        file_svc = self.state.get_service("file_service")
         if not file_svc:
             return
 
@@ -710,169 +593,9 @@ class ChatPage(ft.Stack):
 
         self.state.page.run_task(_do_scan)
 
-    async def send_to_claude(self, prompt: str) -> None:
-        session = self.state.current_session
-        services = getattr(self.state, "services", None)
-        claude = getattr(services, "claude_service", None) if services else None
-        if not session or not claude:
-            self.state.error_message = "Claude service unavailable."
-            self._reset_stream_state()
-            self._refresh_stream_ui()
-            return
-
-        result_usage: dict | None = None
-        result_sdk_session_id: str | None = None
-        stream_error: str | None = None
-
-        def on_text(text: str) -> None:
-            self._append_stream_text(text)
-            self._refresh_stream_ui()
-
-        def on_tool_use(payload: dict) -> None:
-            self._append_tool_use(payload)
-            self._refresh_stream_ui()
-
-        def on_tool_result(payload: dict) -> None:
-            self._append_tool_result(payload)
-            self._refresh_stream_ui()
-
-        def on_result(payload: dict) -> None:
-            nonlocal result_usage, result_sdk_session_id
-            result_usage = payload.get("usage")
-            result_sdk_session_id = payload.get("session_id") or None
-
-        def on_status(payload: dict) -> None:
-            nonlocal result_sdk_session_id
-            if payload.get("subtype") == "init":
-                result_sdk_session_id = payload.get("session_id") or result_sdk_session_id
-
-        def on_error(message: str) -> None:
-            nonlocal stream_error
-            stream_error = message
-
-        def on_permission_request(payload: dict) -> None:
-            self.state.pending_permission = PermissionRequest(
-                id=payload.get("permission_id", ""),
-                tool_name=payload.get("tool_name", ""),
-                tool_input=payload.get("tool_input", {}) or {},
-                suggestions=payload.get("suggestions"),
-                decision_reason=payload.get("decision_reason"),
-            )
-            self._refresh_stream_ui()
-
-        await claude.send_message(
-            session_id=session.id,
-            prompt=prompt,
-            model=session.model or None,
-            system_prompt=session.system_prompt or None,
-            working_directory=session.working_directory or None,
-            sdk_session_id=session.sdk_session_id or None,
-            mcp_servers=self.state.mcp_servers_sdk or None,
-            permission_mode=self._permission_mode_for(session),
-            on_text=on_text,
-            on_tool_use=on_tool_use,
-            on_tool_result=on_tool_result,
-            on_status=on_status,
-            on_result=on_result,
-            on_error=on_error,
-            on_permission_request=on_permission_request,
-        )
-        self._finalize_stream(session, result_usage, result_sdk_session_id, stream_error)
-
-    async def abort_claude(self) -> None:
-        services = getattr(self.state, "services", None)
-        claude = getattr(services, "claude_service", None) if services else None
-        if claude:
-            await claude.abort()
-        self._reset_stream_state()
-        self._refresh_stream_ui()
-
-    def _finalize_stream(
-        self,
-        session: ChatSession,
-        result_usage: dict | None,
-        result_sdk_session_id: str | None,
-        stream_error: str | None,
-    ) -> None:
-        active_sdk_session_id = result_sdk_session_id or session.sdk_session_id or None
-        content, _ = self._serialize_stream_blocks()
-        if content:
-            usage_json = json.dumps(result_usage) if result_usage else None
-            msg = self.db.add_message(
-                session_id=session.id,
-                role="assistant",
-                content=content,
-                token_usage=usage_json,
-            )
-            self.state.messages.append(msg)
-        if result_usage:
-            self.state.last_token_usage = TokenUsageInfo(**result_usage)
-        if result_sdk_session_id:
-            session.sdk_session_id = result_sdk_session_id
-            self.state.sdk_session_id = result_sdk_session_id
-            self.db.update_sdk_session_id(session.id, result_sdk_session_id)
-        self._maybe_sync_session_title(session, active_sdk_session_id)
-        if stream_error:
-            self.state.error_message = stream_error
-        self._reset_stream_state()
-        self._refresh_stream_ui()
-
-    def _maybe_sync_session_title(
-        self,
-        session: ChatSession,
-        sdk_session_id: str | None,
-    ) -> None:
-        """Auto-sync session title after first successful round."""
-        if not self._is_default_session_title(session.title):
-            return
-
-        new_title = self._title_from_claude_session(sdk_session_id)
-        if not new_title:
-            new_title = self._title_from_first_user_message()
-        if not new_title:
-            return
-
-        new_title = new_title.strip()
-        if not new_title or new_title == session.title:
-            return
-
-        session.title = new_title
-        self.db.update_session_title(session.id, new_title)
+    def _on_title_changed(self) -> None:
+        """Called by StreamHandler when the session title is auto-synced."""
         if self._chat_list:
             self._chat_list.refresh()
         if self._chat_view:
             self._chat_view.refresh()
-
-    @staticmethod
-    def _is_default_session_title(title: str) -> bool:
-        normalized = (title or "").strip().lower()
-        return normalized in {"", "new chat"}
-
-    def _title_from_claude_session(self, sdk_session_id: str | None) -> str | None:
-        if not sdk_session_id:
-            return None
-        services = getattr(self.state, "services", None)
-        import_svc = getattr(services, "session_import_service", None) if services else None
-        if not import_svc:
-            return None
-        try:
-            return import_svc.get_session_title(sdk_session_id)
-        except Exception:
-            return None
-
-    def _title_from_first_user_message(self) -> str | None:
-        for msg in self.state.messages:
-            if msg.role != "user":
-                continue
-            for block in msg.parse_content():
-                if block.type != "text" or not block.text:
-                    continue
-                first_line = block.text.strip().splitlines()[0].strip()
-                if not first_line:
-                    continue
-                words = first_line.split()
-                if len(words) <= 12 and len(first_line) <= 60:
-                    return first_line
-                short = " ".join(words[:12]).strip()
-                return (short + "...") if short else None
-        return None

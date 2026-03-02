@@ -10,9 +10,8 @@ from typing import Callable
 
 import flet as ft
 
-from misaka.i18n import t
 from misaka.db.models import TaskItem
-
+from misaka.i18n import t
 
 _STATUS_CONFIG = {
     "pending": {

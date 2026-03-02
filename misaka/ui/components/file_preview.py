@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import flet as ft
 
-from misaka.i18n import t
 from misaka.db.models import FilePreview as FilePreviewModel
+from misaka.i18n import t
 from misaka.ui.theme import MONO_FONT_FAMILY, make_icon_button
 
 

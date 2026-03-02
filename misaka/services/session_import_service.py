@@ -419,15 +419,13 @@ class SessionImportService:
                 f"Cannot find JSONL file for session {session_id}"
             )
 
-        # Duplicate check: look for an existing session with matching
-        # sdk_session_id.
-        existing_sessions = db.get_all_sessions()
-        for existing in existing_sessions:
-            if existing.sdk_session_id == session_id:
-                raise ValueError(
-                    f"Session {session_id} has already been imported "
-                    f"(Misaka session {existing.id})"
-                )
+        # Duplicate check: O(1) lookup via indexed column.
+        existing = db.get_session_by_sdk_id(session_id)
+        if existing is not None:
+            raise ValueError(
+                f"Session {session_id} has already been imported "
+                f"(Misaka session {existing.id})"
+            )
 
         # Parse metadata and messages.
         info = _parse_jsonl_metadata(file_path)
@@ -451,14 +449,14 @@ class SessionImportService:
         # Store the CLI session UUID so we can detect duplicates later.
         db.update_sdk_session_id(session.id, session_id)
 
-        # Insert all parsed messages.
-        for msg in messages:
-            db.add_message(
-                session_id=session.id,
-                role=msg["role"],
-                content=msg["content"],
-                token_usage=msg.get("token_usage"),
-            )
+        # Insert all parsed messages in a single batch.
+        db.add_messages_batch(
+            session_id=session.id,
+            messages=[
+                {"role": m["role"], "content": m["content"], "token_usage": m.get("token_usage")}
+                for m in messages
+            ],
+        )
 
         logger.info(
             "Imported session %s (%d messages) as Misaka session %s",

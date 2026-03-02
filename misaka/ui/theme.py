@@ -433,6 +433,79 @@ def make_form_dialog(
     )
 
 
+# ---- Empty state placeholder ----------------------------------------------
+
+def make_empty_state(
+    icon: str,
+    text: str,
+    *,
+    hint: str | None = None,
+    icon_size: int = 40,
+    icon_opacity: float = 0.2,
+) -> ft.Container:
+    """Centered placeholder shown when a list or panel has no content."""
+    controls: list[ft.Control] = [
+        ft.Icon(icon, size=icon_size, opacity=icon_opacity),
+        ft.Text(text, size=13, opacity=0.5, text_align=ft.TextAlign.CENTER),
+    ]
+    if hint:
+        controls.append(
+            ft.Text(hint, size=11, opacity=0.35, text_align=ft.TextAlign.CENTER),
+        )
+    return ft.Container(
+        content=ft.Column(
+            controls=controls,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=8,
+        ),
+        alignment=ft.Alignment.CENTER,
+        expand=True,
+    )
+
+
+# ---- Confirm dialog -------------------------------------------------------
+
+def make_confirm_dialog(
+    *,
+    title: str,
+    content: str,
+    confirm_label: str,
+    cancel_label: str,
+    on_confirm: object,
+    on_cancel: object,
+    danger: bool = False,
+) -> ft.AlertDialog:
+    """Pre-built confirmation dialog (e.g. delete actions).
+
+    When *danger* is True the confirm button uses the destructive style.
+    """
+    confirm_btn = (
+        make_danger_button(confirm_label, on_click=on_confirm)
+        if danger
+        else make_button(confirm_label, on_click=on_confirm)
+    )
+    return make_dialog(
+        title=title,
+        content=ft.Text(content),
+        actions=[
+            make_text_button(cancel_label, on_click=on_cancel),
+            confirm_btn,
+        ],
+    )
+
+
+# ---- Snack-bar helper ------------------------------------------------------
+
+def show_snackbar(page: ft.Page, message: str, *, bgcolor: str | None = None) -> None:
+    """Display a brief notification at the bottom of the page."""
+    snack = ft.SnackBar(content=ft.Text(message), duration=3000)
+    if bgcolor:
+        snack.bgcolor = bgcolor
+    page.overlay.append(snack)
+    snack.open = True
+    page.update()
+
+
 # ---- Divider --------------------------------------------------------------
 
 def make_divider() -> ft.Divider:

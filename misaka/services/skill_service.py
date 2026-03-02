@@ -617,7 +617,7 @@ class SkillService:
             path_order.append(canonical)
 
         installed_priority = {"agents": 0, "claude": 1, None: 2}
-        installed_seen: dict[tuple[str, str], SkillFile] = {}
+        installed_seen: dict[tuple[str, str], int] = {}
         result: list[SkillFile] = []
 
         for canonical in path_order:
@@ -627,20 +627,18 @@ class SkillService:
                 continue
 
             key = (skill.name.strip().lower(), skill.content.strip())
-            existing = installed_seen.get(key)
-            if existing is None:
-                installed_seen[key] = skill
+            existing_idx = installed_seen.get(key)
+            if existing_idx is None:
+                installed_seen[key] = len(result)
                 result.append(skill)
                 continue
 
+            existing = result[existing_idx]
             current_rank = installed_priority.get(skill.installed_source, 99)
             existing_rank = installed_priority.get(existing.installed_source, 99)
-            if current_rank >= existing_rank:
-                continue
-
-            idx = result.index(existing)
-            result[idx] = skill
-            installed_seen[key] = skill
+            if current_rank < existing_rank:
+                result[existing_idx] = skill
+                installed_seen[key] = existing_idx
 
         return result
 

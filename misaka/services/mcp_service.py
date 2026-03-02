@@ -122,7 +122,7 @@ class MCPServerProcess:
                     await self._process.wait()
         except ProcessLookupError:
             pass
-        except Exception as exc:
+        except OSError as exc:
             logger.warning("Error stopping MCP server '%s': %s", self.name, exc)
 
         self._process = None

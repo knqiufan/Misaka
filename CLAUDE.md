@@ -58,9 +58,8 @@ Plain class that instantiates all services once and wires dependencies. Services
 ### Database layer (misaka/db/)
 
 - `DatabaseBackend` — ABC defining full CRUD interface
-- `SQLiteBackend` — primary implementation (stdlib `sqlite3`, WAL mode)
-- `SeekDBBackend` — optional alternative (Linux/macOS only)
-- `create_database()` — factory that selects the right backend
+- `SQLiteBackend` — sole implementation (stdlib `sqlite3`, WAL mode)
+- `create_database()` — factory that returns SQLiteBackend
 - Models are plain `@dataclass` objects, no ORM
 - Migrations are incremental, idempotent, versioned via `_schema_version` table
 
@@ -97,4 +96,4 @@ JSON locale files in `misaka/i18n/` (en, zh_CN, zh_TW). Locale change rebuilds a
 - Claude CLI `.cmd` wrappers are resolved to actual `.js` entry points in `ClaudeService`
 - Git Bash path is discovered and set via `CLAUDE_CODE_GIT_BASH_PATH` env var
 - PATH is expanded with common npm/nvm install locations
-- SeekDB backend is not available on Windows; SQLite is always used
+- SQLite is the sole database backend on all platforms

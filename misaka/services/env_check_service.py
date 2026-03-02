@@ -233,8 +233,8 @@ class EnvCheckService:
                         install_url=install_url,
                         install_command=install_cmd,
                     )
-            except Exception:
-                pass
+            except OSError as exc:
+                logger.debug("Claude binary check failed: %s", exc)
 
         for cmd in commands:
             binary_path = shutil.which(cmd, path=expanded_path)
@@ -303,8 +303,8 @@ class EnvCheckService:
                         from misaka.utils.platform import clear_claude_cache
 
                         clear_claude_cache()
-                    except Exception:
-                        pass
+                    except (ImportError, OSError) as exc:
+                        logger.debug("Failed to clear claude cache: %s", exc)
 
                 return True
             else:

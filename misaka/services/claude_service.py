@@ -16,32 +16,27 @@ import asyncio
 import json
 import logging
 import os
-import re
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-from misaka.config import IS_WINDOWS, SettingKeys, get_expanded_path
+from misaka.config import SettingKeys
+
+if TYPE_CHECKING:
+    from misaka.db.models import ApiProvider
 from misaka.db.database import DatabaseBackend
-from misaka.db.models import ApiProvider
+from misaka.services.claude_env_builder import build_claude_env
 from misaka.services.permission_service import PermissionService
-from misaka.utils.platform import find_claude_binary, find_git_bash
+from misaka.utils.platform import find_claude_binary
 
 logger = logging.getLogger(__name__)
 
 
-def _sanitize_env_value(value: str) -> str:
-    """Remove null bytes and control characters that cause spawn errors."""
-    return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value)
-
-
-def _sanitize_env(env: dict[str, str]) -> dict[str, str]:
-    """Sanitize all values in an env dict for subprocess safety."""
-    return {
-        k: _sanitize_env_value(v)
-        for k, v in env.items()
-        if isinstance(v, str)
-    }
+def _battr(block: Any, key: str, default: Any = "") -> Any:
+    """Get attribute from a block that may be a dict or an object."""
+    if isinstance(block, dict):
+        return block.get(key, default)
+    return getattr(block, key, default)
 
 
 class ClaudeService:
@@ -53,7 +48,11 @@ class ClaudeService:
     Uses ``ClaudeSDKClient`` for stateful, multi-turn conversations.
     """
 
-    def __init__(self, db: DatabaseBackend, permission_service: PermissionService | None = None) -> None:
+    def __init__(
+        self,
+        db: DatabaseBackend,
+        permission_service: PermissionService | None = None,
+    ) -> None:
         self._db = db
         self._permission_service = permission_service or PermissionService()
         self._client: Any = None  # ClaudeSDKClient instance
@@ -71,52 +70,9 @@ class ClaudeService:
         if self._debug_log_enabled:
             logger.info("[ClaudeSDK] " + message, *args)
 
-    def _build_env(self, provider: ApiProvider | None = None) -> dict[str, str]:
-        """Build the subprocess environment for the Claude CLI.
-
-        Starts with os.environ, overlays provider config, and expands PATH.
-        """
-        env: dict[str, str] = {k: v for k, v in os.environ.items() if isinstance(v, str)}
-
-        # Ensure HOME/USERPROFILE
-        home = str(Path.home())
-        env.setdefault("HOME", home)
-        env.setdefault("USERPROFILE", home)
-        env["PATH"] = get_expanded_path()
-
-        # Git Bash on Windows
-        if IS_WINDOWS and "CLAUDE_CODE_GIT_BASH_PATH" not in env:
-            git_bash = find_git_bash()
-            if git_bash:
-                env["CLAUDE_CODE_GIT_BASH_PATH"] = git_bash
-
-        if provider and provider.api_key:
-            # Clear existing ANTHROPIC_* to prevent conflicts
-            for key in list(env.keys()):
-                if key.startswith("ANTHROPIC_"):
-                    del env[key]
-
-            env["ANTHROPIC_AUTH_TOKEN"] = provider.api_key
-            env["ANTHROPIC_API_KEY"] = provider.api_key
-            if provider.base_url:
-                env["ANTHROPIC_BASE_URL"] = provider.base_url
-
-            # Apply extra_env (empty string = delete)
-            for key, value in provider.parse_extra_env().items():
-                if value == "":
-                    env.pop(key, None)
-                else:
-                    env[key] = value
-        else:
-            # Fall back to legacy settings
-            legacy_token = self._db.get_setting("anthropic_auth_token")
-            legacy_base = self._db.get_setting("anthropic_base_url")
-            if legacy_token:
-                env["ANTHROPIC_AUTH_TOKEN"] = legacy_token
-            if legacy_base:
-                env["ANTHROPIC_BASE_URL"] = legacy_base
-
-        return _sanitize_env(env)
+    def _build_env(self, provider: Any = None) -> dict[str, str]:
+        """Build the subprocess environment for the Claude CLI."""
+        return build_claude_env(self._db, provider)
 
     def _build_options(
         self,
@@ -209,8 +165,8 @@ class ClaudeService:
         from claude_agent_sdk import (
             ClaudeSDKClient,
             ClaudeSDKError,
-            CLINotFoundError,
             CLIConnectionError,
+            CLINotFoundError,
             ProcessError,
         )
 
@@ -407,11 +363,11 @@ class ClaudeService:
                 SystemMessage,
                 UserMessage,
             )
-        except Exception:
+        except (ImportError, AttributeError):
             pass
         try:
             from claude_agent_sdk.types import StreamEvent
-        except Exception:
+        except (ImportError, AttributeError):
             pass
 
         if AssistantMessage and isinstance(message, AssistantMessage):
@@ -467,7 +423,7 @@ class ClaudeService:
 
         try:
             from claude_agent_sdk.types import TextBlock, ToolUseBlock
-        except Exception:
+        except (ImportError, AttributeError):
             TextBlock = ToolUseBlock = None
 
         for block in content:
@@ -489,14 +445,14 @@ class ClaudeService:
             if block_type == "text" and on_text:
                 if self._saw_text_delta_in_turn:
                     continue
-                text = block.get("text", "") if isinstance(block, dict) else getattr(block, "text", "")
+                text = _battr(block, "text", "")
                 if text:
                     on_text(text)
             elif block_type == "tool_use" and on_tool_use:
                 on_tool_use({
-                    "id": block.get("id", "") if isinstance(block, dict) else getattr(block, "id", ""),
-                    "name": block.get("name", "") if isinstance(block, dict) else getattr(block, "name", ""),
-                    "input": block.get("input", {}) if isinstance(block, dict) else getattr(block, "input", {}),
+                    "id": _battr(block, "id", ""),
+                    "name": _battr(block, "name", ""),
+                    "input": _battr(block, "input", {}),
                 })
 
     def _handle_user_message(
@@ -518,7 +474,7 @@ class ClaudeService:
 
         try:
             from claude_agent_sdk.types import ToolResultBlock
-        except Exception:
+        except (ImportError, AttributeError):
             ToolResultBlock = None
 
         for block in content:
@@ -546,7 +502,7 @@ class ClaudeService:
             if isinstance(block, dict):
                 block_type = block.get("type", block_type)
             if block_type == "tool_result":
-                block_content = block.get("content", "") if isinstance(block, dict) else getattr(block, "content", "")
+                block_content = _battr(block, "content", "")
                 if isinstance(block_content, list):
                     texts = []
                     for c in block_content:
@@ -557,9 +513,9 @@ class ClaudeService:
                     block_content = str(block_content) if block_content else ""
 
                 on_tool_result({
-                    "tool_use_id": block.get("tool_use_id", "") if isinstance(block, dict) else getattr(block, "tool_use_id", ""),
+                    "tool_use_id": _battr(block, "tool_use_id", ""),
                     "content": block_content,
-                    "is_error": block.get("is_error", False) if isinstance(block, dict) else getattr(block, "is_error", False),
+                    "is_error": _battr(block, "is_error", False),
                 })
 
     def _handle_result_message(
@@ -575,7 +531,8 @@ class ClaudeService:
         usage = getattr(message, "usage", None)
         token_usage = None
         if usage:
-            usage_get = usage.get if isinstance(usage, dict) else lambda k, d=0: getattr(usage, k, d)
+            def usage_get(k: str, d: Any = 0) -> Any:
+                return _battr(usage, k, d)
             token_usage = {
                 "input_tokens": usage_get("input_tokens", 0),
                 "output_tokens": usage_get("output_tokens", 0),
@@ -628,13 +585,13 @@ class ClaudeService:
         if event is None:
             return
 
-        event_type = event.get("type", "") if isinstance(event, dict) else getattr(event, "type", "")
+        event_type = _battr(event, "type", "")
         if event_type == "content_block_delta":
-            delta = event.get("delta", None) if isinstance(event, dict) else getattr(event, "delta", None)
+            delta = _battr(event, "delta", None)
             if delta:
-                delta_type = delta.get("type", "") if isinstance(delta, dict) else getattr(delta, "type", "")
+                delta_type = _battr(delta, "type", "")
                 if delta_type == "text_delta":
-                    text = delta.get("text", "") if isinstance(delta, dict) else getattr(delta, "text", "")
+                    text = _battr(delta, "text", "")
                     if text:
                         self._saw_text_delta_in_turn = True
                         on_text(text)
@@ -677,29 +634,3 @@ class ClaudeService:
         return self._is_streaming
 
 
-def _resolve_script_from_cmd(cmd_path: str) -> str | None:
-    """Parse a Windows .cmd wrapper to extract the real .js script path.
-
-    npm installs CLI tools as .cmd wrappers on Windows that cannot be
-    spawned without ``shell=True``. This extracts the underlying .js
-    script path so it can be passed to the SDK directly.
-    """
-    try:
-        content = Path(cmd_path).read_text(encoding="utf-8", errors="ignore")
-        cmd_dir = str(Path(cmd_path).parent)
-
-        patterns = [
-            r'"%~dp0\\([^"]*claude[^"]*\.js)"',
-            r"%~dp0\\(\S*claude\S*\.js)",
-            r'"%dp0%\\([^"]*claude[^"]*\.js)"',
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match:
-                resolved = os.path.normpath(os.path.join(cmd_dir, match.group(1)))
-                if os.path.isfile(resolved):
-                    return resolved
-    except OSError:
-        pass
-    return None

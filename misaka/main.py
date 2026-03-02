@@ -160,20 +160,20 @@ class ServiceContainer:
             logger.info("Aborting active Claude stream during shutdown")
             try:
                 await self.claude_service.abort()
-            except Exception as exc:
+            except (OSError, RuntimeError) as exc:
                 logger.warning("Error aborting Claude stream: %s", exc)
 
         # Stop all MCP server subprocesses
         try:
             await self.mcp_service.stop_all()
-        except Exception as exc:
+        except (OSError, RuntimeError) as exc:
             logger.warning("Error stopping MCP servers: %s", exc)
 
         # Close database connection
         try:
             self.db.close()
             logger.info("Database closed")
-        except Exception as exc:
+        except (OSError, RuntimeError) as exc:
             logger.warning("Error closing database: %s", exc)
 
 

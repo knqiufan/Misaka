@@ -83,7 +83,8 @@ class AppState:
         self.mcp_servers_sdk: dict[str, Any] = {}
 
         # --- Session state ---
-        self.sessions: list[ChatSession] = []
+        self._sessions: list[ChatSession] = []
+        self._session_map: dict[str, ChatSession] = {}
         self.current_session_id: str | None = None
 
         # --- Message state ---
@@ -141,15 +142,32 @@ class AppState:
 
     # ----- Helpers -----
 
+    def get_service(self, name: str) -> Any:
+        """Safely retrieve a service by attribute name.
+
+        Returns None if the service container is not yet initialised
+        or the requested service does not exist.
+        """
+        services = getattr(self, "services", None)
+        if services is None:
+            return None
+        return getattr(services, name, None)
+
     @property
     def current_session(self) -> ChatSession | None:
         """Return the currently selected session, if any."""
         if not self.current_session_id:
             return None
-        for s in self.sessions:
-            if s.id == self.current_session_id:
-                return s
-        return None
+        return self._session_map.get(self.current_session_id)
+
+    @property
+    def sessions(self) -> list[ChatSession]:
+        return self._sessions
+
+    @sessions.setter
+    def sessions(self, value: list[ChatSession]) -> None:
+        self._sessions = value
+        self._session_map = {s.id: s for s in value}
 
     def update(self) -> None:
         """Trigger a Flet page refresh.

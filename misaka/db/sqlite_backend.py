@@ -7,6 +7,7 @@ Compatible with the original TypeScript schema for data migration.
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import sqlite3
@@ -16,6 +17,13 @@ from typing import Any
 
 from misaka.db.database import DatabaseBackend
 from misaka.db.models import ApiProvider, ChatSession, Message, RouterConfig, TaskItem
+from misaka.db.row_mappers import (
+    row_to_message,
+    row_to_provider,
+    row_to_router_config,
+    row_to_session,
+    row_to_task,
+)
 
 
 def _now() -> str:
@@ -28,81 +36,6 @@ def _generate_id() -> str:
     return secrets.token_hex(16)
 
 
-def _row_to_session(row: sqlite3.Row) -> ChatSession:
-    return ChatSession(
-        id=row["id"],
-        title=row["title"],
-        model=row["model"],
-        system_prompt=row["system_prompt"],
-        working_directory=row["working_directory"],
-        project_name=row["project_name"],
-        sdk_session_id=row["sdk_session_id"],
-        status=row["status"],
-        mode=row["mode"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
-
-
-def _row_to_message(row: sqlite3.Row) -> Message:
-    return Message(
-        id=row["id"],
-        session_id=row["session_id"],
-        role=row["role"],
-        content=row["content"],
-        created_at=row["created_at"],
-        token_usage=row["token_usage"],
-        _rowid=row["_rowid"] if "_rowid" in row.keys() else None,
-    )
-
-
-def _row_to_task(row: sqlite3.Row) -> TaskItem:
-    return TaskItem(
-        id=row["id"],
-        session_id=row["session_id"],
-        title=row["title"],
-        status=row["status"],
-        description=row["description"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
-
-
-def _row_to_provider(row: sqlite3.Row) -> ApiProvider:
-    return ApiProvider(
-        id=row["id"],
-        name=row["name"],
-        provider_type=row["provider_type"],
-        base_url=row["base_url"],
-        api_key=row["api_key"],
-        is_active=row["is_active"],
-        sort_order=row["sort_order"],
-        extra_env=row["extra_env"],
-        notes=row["notes"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
-
-
-def _row_to_router_config(row: sqlite3.Row) -> RouterConfig:
-    return RouterConfig(
-        id=row["id"],
-        name=row["name"],
-        api_key=row["api_key"],
-        base_url=row["base_url"],
-        main_model=row["main_model"],
-        haiku_model=row["haiku_model"],
-        opus_model=row["opus_model"],
-        sonnet_model=row["sonnet_model"],
-        agent_team=bool(row["agent_team"]),
-        config_json=row["config_json"],
-        is_active=row["is_active"],
-        sort_order=row["sort_order"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
-
-
 class SQLiteBackend(DatabaseBackend):
     """SQLite-based persistence backend."""
 
@@ -112,7 +45,6 @@ class SQLiteBackend(DatabaseBackend):
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._conn is None:
-            # Ensure parent directory exists
             Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
             self._conn = sqlite3.connect(self._db_path)
             self._conn.row_factory = sqlite3.Row
@@ -183,11 +115,11 @@ class SQLiteBackend(DatabaseBackend):
             CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
             CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
             CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON chat_sessions(updated_at);
+            CREATE INDEX IF NOT EXISTS idx_sessions_sdk_id ON chat_sessions(sdk_session_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id);
         """)
         conn.commit()
 
-        # Run incremental migrations
         from misaka.db.migrations import run_migrations
         run_migrations(conn)
 
@@ -203,14 +135,25 @@ class SQLiteBackend(DatabaseBackend):
         rows = conn.execute(
             "SELECT * FROM chat_sessions ORDER BY updated_at DESC"
         ).fetchall()
-        return [_row_to_session(r) for r in rows]
+        return [row_to_session(r) for r in rows]
 
     def get_session(self, session_id: str) -> ChatSession | None:
         conn = self._get_conn()
         row = conn.execute(
             "SELECT * FROM chat_sessions WHERE id = ?", (session_id,)
         ).fetchone()
-        return _row_to_session(row) if row else None
+        return row_to_session(row) if row else None
+
+    def get_session_by_sdk_id(self, sdk_session_id: str) -> ChatSession | None:
+        """Lookup a session by its Claude SDK session ID (O(1) via index)."""
+        if not sdk_session_id:
+            return None
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM chat_sessions WHERE sdk_session_id = ? LIMIT 1",
+            (sdk_session_id,),
+        ).fetchone()
+        return row_to_session(row) if row else None
 
     def create_session(
         self,
@@ -232,7 +175,12 @@ class SQLiteBackend(DatabaseBackend):
             (sid, title, now, now, model, system_prompt, working_directory, project_name, mode),
         )
         conn.commit()
-        return self.get_session(sid)  # type: ignore[return-value]
+        return ChatSession(
+            id=sid, title=title, model=model, system_prompt=system_prompt,
+            working_directory=working_directory, project_name=project_name,
+            sdk_session_id="", status="active", mode=mode,
+            created_at=now, updated_at=now,
+        )
 
     def update_session_title(self, session_id: str, title: str) -> None:
         conn = self._get_conn()
@@ -321,8 +269,8 @@ class SQLiteBackend(DatabaseBackend):
         has_more = len(rows) > limit
         if has_more:
             rows = rows[:limit]
-        rows.reverse()  # chronological order
-        return [_row_to_message(r) for r in rows], has_more
+        rows.reverse()
+        return [row_to_message(r) for r in rows], has_more
 
     def add_message(
         self,
@@ -334,17 +282,48 @@ class SQLiteBackend(DatabaseBackend):
         conn = self._get_conn()
         mid = _generate_id()
         now = _now()
-        conn.execute(
+        if isinstance(content, list):
+            content = json.dumps(content, ensure_ascii=False)
+        cursor = conn.execute(
             """INSERT INTO messages (id, session_id, role, content, created_at, token_usage)
                VALUES (?, ?, ?, ?, ?, ?)""",
             (mid, session_id, role, content, now, token_usage),
         )
-        self.update_session_timestamp(session_id)
+        conn.execute(
+            "UPDATE chat_sessions SET updated_at = ? WHERE id = ?", (now, session_id)
+        )
         conn.commit()
-        row = conn.execute(
-            "SELECT *, rowid as _rowid FROM messages WHERE id = ?", (mid,)
-        ).fetchone()
-        return _row_to_message(row)
+        return Message(
+            id=mid, session_id=session_id, role=role, content=content,
+            created_at=now, token_usage=token_usage, _rowid=cursor.lastrowid,
+        )
+
+    def add_messages_batch(
+        self,
+        session_id: str,
+        messages: list[dict[str, str | None]],
+    ) -> None:
+        """Insert multiple messages in a single transaction.
+
+        Each dict must have keys: role, content, and optionally token_usage.
+        """
+        if not messages:
+            return
+        conn = self._get_conn()
+        now = _now()
+        rows = [
+            (_generate_id(), session_id, m["role"], m["content"], now, m.get("token_usage"))
+            for m in messages
+        ]
+        conn.executemany(
+            """INSERT INTO messages (id, session_id, role, content, created_at, token_usage)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        conn.execute(
+            "UPDATE chat_sessions SET updated_at = ? WHERE id = ?", (now, session_id)
+        )
+        conn.commit()
 
     def clear_session_messages(self, session_id: str) -> None:
         conn = self._get_conn()
@@ -370,6 +349,18 @@ class SQLiteBackend(DatabaseBackend):
         )
         conn.commit()
 
+    def set_settings_batch(self, settings: dict[str, str]) -> None:
+        """Write multiple settings in a single transaction."""
+        if not settings:
+            return
+        conn = self._get_conn()
+        conn.executemany(
+            """INSERT INTO settings (key, value) VALUES (?, ?)
+               ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+            list(settings.items()),
+        )
+        conn.commit()
+
     def get_all_settings(self) -> dict[str, str]:
         conn = self._get_conn()
         rows = conn.execute("SELECT key, value FROM settings").fetchall()
@@ -383,12 +374,12 @@ class SQLiteBackend(DatabaseBackend):
             "SELECT * FROM tasks WHERE session_id = ? ORDER BY created_at ASC",
             (session_id,),
         ).fetchall()
-        return [_row_to_task(r) for r in rows]
+        return [row_to_task(r) for r in rows]
 
     def get_task(self, task_id: str) -> TaskItem | None:
         conn = self._get_conn()
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-        return _row_to_task(row) if row else None
+        return row_to_task(row) if row else None
 
     def create_task(self, session_id: str, title: str, description: str | None = None) -> TaskItem:
         conn = self._get_conn()
@@ -396,28 +387,33 @@ class SQLiteBackend(DatabaseBackend):
         now = _now()
         conn.execute(
             """INSERT INTO tasks
-               (id, session_id, title, status, description,
-                created_at, updated_at)
+               (id, session_id, title, status, description, created_at, updated_at)
                VALUES (?, ?, ?, 'pending', ?, ?, ?)""",
             (tid, session_id, title, description, now, now),
         )
         conn.commit()
-        return self.get_task(tid)  # type: ignore[return-value]
+        return TaskItem(
+            id=tid, session_id=session_id, title=title, status="pending",
+            description=description, created_at=now, updated_at=now,
+        )
 
     def update_task(self, task_id: str, **kwargs: Any) -> TaskItem | None:
-        existing = self.get_task(task_id)
-        if not existing:
-            return None
         conn = self._get_conn()
         now = _now()
-        title = kwargs.get("title", existing.title)
-        status = kwargs.get("status", existing.status)
-        description = kwargs.get("description", existing.description)
-        conn.execute(
-            "UPDATE tasks SET title = ?, status = ?, description = ?, updated_at = ? WHERE id = ?",
-            (title, status, description, now, task_id),
+        sets: list[str] = ["updated_at = ?"]
+        params: list[Any] = [now]
+        for col in ("title", "status", "description"):
+            if col in kwargs:
+                sets.append(f"{col} = ?")
+                params.append(kwargs[col])
+        params.append(task_id)
+        cursor = conn.execute(
+            f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?",  # noqa: S608
+            params,
         )
         conn.commit()
+        if cursor.rowcount == 0:
+            return None
         return self.get_task(task_id)
 
     def delete_task(self, task_id: str) -> bool:
@@ -433,21 +429,21 @@ class SQLiteBackend(DatabaseBackend):
         rows = conn.execute(
             "SELECT * FROM api_providers ORDER BY sort_order ASC, created_at ASC"
         ).fetchall()
-        return [_row_to_provider(r) for r in rows]
+        return [row_to_provider(r) for r in rows]
 
     def get_provider(self, provider_id: str) -> ApiProvider | None:
         conn = self._get_conn()
         row = conn.execute(
             "SELECT * FROM api_providers WHERE id = ?", (provider_id,)
         ).fetchone()
-        return _row_to_provider(row) if row else None
+        return row_to_provider(row) if row else None
 
     def get_active_provider(self) -> ApiProvider | None:
         conn = self._get_conn()
         row = conn.execute(
             "SELECT * FROM api_providers WHERE is_active = 1 LIMIT 1"
         ).fetchone()
-        return _row_to_provider(row) if row else None
+        return row_to_provider(row) if row else None
 
     def create_provider(self, name: str, **kwargs: Any) -> ApiProvider:
         conn = self._get_conn()
@@ -457,26 +453,26 @@ class SQLiteBackend(DatabaseBackend):
             "SELECT MAX(sort_order) as max_order FROM api_providers"
         ).fetchone()
         sort_order = (max_row["max_order"] or -1) + 1 if max_row else 0
+        provider_type = kwargs.get("provider_type", "anthropic")
+        base_url = kwargs.get("base_url", "")
+        api_key = kwargs.get("api_key", "")
+        extra_env = kwargs.get("extra_env", "{}")
+        notes = kwargs.get("notes", "")
         conn.execute(
             """INSERT INTO api_providers
                (id, name, provider_type, base_url, api_key, is_active,
                 sort_order, extra_env, notes, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
-            (
-                pid,
-                name,
-                kwargs.get("provider_type", "anthropic"),
-                kwargs.get("base_url", ""),
-                kwargs.get("api_key", ""),
-                sort_order,
-                kwargs.get("extra_env", "{}"),
-                kwargs.get("notes", ""),
-                now,
-                now,
-            ),
+            (pid, name, provider_type, base_url, api_key,
+             sort_order, extra_env, notes, now, now),
         )
         conn.commit()
-        return self.get_provider(pid)  # type: ignore[return-value]
+        return ApiProvider(
+            id=pid, name=name, provider_type=provider_type,
+            base_url=base_url, api_key=api_key, is_active=0,
+            sort_order=sort_order, extra_env=extra_env, notes=notes,
+            created_at=now, updated_at=now,
+        )
 
     def update_provider(self, provider_id: str, **kwargs: Any) -> ApiProvider | None:
         existing = self.get_provider(provider_id)
@@ -511,12 +507,16 @@ class SQLiteBackend(DatabaseBackend):
         return cursor.rowcount > 0
 
     def activate_provider(self, provider_id: str) -> bool:
-        existing = self.get_provider(provider_id)
-        if not existing:
-            return False
         conn = self._get_conn()
+        row = conn.execute(
+            "SELECT 1 FROM api_providers WHERE id = ?", (provider_id,)
+        ).fetchone()
+        if not row:
+            return False
         conn.execute("UPDATE api_providers SET is_active = 0")
-        conn.execute("UPDATE api_providers SET is_active = 1 WHERE id = ?", (provider_id,))
+        conn.execute(
+            "UPDATE api_providers SET is_active = 1 WHERE id = ?", (provider_id,)
+        )
         conn.commit()
         return True
 
@@ -532,21 +532,21 @@ class SQLiteBackend(DatabaseBackend):
         rows = conn.execute(
             "SELECT * FROM router_configs ORDER BY sort_order ASC, created_at ASC"
         ).fetchall()
-        return [_row_to_router_config(r) for r in rows]
+        return [row_to_router_config(r) for r in rows]
 
     def get_router_config(self, config_id: str) -> RouterConfig | None:
         conn = self._get_conn()
         row = conn.execute(
             "SELECT * FROM router_configs WHERE id = ?", (config_id,)
         ).fetchone()
-        return _row_to_router_config(row) if row else None
+        return row_to_router_config(row) if row else None
 
     def get_active_router_config(self) -> RouterConfig | None:
         conn = self._get_conn()
         row = conn.execute(
             "SELECT * FROM router_configs WHERE is_active = 1 LIMIT 1"
         ).fetchone()
-        return _row_to_router_config(row) if row else None
+        return row_to_router_config(row) if row else None
 
     def create_router_config(self, name: str, **kwargs: Any) -> RouterConfig:
         conn = self._get_conn()
@@ -556,31 +556,34 @@ class SQLiteBackend(DatabaseBackend):
             "SELECT MAX(sort_order) as max_order FROM router_configs"
         ).fetchone()
         sort_order = (max_row["max_order"] or -1) + 1 if max_row else 0
+        api_key = kwargs.get("api_key", "")
+        base_url = kwargs.get("base_url", "")
+        main_model = kwargs.get("main_model", "")
+        haiku_model = kwargs.get("haiku_model", "")
+        opus_model = kwargs.get("opus_model", "")
+        sonnet_model = kwargs.get("sonnet_model", "")
+        agent_team = kwargs.get("agent_team", False)
+        config_json = kwargs.get("config_json", "{}")
+        is_active = kwargs.get("is_active", 0)
         conn.execute(
             """INSERT INTO router_configs
                (id, name, api_key, base_url, main_model, haiku_model,
                 opus_model, sonnet_model, agent_team, config_json,
                 is_active, sort_order, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                cid,
-                name,
-                kwargs.get("api_key", ""),
-                kwargs.get("base_url", ""),
-                kwargs.get("main_model", ""),
-                kwargs.get("haiku_model", ""),
-                kwargs.get("opus_model", ""),
-                kwargs.get("sonnet_model", ""),
-                1 if kwargs.get("agent_team", False) else 0,
-                kwargs.get("config_json", "{}"),
-                kwargs.get("is_active", 0),
-                sort_order,
-                now,
-                now,
-            ),
+            (cid, name, api_key, base_url, main_model, haiku_model,
+             opus_model, sonnet_model, 1 if agent_team else 0,
+             config_json, is_active, sort_order, now, now),
         )
         conn.commit()
-        return self.get_router_config(cid)  # type: ignore[return-value]
+        return RouterConfig(
+            id=cid, name=name, api_key=api_key, base_url=base_url,
+            main_model=main_model, haiku_model=haiku_model,
+            opus_model=opus_model, sonnet_model=sonnet_model,
+            agent_team=bool(agent_team), config_json=config_json,
+            is_active=is_active, sort_order=sort_order,
+            created_at=now, updated_at=now,
+        )
 
     def update_router_config(self, config_id: str, **kwargs: Any) -> RouterConfig | None:
         existing = self.get_router_config(config_id)
@@ -620,10 +623,12 @@ class SQLiteBackend(DatabaseBackend):
         return cursor.rowcount > 0
 
     def activate_router_config(self, config_id: str) -> bool:
-        existing = self.get_router_config(config_id)
-        if not existing:
-            return False
         conn = self._get_conn()
+        row = conn.execute(
+            "SELECT 1 FROM router_configs WHERE id = ?", (config_id,)
+        ).fetchone()
+        if not row:
+            return False
         conn.execute("UPDATE router_configs SET is_active = 0")
         conn.execute(
             "UPDATE router_configs SET is_active = 1 WHERE id = ?", (config_id,)

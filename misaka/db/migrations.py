@@ -2,7 +2,6 @@
 Database migration system for Misaka.
 
 Handles schema versioning and incremental migrations for the SQLite backend.
-SeekDB collections are schema-less and do not require migrations.
 """
 
 from __future__ import annotations

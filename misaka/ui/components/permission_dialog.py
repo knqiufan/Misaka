@@ -23,7 +23,7 @@ from misaka.ui.theme import (
 )
 
 if TYPE_CHECKING:
-    from misaka.state import AppState, PermissionRequest
+    from misaka.state import AppState
 
 
 class PermissionDialog(ft.Container):

@@ -18,6 +18,7 @@ from misaka.ui.components.message_input import MessageInput
 from misaka.ui.components.message_list import MessageList
 from misaka.ui.components.offset_menu import OffsetMenu, OffsetMenuOption
 from misaka.ui.components.update_banner import UpdateBanner
+from misaka.ui.theme import make_icon_button
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -72,8 +73,6 @@ class ChatView(ft.Column):
             is_streaming=self.state.is_streaming,
         )
 
-        # Mode selector dropdown
-        from misaka.ui.theme import make_icon_button
         current_mode = session.mode if session else "code"
         self._mode_dropdown = OffsetMenu(
             value=current_mode,
@@ -285,28 +284,29 @@ class ChatView(ft.Column):
 
     def _handle_update(self) -> None:
         """Handle 'Update Now' click from the update banner."""
-        if hasattr(self.state, 'services') and self.state.services:
-            update_svc = getattr(self.state.services, 'update_check_service', None)
-            if update_svc:
-                self.state.update_in_progress = True
+        update_svc = self.state.get_service('update_check_service')
+        if update_svc:
+            self.state.update_in_progress = True
+            if self._update_banner:
+                self._update_banner.refresh()
+            self.state.update()
+
+            async def _do_update():
+                try:
+                    success = await update_svc.perform_update()
+                    if success:
+                        result = await update_svc.check_for_update()
+                        self.state.update_check_result = result
+                    self.state.update_in_progress = False
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).warning("Update failed: %s", exc)
+                    self.state.update_in_progress = False
                 if self._update_banner:
                     self._update_banner.refresh()
                 self.state.update()
 
-                async def _do_update():
-                    try:
-                        success = await update_svc.perform_update()
-                        if success:
-                            result = await update_svc.check_for_update()
-                            self.state.update_check_result = result
-                        self.state.update_in_progress = False
-                    except Exception:
-                        self.state.update_in_progress = False
-                    if self._update_banner:
-                        self._update_banner.refresh()
-                    self.state.update()
-
-                self.state.page.run_task(_do_update)
+            self.state.page.run_task(_do_update)
 
     def _dismiss_update(self) -> None:
         """Handle dismiss click from the update banner."""

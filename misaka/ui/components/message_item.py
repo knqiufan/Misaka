@@ -409,12 +409,5 @@ class MessageItem(ft.Container):
 
     @staticmethod
     def _format_time(iso_str: str) -> str:
-        if not iso_str:
-            return ""
-        try:
-            if "T" in iso_str:
-                time_part = iso_str.split("T")[1][:5]
-                return time_part
-            return iso_str[:16]
-        except (IndexError, ValueError):
-            return ""
+        from misaka.utils.time_utils import format_short_time
+        return format_short_time(iso_str)

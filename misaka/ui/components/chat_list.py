@@ -46,7 +46,8 @@ class ChatList(ft.Column):
         self._build_ui()
 
     def _build_ui(self) -> None:
-        from misaka.ui.theme import make_icon_button, make_text_field as _mtf
+        from misaka.ui.theme import make_icon_button
+        from misaka.ui.theme import make_text_field as _mtf
         self._search_field = _mtf(
             hint_text=t("chat.search_sessions"),
             prefix_icon=ft.Icons.SEARCH,
@@ -481,18 +482,5 @@ class ChatList(ft.Column):
     @staticmethod
     def _format_time(iso_str: str) -> str:
         """Format an ISO datetime to a relative or short time."""
-        if not iso_str:
-            return ""
-        try:
-            if "T" in iso_str:
-                parts = iso_str.split("T")
-                date_part = parts[0]
-                time_part = parts[1][:5]
-                from datetime import date
-                today = date.today().isoformat()
-                if date_part == today:
-                    return time_part
-                return date_part[5:]  # MM-DD
-            return iso_str[:10]
-        except (IndexError, ValueError):
-            return ""
+        from misaka.utils.time_utils import format_date_or_time
+        return format_date_or_time(iso_str)

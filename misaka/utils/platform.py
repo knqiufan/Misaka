@@ -7,6 +7,7 @@ and other platform-dependent operations.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
@@ -16,6 +17,21 @@ from pathlib import Path
 from misaka.config import IS_WINDOWS, get_expanded_path
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Generic binary discovery
+# ---------------------------------------------------------------------------
+
+
+def find_binary_in_path(cmd: str) -> str | None:
+    """Locate a binary on the expanded PATH.
+
+    Combines the platform-expanded PATH with ``shutil.which`` so that
+    callers don't need to repeat this two-step pattern.
+    """
+    expanded = get_expanded_path()
+    return shutil.which(cmd, path=expanded)
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +179,7 @@ async def get_claude_version(claude_path: str) -> str | None:
             timeout=5,
         )
         return proc.stdout.strip() if proc.returncode == 0 else None
-    except Exception:
+    except (OSError, asyncio.TimeoutError):
         return None
 
 

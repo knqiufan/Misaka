@@ -26,8 +26,7 @@ class DatabaseBackend(ABC):
     """Abstract interface for database operations.
 
     All CRUD operations required by the application are declared here.
-    Implementations: :class:`~misaka.db.sqlite_backend.SQLiteBackend`,
-    :class:`~misaka.db.seekdb_backend.SeekDBBackend`.
+    Primary implementation: :class:`~misaka.db.sqlite_backend.SQLiteBackend`.
     """
 
     # ----- Lifecycle -----
@@ -49,6 +48,10 @@ class DatabaseBackend(ABC):
     @abstractmethod
     def get_session(self, session_id: str) -> ChatSession | None:
         """Return a single session by ID, or None."""
+
+    @abstractmethod
+    def get_session_by_sdk_id(self, sdk_session_id: str) -> ChatSession | None:
+        """Return a session matching the given SDK session ID, or None."""
 
     @abstractmethod
     def create_session(
@@ -117,6 +120,14 @@ class DatabaseBackend(ABC):
         token_usage: str | None = None,
     ) -> Message:
         """Insert a message and update the session timestamp."""
+
+    @abstractmethod
+    def add_messages_batch(
+        self,
+        session_id: str,
+        messages: list[dict[str, str | None]],
+    ) -> None:
+        """Insert multiple messages in a single transaction."""
 
     @abstractmethod
     def clear_session_messages(self, session_id: str) -> None:
@@ -228,29 +239,15 @@ class DatabaseBackend(ABC):
 # ---------------------------------------------------------------------------
 
 def create_database(db_path: str | None = None) -> DatabaseBackend:
-    """Create the appropriate database backend for the current platform.
-
-    On Linux and macOS, attempts to use SeekDB in embedded mode.
-    Falls back to SQLite on Windows or if SeekDB is unavailable.
+    """Create the SQLite database backend.
 
     Args:
         db_path: Override path to the database file. If None, uses the
             default from :mod:`misaka.config`.
     """
-    from misaka.config import DB_PATH, IS_WINDOWS
+    from misaka.config import DB_PATH
 
     path = db_path or str(DB_PATH)
-
-    if not IS_WINDOWS:
-        try:
-            from misaka.db.seekdb_backend import SeekDBBackend
-            backend = SeekDBBackend(path)
-            logger.info("Using SeekDB backend (embedded mode)")
-            return backend
-        except ImportError:
-            logger.info("pyseekdb not installed, falling back to SQLite")
-        except Exception as exc:
-            logger.warning("SeekDB initialization failed, falling back to SQLite: %s", exc)
 
     from misaka.db.sqlite_backend import SQLiteBackend
     logger.info("Using SQLite backend at %s", path)

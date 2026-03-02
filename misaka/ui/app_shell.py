@@ -18,7 +18,7 @@ from misaka.ui.components.nav_rail import build_nav_rail
 from misaka.ui.pages.chat_page import ChatPage
 from misaka.ui.pages.extensions_page import ExtensionsPage
 from misaka.ui.pages.plugins_page import PluginsPage
-from misaka.ui.pages.settings_page import SettingsPage
+from misaka.ui.pages.settings import SettingsPage
 from misaka.ui.theme import apply_theme
 
 if TYPE_CHECKING:
@@ -104,9 +104,10 @@ class AppShell(ft.Row):
         """Wire ChatPage send/abort callbacks to Claude integration."""
         if not self._chat_page:
             return
+        handler = self._chat_page._stream_handler
         self._chat_page.set_claude_callbacks(
-            send_callback=self._chat_page.send_to_claude,
-            abort_callback=self._chat_page.abort_claude,
+            send_callback=handler.send_to_claude,
+            abort_callback=handler.abort_claude,
         )
 
     def _get_fallback_db(self):
@@ -166,11 +167,13 @@ class AppShell(ft.Row):
         apply_theme(self.state.page, mode, self.state.accent_color)
 
         # Persist the theme choice
-        if hasattr(self.state, 'services') and self.state.services:
+        settings_svc = self.state.get_service('settings_service')
+        if settings_svc:
             try:
-                self.state.services.settings_service.set_theme(mode)
-            except Exception:
-                pass
+                settings_svc.set_theme(mode)
+            except (OSError, ValueError) as exc:
+                import logging
+                logging.getLogger(__name__).warning("Failed to persist theme: %s", exc)
 
         # Rebuild nav rail to update theme icon
         self._nav_rail = build_nav_rail(
@@ -227,19 +230,17 @@ class AppShell(ft.Row):
 
     def _handle_env_install(self, tool_name: str) -> None:
         """Handle tool install request from env check dialog."""
-        if hasattr(self.state, 'services') and self.state.services:
-            env_svc = getattr(self.state.services, 'env_check_service', None)
-            if env_svc:
-                async def _do_install():
-                    await env_svc.install_tool(tool_name)
-                    # Recheck after install
-                    result = await env_svc.check_all()
-                    self.state.env_check_result = result
-                    if self._env_check_dialog:
-                        self._env_check_dialog.refresh()
-                    self.state.update()
+        env_svc = self.state.get_service('env_check_service')
+        if env_svc:
+            async def _do_install():
+                await env_svc.install_tool(tool_name)
+                result = await env_svc.check_all()
+                self.state.env_check_result = result
+                if self._env_check_dialog:
+                    self._env_check_dialog.refresh()
+                self.state.update()
 
-                self.state.page.run_task(_do_install)
+            self.state.page.run_task(_do_install)
 
     def _dismiss_env_check(self) -> None:
         """Dismiss the environment check dialog."""
@@ -248,23 +249,20 @@ class AppShell(ft.Row):
             # Close any open dialogs
             try:
                 self.state.page.pop_dialog()
-            except Exception:
+            except (AttributeError, RuntimeError):
                 pass
         self.state.update()
 
     def _recheck_env(self) -> None:
         """Re-run environment checks."""
-        if hasattr(self.state, 'services') and self.state.services:
-            env_svc = getattr(self.state.services, 'env_check_service', None)
-            if env_svc:
-                async def _do_recheck():
-                    # Yield so the recheck button's click handling completes before we
-                    # replace dialog content (avoids "Control must be added to the page first").
-                    await asyncio.sleep(0)
-                    result = await env_svc.check_all()
-                    self.state.env_check_result = result
-                    if self._env_check_dialog:
-                        self._env_check_dialog.refresh()
-                    self.state.update()
+        env_svc = self.state.get_service('env_check_service')
+        if env_svc:
+            async def _do_recheck():
+                await asyncio.sleep(0)
+                result = await env_svc.check_all()
+                self.state.env_check_result = result
+                if self._env_check_dialog:
+                    self._env_check_dialog.refresh()
+                self.state.update()
 
-                self.state.page.run_task(_do_recheck)
+            self.state.page.run_task(_do_recheck)
