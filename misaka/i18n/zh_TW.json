@@ -6,9 +6,9 @@
   },
   "nav": {
     "chat": "聊天",
-    "settings": "設定",
-    "plugins": "外掛",
-    "extensions": "技能"
+    "mcp": "MCP",
+    "skills": "技能",
+    "settings": "設定"
   },
   "chat": {
     "chats": "聊天",
@@ -17,6 +17,7 @@
     "rename": "重新命名",
     "rename_session": "重新命名工作階段",
     "archive": "封存",
+    "remove_from_list": "移出列表",
     "clear_messages": "清空訊息",
     "confirm_delete": "確定要刪除此會話嗎？此操作無法撤銷。",
     "send": "傳送訊息",
@@ -148,6 +149,9 @@
     "arguments": "參數（空格分隔）",
     "url": "URL（用於 sse/http）",
     "add": "新增",
+    "edit": "編輯",
+    "edit_mcp_server": "編輯 MCP 伺服器",
+    "save": "儲存",
     "remove": "移除",
     "reload_config": "重新載入設定",
     "config_files": "設定檔",

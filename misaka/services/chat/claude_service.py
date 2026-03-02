@@ -62,8 +62,25 @@ class ClaudeService:
         self._saw_text_delta_in_turn: bool = False
 
     def _is_debug_log_enabled(self) -> bool:
-        """Return whether Claude SDK debug logging is enabled."""
-        return self._db.get_setting(SettingKeys.CLAUDE_DEBUG_LOG) == "true"
+        """Return whether Claude SDK debug logging is enabled.
+
+        Enabled via environment variable MISAKA_CLAUDE_DEBUG_LOG=true
+        or via config file (~/.misaka/config.json).
+        """
+        # Check environment variable first
+        if os.environ.get("MISAKA_CLAUDE_DEBUG_LOG", "").lower() == "true":
+            return True
+        # Check config file
+        config_path = Path.home() / ".misaka" / "config.json"
+        if config_path.exists():
+            try:
+                with open(config_path, encoding="utf-8") as f:
+                    config = json.load(f)
+                if config.get("claude_debug_log", False):
+                    return True
+            except (json.JSONDecodeError, OSError):
+                pass
+        return False
 
     def _debug_log(self, message: str, *args: Any) -> None:
         """Write concise Claude SDK debug logs when enabled."""

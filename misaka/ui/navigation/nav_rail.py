@@ -29,22 +29,22 @@ _NAV_ITEMS: list[dict] = [
         "label_key": "nav.chat",
     },
     {
-        "page": "settings",
-        "icon": ft.Icons.SETTINGS_OUTLINED,
-        "selected_icon": ft.Icons.SETTINGS,
-        "label_key": "nav.settings",
-    },
-    {
         "page": "plugins",
         "icon": ft.Icons.EXTENSION_OUTLINED,
         "selected_icon": ft.Icons.EXTENSION,
-        "label_key": "nav.plugins",
+        "label_key": "nav.mcp",
     },
     {
         "page": "extensions",
         "icon": ft.Icons.CODE_OUTLINED,
         "selected_icon": ft.Icons.CODE,
-        "label_key": "nav.extensions",
+        "label_key": "nav.skills",
+    },
+    {
+        "page": "settings",
+        "icon": ft.Icons.SETTINGS_OUTLINED,
+        "selected_icon": ft.Icons.SETTINGS,
+        "label_key": "nav.settings",
     },
 ]
 

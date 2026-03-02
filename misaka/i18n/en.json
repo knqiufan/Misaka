@@ -6,9 +6,9 @@
   },
   "nav": {
     "chat": "Chat",
-    "settings": "Settings",
-    "plugins": "Plugins",
-    "extensions": "Skills"
+    "mcp": "MCP",
+    "skills": "Skills",
+    "settings": "Settings"
   },
   "chat": {
     "chats": "Chats",
@@ -17,6 +17,7 @@
     "rename": "Rename",
     "rename_session": "Rename Session",
     "archive": "Archive",
+    "remove_from_list": "Remove from list",
     "clear_messages": "Clear messages",
     "confirm_delete": "Are you sure you want to delete this session? This action cannot be undone.",
     "send": "Send message",
@@ -148,6 +149,9 @@
     "arguments": "Arguments (space-separated)",
     "url": "URL (for sse/http)",
     "add": "Add",
+    "edit": "Edit",
+    "edit_mcp_server": "Edit MCP Server",
+    "save": "Save",
     "remove": "Remove",
     "reload_config": "Reload Config",
     "config_files": "Configuration Files",

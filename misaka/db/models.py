@@ -27,7 +27,7 @@ class ChatSession:
     working_directory: str = ""
     project_name: str = ""
     sdk_session_id: str = ""
-    status: Literal["active", "archived"] = "active"
+    status: Literal["active", "archived", "hidden"] = "active"
     mode: Literal["code", "plan", "ask"] = "code"
     created_at: str = ""
     updated_at: str = ""

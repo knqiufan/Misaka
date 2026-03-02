@@ -30,6 +30,7 @@ class ChatList(ft.Column):
         on_delete: Callable[[str], None] | None = None,
         on_rename: Callable[[str, str], None] | None = None,
         on_archive: Callable[[str], None] | None = None,
+        on_remove_from_list: Callable[[str], None] | None = None,
         on_import: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(spacing=0, expand=True)
@@ -39,6 +40,7 @@ class ChatList(ft.Column):
         self._on_delete = on_delete
         self._on_rename = on_rename
         self._on_archive = on_archive
+        self._on_remove_from_list = on_remove_from_list
         self._on_import = on_import
         self._search_query = ""
         self._search_field: ft.TextField | None = None
@@ -198,8 +200,8 @@ class ChatList(ft.Column):
         return result
 
     def _get_filtered_sessions(self) -> list[ChatSession]:
-        """Return sessions filtered by search query."""
-        sessions = self.state.sessions
+        """Return sessions filtered by search query and status (exclude hidden)."""
+        sessions = [s for s in self.state.sessions if s.status != "hidden"]
         if not self._search_query:
             return sessions
         q = self._search_query.lower()
@@ -391,6 +393,14 @@ class ChatList(ft.Column):
                             on_click=(
                                 close_menu(self._on_archive, session_id)
                                 if self._on_archive else None
+                            ),
+                        ),
+                        ft.ListTile(
+                            leading=ft.Icon(ft.Icons.REMOVE_CIRCLE_OUTLINE, size=20),
+                            title=ft.Text(t("chat.remove_from_list"), size=13),
+                            on_click=(
+                                close_menu(self._on_remove_from_list, session_id)
+                                if self._on_remove_from_list else None
                             ),
                         ),
                         ft.ListTile(

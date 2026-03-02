@@ -228,6 +228,11 @@ class PluginsPage(ft.Column):
                         expand=True,
                     ),
                     make_icon_button(
+                        ft.Icons.EDIT_OUTLINED,
+                        tooltip=t("plugins.edit"),
+                        on_click=lambda e, n=name: self._show_edit_dialog(n),
+                    ),
+                    make_icon_button(
                         ft.Icons.DELETE_OUTLINE,
                         tooltip=t("plugins.remove"),
                         on_click=lambda e, n=name: self._remove_server(n),
@@ -299,6 +304,71 @@ class PluginsPage(ft.Column):
             ],
         )
         e.page.show_dialog(dialog)
+
+    def _show_edit_dialog(self, name: str) -> None:
+        """Show edit dialog for an existing MCP server."""
+        if not self.state.page:
+            return
+
+        config = self._mcp_configs.get(name)
+        if not config:
+            return
+
+        from misaka.ui.common.theme import make_dropdown as _mdd
+        from misaka.ui.common.theme import make_text_field as _mtf
+        name_field = _mtf(label=t("plugins.server_name"), value=name, autofocus=True)
+        type_dropdown = _mdd(
+            label=t("plugins.transport_type"),
+            value=config.get("type", "stdio"),
+            options=[
+                ft.dropdown.Option("stdio"),
+                ft.dropdown.Option("sse"),
+                ft.dropdown.Option("http"),
+            ],
+        )
+        command_field = _mtf(label=t("plugins.command"), value=config.get("command", ""))
+        args_field = _mtf(label=t("plugins.arguments"), value=" ".join(config.get("args", [])))
+        url_field = _mtf(label=t("plugins.url"), value=config.get("url", ""))
+
+        def save(ev):
+            new_name = (name_field.value or "").strip()
+            if not new_name:
+                return
+
+            server_type = type_dropdown.value or "stdio"
+            new_config: dict[str, Any] = {"type": server_type}
+
+            if server_type == "stdio":
+                new_config["command"] = command_field.value or ""
+                new_config["args"] = (args_field.value or "").split()
+            else:
+                new_config["url"] = url_field.value or ""
+
+            # Remove old entry if name changed
+            if new_name != name:
+                del self._mcp_configs[name]
+            self._mcp_configs[new_name] = new_config
+            self._save_mcp_config()
+            self._refresh_server_list()
+            self.state.page.pop_dialog()
+            self.state.update()
+
+        dialog = make_dialog(
+            title=t("plugins.edit_mcp_server"),
+            content=ft.Column(
+                controls=[name_field, type_dropdown, command_field, args_field, url_field],
+                spacing=12,
+                tight=True,
+                width=400,
+            ),
+            actions=[
+                make_text_button(
+                    t("common.cancel"), on_click=lambda ev: self.state.page.pop_dialog(),
+                ),
+                make_button(t("common.save"), on_click=save),
+            ],
+        )
+        self.state.page.show_dialog(dialog)
 
     def _remove_server(self, name: str) -> None:
         if name in self._mcp_configs:
