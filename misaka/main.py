@@ -27,24 +27,24 @@ import flet as ft
 import misaka.i18n as i18n
 from misaka.config import LOG_PATH, SettingKeys, ensure_data_dir
 from misaka.db.database import DatabaseBackend, create_database
-from misaka.services.claude_service import ClaudeService
-from misaka.services.cli_settings_service import CliSettingsService
-from misaka.services.env_check_service import EnvCheckService
-from misaka.services.file_service import FileService
-from misaka.services.mcp_service import MCPService
-from misaka.services.message_service import MessageService
-from misaka.services.permission_service import PermissionService
-from misaka.services.provider_service import ProviderService
-from misaka.services.router_config_service import RouterConfigService
-from misaka.services.session_import_service import SessionImportService
-from misaka.services.session_service import SessionService
-from misaka.services.settings_service import SettingsService
-from misaka.services.skill_service import SkillService
-from misaka.services.task_service import TaskService
-from misaka.services.update_check_service import UpdateCheckService
+from misaka.services.chat.claude_service import ClaudeService
+from misaka.services.settings.cli_settings_service import CliSettingsService
+from misaka.services.skills.env_check_service import EnvCheckService
+from misaka.services.file.file_service import FileService
+from misaka.services.mcp.mcp_service import MCPService
+from misaka.services.chat.message_service import MessageService
+from misaka.services.chat.permission_service import PermissionService
+from misaka.services.settings.provider_service import ProviderService
+from misaka.services.settings.router_config_service import RouterConfigService
+from misaka.services.session.session_import_service import SessionImportService
+from misaka.services.chat.session_service import SessionService
+from misaka.services.settings.settings_service import SettingsService
+from misaka.services.skills.skill_service import SkillService
+from misaka.services.task.task_service import TaskService
+from misaka.services.file.update_check_service import UpdateCheckService
 from misaka.state import AppState
-from misaka.ui.app_shell import AppShell
-from misaka.ui.theme import apply_theme
+from misaka.ui.common.app_shell import AppShell
+from misaka.ui.common.theme import apply_theme
 
 logger = logging.getLogger(__name__)
 

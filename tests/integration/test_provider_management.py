@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from misaka.db.database import DatabaseBackend
-from misaka.services.provider_service import ProviderService
+from misaka.services.settings.provider_service import ProviderService
 
 
 class TestProviderManagement:

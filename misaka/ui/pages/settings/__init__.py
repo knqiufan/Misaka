@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from misaka.ui.pages.settings.settings_page import SettingsPage
+from misaka.ui.settings.pages.settings_page import SettingsPage
 
 __all__ = ["SettingsPage"]

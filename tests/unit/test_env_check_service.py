@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from misaka.services.env_check_service import (
+from misaka.services.skills.env_check_service import (
     EnvCheckService,
     EnvironmentCheckResult,
     ToolStatus,
@@ -281,7 +281,7 @@ class TestEnvCheckService:
         mock_proc.communicate.return_value = (b"v18.0.0\n", b"")
         mock_proc.returncode = 0
 
-        with patch("misaka.services.env_check_service.IS_WINDOWS", True), \
+        with patch("misaka.services.skills.env_check_service.IS_WINDOWS", True), \
              patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
             version = await service._get_version("C:\\npm\\node.cmd", "--version")
             assert version == "18.0.0"

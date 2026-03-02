@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from misaka.services.update_check_service import (
+from misaka.services.file.update_check_service import (
     UpdateCheckResult,
     UpdateCheckService,
 )
@@ -126,7 +126,7 @@ class TestUpdateCheckService:
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
 
-        with patch("misaka.services.update_check_service.urlopen", return_value=mock_response):
+        with patch("misaka.services.file.update_check_service.urlopen", return_value=mock_response):
             version = service._http_get_version()
             assert version == "1.2.3"
 
@@ -134,7 +134,7 @@ class TestUpdateCheckService:
         """_http_get_version should return None on network failure."""
         from urllib.error import URLError
 
-        with patch("misaka.services.update_check_service.urlopen", side_effect=URLError("fail")):
+        with patch("misaka.services.file.update_check_service.urlopen", side_effect=URLError("fail")):
             version = service._http_get_version()
             assert version is None
 
@@ -145,7 +145,7 @@ class TestUpdateCheckService:
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
 
-        with patch("misaka.services.update_check_service.urlopen", return_value=mock_response):
+        with patch("misaka.services.file.update_check_service.urlopen", return_value=mock_response):
             version = service._http_get_version()
             assert version is None
 
@@ -252,7 +252,7 @@ class TestUpdateCheckService:
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
 
-        with patch("misaka.services.update_check_service.urlopen", return_value=mock_response):
+        with patch("misaka.services.file.update_check_service.urlopen", return_value=mock_response):
             version = service._http_get_version()
             assert version is None
 
@@ -263,13 +263,13 @@ class TestUpdateCheckService:
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
 
-        with patch("misaka.services.update_check_service.urlopen", return_value=mock_response):
+        with patch("misaka.services.file.update_check_service.urlopen", return_value=mock_response):
             version = service._http_get_version()
             assert version is None
 
     async def test_get_current_version_no_claude(self, service: UpdateCheckService) -> None:
         """_get_current_version should return None when claude CLI not found."""
-        with patch("misaka.services.update_check_service.find_claude_binary", return_value=None, create=True), \
+        with patch("misaka.services.file.update_check_service.find_claude_binary", return_value=None, create=True), \
              patch.dict("sys.modules", {}):
             # Patch the import chain
             with patch.object(service, "_get_current_version", return_value=None):

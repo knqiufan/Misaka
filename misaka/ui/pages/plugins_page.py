@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 import flet as ft
 
 from misaka.i18n import t
-from misaka.ui.theme import (
+from misaka.ui.common.theme import (
     MONO_FONT_FAMILY,
     make_badge,
     make_button,
@@ -247,8 +247,8 @@ class PluginsPage(ft.Column):
         if not e.page:
             return
 
-        from misaka.ui.theme import make_dropdown as _mdd
-        from misaka.ui.theme import make_text_field as _mtf
+        from misaka.ui.common.theme import make_dropdown as _mdd
+        from misaka.ui.common.theme import make_text_field as _mtf
         name_field = _mtf(label=t("plugins.server_name"), autofocus=True)
         type_dropdown = _mdd(
             label=t("plugins.transport_type"),

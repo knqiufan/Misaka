@@ -40,9 +40,7 @@ pyinstaller misaka.spec
 
 ## Architecture
 
-```
-UI Layer (Flet controls) → AppState (centralized state) → ServiceContainer (DI) → DatabaseBackend / Claude SDK
-```
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
 
 ### Key modules
 
@@ -53,7 +51,15 @@ UI Layer (Flet controls) → AppState (centralized state) → ServiceContainer (
 
 ### ServiceContainer (misaka/main.py)
 
-Plain class that instantiates all services once and wires dependencies. Services include: `ClaudeService`, `SessionService`, `MessageService`, `ProviderService`, `SettingsService`, `PermissionService`, `MCPService`, `TaskService`, `FileService`, `SkillService`, etc.
+Plain class that instantiates all services once and wires dependencies. Services are organized into modules under `misaka/services/`:
+- `chat/` — Claude conversation services (ClaudeService, SessionService, MessageService, PermissionService)
+- `settings/` — Settings management (SettingsService, ProviderService, CliSettingsService, RouterConfigService)
+- `mcp/` — MCP server management
+- `skills/` — Skills management (SkillService, EnvCheckService)
+- `file/` — File operations (FileService, UpdateCheckService)
+- `task/` — Task management
+- `session/` — Session import
+- `common/` — Shared utilities (ClaudeEnvBuilder)
 
 ### Database layer (misaka/db/)
 
@@ -63,7 +69,7 @@ Plain class that instantiates all services once and wires dependencies. Services
 - Models are plain `@dataclass` objects, no ORM
 - Migrations are incremental, idempotent, versioned via `_schema_version` table
 
-### Claude integration (misaka/services/claude_service.py)
+### Claude integration (misaka/services/chat/claude_service.py)
 
 - Wraps `claude-agent-sdk` (`ClaudeSDKClient`) with async streaming
 - Builds subprocess environment with API keys, expanded PATH, and Windows-specific `.cmd` → `.js` resolution
@@ -72,8 +78,17 @@ Plain class that instantiates all services once and wires dependencies. Services
 ### UI layer (misaka/ui/)
 
 - `AppShell` — root `ft.Row`: NavRail + content area switching between ChatPage, SettingsPage, PluginsPage, ExtensionsPage
-- Components in `misaka/ui/components/` — reusable Flet controls (chat list, message items, file tree, etc.)
-- Pages in `misaka/ui/pages/` — full-page views
+- Components organized by feature:
+  - `chat/components/` — Chat UI components (ChatView, ChatList, MessageList, etc.)
+  - `chat/pages/` — Chat pages (ChatPage, StreamHandler)
+  - `settings/pages/` — Settings pages
+  - `skills/pages/` — Skills pages (ExtensionsPage, SkillEditorPanel)
+  - `file/components/` — File components (FileTree, FilePreview, FolderPicker)
+  - `task/components/` — Task components (TaskList)
+  - `navigation/` — Navigation components
+  - `panels/` — Panel components (RightPanel, ResizeHandle, OffsetMenu)
+  - `dialogs/` — Dialog components
+  - `status/` — Status components
 - Theme: MD3 with accent `#6366f1`, three modes (system/light/dark), persisted in DB
 
 ### i18n

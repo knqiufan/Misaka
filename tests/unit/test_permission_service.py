@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from misaka.services.permission_service import PermissionService, TIMEOUT_SECONDS
+from misaka.services.chat.permission_service import PermissionService, TIMEOUT_SECONDS
 
 
 class TestPermissionService:

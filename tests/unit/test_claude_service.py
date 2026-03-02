@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from misaka.db.models import ApiProvider
-from misaka.services.claude_service import ClaudeService
+from misaka.services.chat.claude_service import ClaudeService
 
 
 @pytest.fixture

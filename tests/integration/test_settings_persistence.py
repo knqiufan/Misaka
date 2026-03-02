@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from misaka.db.database import DatabaseBackend
-from misaka.services.settings_service import SettingsService
+from misaka.services.settings.settings_service import SettingsService
 
 
 class TestSettingsPersistence:

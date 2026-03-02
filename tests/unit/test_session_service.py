@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from misaka.services.session_service import SessionService
+from misaka.services.chat.session_service import SessionService
 
 
 @pytest.fixture

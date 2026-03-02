@@ -9,8 +9,8 @@ from __future__ import annotations
 import pytest
 
 from misaka.db.database import DatabaseBackend
-from misaka.services.message_service import MessageService
-from misaka.services.session_service import SessionService
+from misaka.services.chat.message_service import MessageService
+from misaka.services.chat.session_service import SessionService
 
 
 class TestChatFlow:

@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from misaka.db.models import ApiProvider
-from misaka.services.claude_service import ClaudeService, _sanitize_env, _sanitize_env_value
-from misaka.services.permission_service import PermissionService
+from misaka.services.chat.claude_service import ClaudeService, _sanitize_env, _sanitize_env_value
+from misaka.services.chat.permission_service import PermissionService
 
 
 # ---------------------------------------------------------------------------

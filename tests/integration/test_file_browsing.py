@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from misaka.services.file_service import FileService
+from misaka.services.file.file_service import FileService
 
 
 @pytest.fixture

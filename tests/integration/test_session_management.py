@@ -9,8 +9,8 @@ from __future__ import annotations
 import pytest
 
 from misaka.db.database import DatabaseBackend
-from misaka.services.session_service import SessionService
-from misaka.services.task_service import TaskService
+from misaka.services.chat.session_service import SessionService
+from misaka.services.task.task_service import TaskService
 
 
 class TestSessionManagement:

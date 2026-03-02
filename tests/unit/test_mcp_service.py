@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from misaka.db.models import MCPServerConfig
-from misaka.services.mcp_service import MCPServerProcess, MCPService
+from misaka.services.mcp.mcp_service import MCPServerProcess, MCPService
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ class TestMCPServerProcess:
         process._process = mock_proc
         process._healthy = True
 
-        with patch("misaka.services.mcp_service.IS_WINDOWS", False):
+        with patch("misaka.services.mcp.mcp_service.IS_WINDOWS", False):
             await process.stop()
 
         mock_proc.send_signal.assert_called_once()

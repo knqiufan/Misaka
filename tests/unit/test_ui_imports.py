@@ -35,76 +35,78 @@ class TestUIImports:
     """Verify that all UI modules can be imported without error."""
 
     def test_import_theme(self) -> None:
-        from misaka.ui import theme  # noqa: F401
+        from misaka.ui.common import theme  # noqa: F401
 
     def test_import_app_shell(self) -> None:
-        from misaka.ui import app_shell  # noqa: F401
+        from misaka.ui.common import app_shell  # noqa: F401
 
     def test_import_components_package(self) -> None:
-        from misaka.ui import components  # noqa: F401
+        # Old components package is kept for backwards compatibility
+        pass
 
     def test_import_pages_package(self) -> None:
-        from misaka.ui import pages  # noqa: F401
+        # Old pages package is kept for backwards compatibility (plugins_page.py)
+        from misaka.ui.pages import plugins_page  # noqa: F401
 
     def test_import_chat_list(self) -> None:
-        from misaka.ui.components import chat_list  # noqa: F401
+        from misaka.ui.chat.components import chat_list  # noqa: F401
 
     def test_import_chat_view(self) -> None:
-        from misaka.ui.components import chat_view  # noqa: F401
+        from misaka.ui.chat.components import chat_view  # noqa: F401
 
     def test_import_code_block(self) -> None:
-        from misaka.ui.components import code_block  # noqa: F401
+        from misaka.ui.chat.components import code_block  # noqa: F401
 
     def test_import_connection_status(self) -> None:
-        from misaka.ui.components import connection_status  # noqa: F401
+        from misaka.ui.status import connection_status  # noqa: F401
 
     def test_import_file_preview(self) -> None:
-        from misaka.ui.components import file_preview  # noqa: F401
+        from misaka.ui.file.components import file_preview  # noqa: F401
 
     def test_import_file_tree(self) -> None:
-        from misaka.ui.components import file_tree  # noqa: F401
+        from misaka.ui.file.components import file_tree  # noqa: F401
 
     def test_import_message_input(self) -> None:
-        from misaka.ui.components import message_input  # noqa: F401
+        from misaka.ui.chat.components import message_input  # noqa: F401
 
     def test_import_message_item(self) -> None:
-        from misaka.ui.components import message_item  # noqa: F401
+        from misaka.ui.chat.components import message_item  # noqa: F401
 
     def test_import_message_list(self) -> None:
-        from misaka.ui.components import message_list  # noqa: F401
+        from misaka.ui.chat.components import message_list  # noqa: F401
 
     def test_import_nav_rail(self) -> None:
-        from misaka.ui.components import nav_rail  # noqa: F401
+        from misaka.ui.navigation import nav_rail  # noqa: F401
 
     def test_import_permission_dialog(self) -> None:
-        from misaka.ui.components import permission_dialog  # noqa: F401
+        from misaka.ui.dialogs import permission_dialog  # noqa: F401
 
     def test_import_resize_handle(self) -> None:
-        from misaka.ui.components import resize_handle  # noqa: F401
+        from misaka.ui.panels import resize_handle  # noqa: F401
 
     def test_import_right_panel(self) -> None:
-        from misaka.ui.components import right_panel  # noqa: F401
+        from misaka.ui.panels import right_panel  # noqa: F401
 
     def test_import_streaming_message(self) -> None:
-        from misaka.ui.components import streaming_message  # noqa: F401
+        from misaka.ui.chat.components import streaming_message  # noqa: F401
 
     def test_import_task_list(self) -> None:
-        from misaka.ui.components import task_list  # noqa: F401
+        from misaka.ui.task.components import task_list  # noqa: F401
 
     def test_import_tool_call_block(self) -> None:
-        from misaka.ui.components import tool_call_block  # noqa: F401
+        from misaka.ui.chat.components import tool_call_block  # noqa: F401
 
     def test_import_chat_page(self) -> None:
-        from misaka.ui.pages import chat_page  # noqa: F401
+        from misaka.ui.chat.pages import chat_page  # noqa: F401
 
     def test_import_settings_page(self) -> None:
-        from misaka.ui.pages import settings_page  # noqa: F401
+        from misaka.ui.settings.pages import settings_page  # noqa: F401
 
     def test_import_plugins_page(self) -> None:
         from misaka.ui.pages import plugins_page  # noqa: F401
 
     def test_import_extensions_page(self) -> None:
-        from misaka.ui.pages import extensions_page  # noqa: F401
+        from misaka.ui.skills.pages import extensions_page  # noqa: F401
 
 
 class TestServiceImports:
