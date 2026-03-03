@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from misaka.config import IS_MACOS, IS_WINDOWS, get_expanded_path
+from misaka.utils.platform import subprocess_creation_flags
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +288,7 @@ class EnvCheckService:
                 *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **subprocess_creation_flags(),
             )
 
             stdout, stderr = await asyncio.wait_for(
@@ -348,6 +350,7 @@ class EnvCheckService:
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **subprocess_creation_flags(),
             )
 
             stdout, stderr = await asyncio.wait_for(

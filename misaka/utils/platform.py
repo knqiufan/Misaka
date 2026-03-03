@@ -20,6 +20,32 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Subprocess window suppression (Windows + PyInstaller)
+# ---------------------------------------------------------------------------
+
+# When running as a PyInstaller GUI exe (console=False) on Windows, every
+# subprocess.Popen / asyncio.create_subprocess_exec call will briefly flash
+# a console window.  Passing CREATE_NO_WINDOW prevents this.
+_SUBPROCESS_FLAGS: int = (
+    subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
+)
+
+
+def subprocess_creation_flags() -> dict[str, int]:
+    """Return ``creationflags`` kwarg dict for subprocess calls on Windows.
+
+    Usage::
+
+        await asyncio.create_subprocess_exec(
+            *cmd, stdout=PIPE, stderr=PIPE, **subprocess_creation_flags(),
+        )
+    """
+    if _SUBPROCESS_FLAGS:
+        return {"creationflags": _SUBPROCESS_FLAGS}
+    return {}
+
+
+# ---------------------------------------------------------------------------
 # Generic binary discovery
 # ---------------------------------------------------------------------------
 
@@ -123,6 +149,7 @@ def _validate_claude_binary(path: str) -> bool:
             capture_output=True,
             timeout=5,
             shell=IS_WINDOWS and path.lower().endswith((".cmd", ".bat")),
+            **subprocess_creation_flags(),
         )
         return True
     except (subprocess.SubprocessError, OSError):
@@ -193,6 +220,7 @@ async def _run_async(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        **subprocess_creation_flags(),
     )
     stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     return subprocess.CompletedProcess(

@@ -18,6 +18,7 @@ from typing import Any
 
 from misaka.config import IS_WINDOWS
 from misaka.db.models import MCPServerConfig
+from misaka.utils.platform import subprocess_creation_flags
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ class MCPServerProcess:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
+                **subprocess_creation_flags(),
             )
             self._healthy = True
             logger.info(
@@ -111,6 +113,7 @@ class MCPServerProcess:
                     "taskkill", "/T", "/F", "/PID", str(pid),
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
+                    **subprocess_creation_flags(),
                 )
                 await asyncio.wait_for(kill_proc.wait(), timeout=5)
             else:

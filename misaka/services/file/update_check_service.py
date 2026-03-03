@@ -18,6 +18,7 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from misaka.config import IS_WINDOWS, get_expanded_path
+from misaka.utils.platform import subprocess_creation_flags
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,7 @@ class UpdateCheckService:
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **subprocess_creation_flags(),
             )
 
             stdout, stderr = await asyncio.wait_for(
@@ -246,6 +248,7 @@ class UpdateCheckService:
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **subprocess_creation_flags(),
             )
 
             stdout, stderr = await asyncio.wait_for(
