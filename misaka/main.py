@@ -9,6 +9,7 @@ dependency injection and graceful shutdown handling.
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 import subprocess
 import sys
@@ -55,8 +56,15 @@ def _is_truthy_env(name: str) -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _is_frozen() -> bool:
+    """Detect if running as a PyInstaller-frozen executable."""
+    return getattr(sys, "frozen", False)
+
+
 def _is_source_tree() -> bool:
     """Detect if running from repository source tree."""
+    if _is_frozen():
+        return False
     return (Path(__file__).resolve().parent.parent / "pyproject.toml").exists()
 
 
@@ -233,7 +241,11 @@ def _main(page: ft.Page) -> None:
 
     # --- Set up page properties ---
     page.title = "Misaka"
-    _icon_path = str(Path(__file__).resolve().parent.parent / "assets" / "icon.ico")
+    if _is_frozen():
+        _base = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    else:
+        _base = Path(__file__).resolve().parent.parent
+    _icon_path = str(_base / "assets" / "icon.ico")
     page.window.icon = _icon_path
     page.window.width = 1280
     page.window.height = 860
@@ -303,12 +315,17 @@ def _main(page: ft.Page) -> None:
 
 def main() -> None:
     """Application entry point."""
+    multiprocessing.freeze_support()
+
     if _maybe_delegate_hot_reload():
         return
 
     _setup_logging()
     logger.info("Starting Misaka...")
-    assets = str(Path(__file__).resolve().parent.parent / "assets")
+    if _is_frozen():
+        assets = str(Path(sys._MEIPASS) / "assets")  # type: ignore[attr-defined]
+    else:
+        assets = str(Path(__file__).resolve().parent.parent / "assets")
     ft.run(_main, assets_dir=assets)
 
 

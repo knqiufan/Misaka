@@ -500,6 +500,31 @@ class ChatList(ft.Column):
         if self.state.background_streams and not self._pulse_timer_running:
             self._start_pulse_timer()
 
+    def _update_dots_only(self) -> None:
+        """Update only the opacity of existing status dots without rebuilding the list.
+
+        This avoids recreating all controls (and their click handlers) on each
+        pulse tick, which would swallow clicks from the user.
+        """
+        if not self._session_list:
+            return
+        target_opacity = 0.3 if self._pulse_phase else 1.0
+        for control in self._session_list.controls:
+            # Each item is GestureDetector > Container(inner) > Row(item_content)
+            gesture = control
+            inner = getattr(gesture, "content", None)
+            if not inner:
+                continue
+            row = getattr(inner, "content", None)
+            if not row or not hasattr(row, "controls") or not row.controls:
+                continue
+            first = row.controls[0]
+            # Status dot is a small 7×7 Container with border_radius=4
+            if (isinstance(first, ft.Container)
+                    and getattr(first, "width", None) == 7
+                    and getattr(first, "height", None) == 7):
+                first.opacity = target_opacity
+
     def _start_pulse_timer(self) -> None:
         """Start a timer that toggles pulse phase for blinking dots."""
         if self._pulse_timer_running:
@@ -510,7 +535,7 @@ class ChatList(ft.Column):
             try:
                 while self.state.background_streams:
                     self._pulse_phase = not self._pulse_phase
-                    self._refresh_list()
+                    self._update_dots_only()
                     if self._session_list:
                         with contextlib.suppress(Exception):
                             self._session_list.update()
