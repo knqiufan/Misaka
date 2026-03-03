@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
 from misaka.state import (
     PermissionRequest,
+    StreamingBlock,
     StreamingTextBlock,
     StreamingToolUseBlock,
     TokenUsageInfo,
@@ -29,6 +31,18 @@ logger = logging.getLogger(__name__)
 # Tools that are auto-allowed in "acceptEdits" mode
 _READ_TOOLS = frozenset({"Read", "Glob", "Grep", "WebFetch", "WebSearch", "LS"})
 _EDIT_TOOLS = frozenset({"Edit"})
+
+
+@dataclass
+class _StreamContext:
+    """Per-invocation mutable context captured by send_to_claude() closures.
+
+    Mutating ``is_foreground`` from outside redirects all future callback
+    writes between the foreground UI and the background accumulator.
+    """
+    session_id: str
+    is_foreground: bool = True
+    blocks: list[StreamingBlock] = field(default_factory=list)
 
 
 class StreamHandler:
@@ -54,14 +68,20 @@ class StreamHandler:
         db: DatabaseBackend,
         ui_refresh: Callable[[], None],
         on_title_changed: Callable[[], None] | None = None,
+        on_background_status_change: Callable[[], None] | None = None,
     ) -> None:
         self._state = state
         self._db = db
         self._ui_refresh = ui_refresh
         self._on_title_changed = on_title_changed
+        self._on_background_status_change = on_background_status_change
         self._send_override: Any = None
         self._abort_override: Any = None
         self._always_allowed_tools: set[str] = set()
+        # Per-invocation stream context (foreground)
+        self._active_ctx: _StreamContext | None = None
+        # Detached contexts still running in background
+        self._detached_contexts: dict[str, _StreamContext] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -88,21 +108,57 @@ class StreamHandler:
             self._ui_refresh()
             return
 
+        ctx = _StreamContext(session_id=session.id)
+        self._active_ctx = ctx
+
         result_usage: dict[str, Any] | None = None
         result_sdk_session_id: str | None = None
         stream_error: str | None = None
 
+        def _append_text_to_ctx(text: str) -> None:
+            """Append text to the context's block list."""
+            if not ctx.blocks:
+                ctx.blocks.append(StreamingTextBlock())
+            last = ctx.blocks[-1]
+            if isinstance(last, StreamingTextBlock):
+                last.text += text
+                return
+            ctx.blocks.append(StreamingTextBlock(text=text))
+
+        def _append_tool_use_to_ctx(payload: dict) -> None:
+            ctx.blocks.append(
+                StreamingToolUseBlock(
+                    id=payload.get("id", ""),
+                    name=payload.get("name", ""),
+                    input=payload.get("input", {}) or {},
+                )
+            )
+
+        def _append_tool_result_to_ctx(payload: dict) -> None:
+            tool_id = payload.get("tool_use_id", "")
+            for block in reversed(ctx.blocks):
+                if isinstance(block, StreamingToolUseBlock) and block.id == tool_id:
+                    block.output = payload.get("content", "")
+                    block.is_error = bool(payload.get("is_error"))
+                    return
+
         def on_text(text: str) -> None:
-            self._append_stream_text(text)
-            self._ui_refresh()
+            if ctx.is_foreground:
+                self._append_stream_text(text)
+                self._ui_refresh()
+            _append_text_to_ctx(text)
 
         def on_tool_use(payload: dict) -> None:
-            self._append_tool_use(payload)
-            self._ui_refresh()
+            if ctx.is_foreground:
+                self._append_tool_use(payload)
+                self._ui_refresh()
+            _append_tool_use_to_ctx(payload)
 
         def on_tool_result(payload: dict) -> None:
-            self._append_tool_result(payload)
-            self._ui_refresh()
+            if ctx.is_foreground:
+                self._append_tool_result(payload)
+                self._ui_refresh()
+            _append_tool_result_to_ctx(payload)
 
         def on_result(payload: dict) -> None:
             nonlocal result_usage, result_sdk_session_id
@@ -121,6 +177,16 @@ class StreamHandler:
             stream_error = message
 
         def on_permission_request(payload: dict) -> None:
+            if not ctx.is_foreground:
+                # Auto-deny permissions when running in background
+                perm_svc = self._state.get_service("permission_service")
+                perm_id = payload.get("permission_id", "")
+                if perm_svc:
+                    perm_svc.resolve(perm_id, {
+                        "behavior": "deny",
+                        "message": "Auto-denied: session is running in background",
+                    })
+                return
             self._state.pending_permission = PermissionRequest(
                 id=payload.get("permission_id", ""),
                 tool_name=payload.get("tool_name", ""),
@@ -148,15 +214,28 @@ class StreamHandler:
             on_error=on_error,
             on_permission_request=on_permission_request,
         )
-        self._finalize_stream(
-            session, result_usage, result_sdk_session_id, stream_error,
-        )
+
+        # Clean up active context reference
+        if self._active_ctx is ctx:
+            self._active_ctx = None
+
+        if ctx.is_foreground:
+            self._finalize_stream(
+                session, result_usage, result_sdk_session_id, stream_error,
+            )
+        else:
+            # Stream finished in background — finalize without touching foreground UI
+            self._detached_contexts.pop(ctx.session_id, None)
+            self._finalize_background(
+                ctx, session, result_usage, result_sdk_session_id, stream_error,
+            )
 
     async def abort_claude(self) -> None:
         """Abort the current streaming operation."""
         claude = self._state.get_service("claude_service")
-        if claude:
-            await claude.abort()
+        sid = self._state.streaming_session_id
+        if claude and sid:
+            await claude.abort(sid)
         self.reset_stream_state()
         self._ui_refresh()
 
@@ -195,6 +274,72 @@ class StreamHandler:
             }
             perm_svc.resolve(req.id, decision)
         self._ui_refresh()
+
+    def detach_to_background(self) -> None:
+        """Detach the current foreground stream to run in the background.
+
+        Called by ChatPage when the user switches away from a streaming session.
+        """
+        ctx = self._active_ctx
+        if not ctx or not ctx.is_foreground:
+            return
+
+        # Flip to background mode — future callbacks skip UI writes
+        ctx.is_foreground = False
+
+        # Register in background streams tracking
+        bg_info = self._state.mark_background_streaming(ctx.session_id)
+        # Share blocks by reference so _finalize_background can read them
+        bg_info.blocks = ctx.blocks
+
+        # Store reference for possible reattach
+        self._detached_contexts[ctx.session_id] = ctx
+
+        # Auto-deny any pending permission (can't show UI in background)
+        if self._state.pending_permission:
+            perm_svc = self._state.get_service("permission_service")
+            req = self._state.pending_permission
+            if perm_svc and req:
+                perm_svc.resolve(req.id, {
+                    "behavior": "deny",
+                    "message": "Auto-denied: session moved to background",
+                })
+            self._state.pending_permission = None
+
+        # Clear foreground streaming state
+        self._state.clear_streaming()
+        self._active_ctx = None
+
+        if self._on_background_status_change:
+            self._on_background_status_change()
+
+    def reattach_to_foreground(self, session_id: str) -> None:
+        """Re-attach a background stream to the foreground.
+
+        Called when the user switches back to a session that is still
+        streaming in the background.
+        """
+        ctx = self._detached_contexts.get(session_id)
+        bg_info = self._state.background_streams.get(session_id)
+
+        if not ctx or not bg_info:
+            return
+
+        # Restore foreground streaming state from accumulated blocks
+        self._state.streaming_blocks = list(ctx.blocks)
+        self._state.is_streaming = True
+        self._state.streaming_session_id = session_id
+
+        # Flip context back to foreground
+        ctx.is_foreground = True
+        self._active_ctx = ctx
+
+        # Remove from detached/background tracking
+        self._detached_contexts.pop(session_id, None)
+        self._state.background_streams.pop(session_id, None)
+
+        if self._on_background_status_change:
+            self._on_background_status_change()
 
     # ------------------------------------------------------------------
     # Stream state helpers
@@ -278,6 +423,35 @@ class StreamHandler:
             return json.dumps(blocks, ensure_ascii=False), "json"
         return "".join(plain_parts).strip(), "text"
 
+    @staticmethod
+    def _serialize_blocks(block_list: list[StreamingBlock]) -> tuple[str, str]:
+        """Serialize an arbitrary block list to (content, format)."""
+        blocks: list[dict] = []
+        plain_parts: list[str] = []
+        has_tool = False
+        for block in block_list:
+            if isinstance(block, StreamingTextBlock) and block.text:
+                blocks.append({"type": "text", "text": block.text})
+                plain_parts.append(block.text)
+            elif isinstance(block, StreamingToolUseBlock):
+                has_tool = True
+                blocks.append({
+                    "type": "tool_use",
+                    "id": block.id,
+                    "name": block.name,
+                    "input": block.input,
+                })
+                if block.output is not None:
+                    blocks.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": block.output,
+                        "is_error": block.is_error,
+                    })
+        if has_tool:
+            return json.dumps(blocks, ensure_ascii=False), "json"
+        return "".join(plain_parts).strip(), "text"
+
     # ------------------------------------------------------------------
     # Finalization
     # ------------------------------------------------------------------
@@ -298,6 +472,36 @@ class StreamHandler:
         self.reset_stream_state()
         self._ui_refresh()
 
+    def _finalize_background(
+        self,
+        ctx: _StreamContext,
+        session: ChatSession,
+        result_usage: dict[str, Any] | None,
+        result_sdk_session_id: str | None,
+        stream_error: str | None,
+    ) -> None:
+        """Finalize a stream that completed while in the background."""
+        active_sdk_id = result_sdk_session_id or session.sdk_session_id or None
+        # Persist assistant message from context blocks
+        self._persist_assistant_message_from_blocks(
+            ctx.blocks, session, result_usage,
+        )
+        self._update_sdk_session(session, result_sdk_session_id)
+        self._maybe_sync_session_title(session, active_sdk_id)
+
+        # Update background info
+        bg_info = self._state.background_streams.get(ctx.session_id)
+        if bg_info:
+            bg_info.result_usage = result_usage
+            bg_info.result_sdk_session_id = result_sdk_session_id
+            bg_info.stream_error = stream_error
+
+        # Mark as completed (dot changes from yellow to green)
+        self._state.mark_background_completed(ctx.session_id)
+
+        if self._on_background_status_change:
+            self._on_background_status_change()
+
     def _persist_assistant_message(
         self,
         session: ChatSession,
@@ -316,6 +520,24 @@ class StreamHandler:
         self._state.messages.append(msg)
         if result_usage:
             self._state.last_token_usage = TokenUsageInfo(**result_usage)
+
+    def _persist_assistant_message_from_blocks(
+        self,
+        blocks: list[StreamingBlock],
+        session: ChatSession,
+        result_usage: dict[str, Any] | None,
+    ) -> None:
+        """Persist assistant message from an arbitrary block list (background)."""
+        content, _ = self._serialize_blocks(blocks)
+        if not content:
+            return
+        usage_json = json.dumps(result_usage) if result_usage else None
+        self._db.add_message(
+            session_id=session.id,
+            role="assistant",
+            content=content,
+            token_usage=usage_json,
+        )
 
     def _update_sdk_session(
         self,

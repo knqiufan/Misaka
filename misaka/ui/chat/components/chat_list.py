@@ -6,6 +6,8 @@ with search filtering, new-chat button, and context menu support.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from collections.abc import Callable
 from datetime import date, datetime
 from typing import TYPE_CHECKING
@@ -13,6 +15,7 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
+from misaka.state import BackgroundStreamStatus
 from misaka.ui.common.context_menu import ContextMenuItem, FloatingContextMenu
 
 if TYPE_CHECKING:
@@ -50,6 +53,8 @@ class ChatList(ft.Column):
         self._search_query = ""
         self._search_field: ft.TextField | None = None
         self._session_list: ft.ListView | None = None
+        self._pulse_phase: bool = False
+        self._pulse_timer_running: bool = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -227,6 +232,29 @@ class ChatList(ft.Column):
 
         is_selected = session.id == self.state.current_session_id
 
+        # Background stream status dot
+        bg_status = self.state.get_background_status(session.id)
+        status_dot: ft.Control | None = None
+        if bg_status is not None:
+            dot_color = (
+                WARNING_AMBER
+                if bg_status == BackgroundStreamStatus.STREAMING
+                else SUCCESS_GREEN
+            )
+            status_dot = ft.Container(
+                width=7,
+                height=7,
+                border_radius=4,
+                bgcolor=dot_color,
+                opacity=0.3 if self._pulse_phase else 1.0,
+                animate_opacity=ft.Animation(800, ft.AnimationCurve.EASE_IN_OUT),
+                shadow=ft.BoxShadow(
+                    blur_radius=4,
+                    spread_radius=0,
+                    color=ft.Colors.with_opacity(0.4, dot_color),
+                ),
+            )
+
         subtitle_parts: list[str] = []
         if session.project_name:
             subtitle_parts.append(session.project_name)
@@ -284,6 +312,9 @@ class ChatList(ft.Column):
             spacing=4,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
+
+        if status_dot:
+            item_content.controls.insert(0, status_dot)
 
         def on_item_hover(e) -> None:
             hovering = e.data == "true"
@@ -466,6 +497,29 @@ class ChatList(ft.Column):
     def refresh(self) -> None:
         """Rebuild the session list from current state."""
         self._refresh_list()
+        if self.state.background_streams and not self._pulse_timer_running:
+            self._start_pulse_timer()
+
+    def _start_pulse_timer(self) -> None:
+        """Start a timer that toggles pulse phase for blinking dots."""
+        if self._pulse_timer_running:
+            return
+        self._pulse_timer_running = True
+
+        async def _pulse_loop() -> None:
+            try:
+                while self.state.background_streams:
+                    self._pulse_phase = not self._pulse_phase
+                    self._refresh_list()
+                    if self._session_list:
+                        with contextlib.suppress(Exception):
+                            self._session_list.update()
+                    await asyncio.sleep(0.8)
+            finally:
+                self._pulse_timer_running = False
+                self._pulse_phase = False
+
+        self.state.page.run_task(_pulse_loop)
 
     @staticmethod
     def _format_time(iso_str: str) -> str:

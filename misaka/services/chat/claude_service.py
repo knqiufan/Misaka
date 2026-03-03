@@ -55,9 +55,10 @@ class ClaudeService:
     ) -> None:
         self._db = db
         self._permission_service = permission_service or PermissionService()
-        self._client: Any = None  # ClaudeSDKClient instance
-        self._is_streaming: bool = False
-        self._abort_event: asyncio.Event = asyncio.Event()
+        # Per-session streaming state (keyed by session_id)
+        self._active_streams: dict[str, bool] = {}
+        self._clients: dict[str, Any] = {}
+        self._abort_events: dict[str, asyncio.Event] = {}
         self._debug_log_enabled: bool = False
         self._saw_text_delta_in_turn: bool = False
 
@@ -188,8 +189,9 @@ class ClaudeService:
             ProcessError,
         )
 
-        self._is_streaming = True
-        self._abort_event.clear()
+        self._active_streams[session_id] = True
+        abort_event = asyncio.Event()
+        self._abort_events[session_id] = abort_event
         self._debug_log_enabled = self._is_debug_log_enabled()
         self._saw_text_delta_in_turn = False
 
@@ -235,7 +237,7 @@ class ClaudeService:
 
         try:
             async with ClaudeSDKClient(options=options) as client:
-                self._client = client
+                self._clients[session_id] = client
 
                 # SDK >= 0.1.39: query() then receive_response()
                 # Older SDK versions may still expose send_message().
@@ -246,7 +248,7 @@ class ClaudeService:
                     response_stream = client.send_message(prompt, can_use_tool=can_use_tool)
 
                 async for message in response_stream:
-                    if not self._is_streaming or self._abort_event.is_set():
+                    if session_id not in self._active_streams or abort_event.is_set():
                         break
                     kind = self._classify_message_kind(message)
                     message_counts[kind] = message_counts.get(kind, 0) + 1
@@ -302,8 +304,9 @@ class ClaudeService:
                 session_id,
                 json.dumps(message_counts, ensure_ascii=False),
             )
-            self._is_streaming = False
-            self._client = None
+            self._active_streams.pop(session_id, None)
+            self._clients.pop(session_id, None)
+            self._abort_events.pop(session_id, None)
             self._debug_log_enabled = False
             self._saw_text_delta_in_turn = False
 
@@ -644,24 +647,44 @@ class ClaudeService:
             "elapsed_time_seconds": getattr(message, "elapsed_time_seconds", 0),
         })
 
-    async def abort(self) -> None:
-        """Abort the current streaming operation."""
-        self._is_streaming = False
-        self._abort_event.set()
+    async def abort(self, session_id: str | None = None) -> None:
+        """Abort streaming for a specific session (or the sole active session)."""
+        if session_id is None:
+            # Backward-compat: if only one active stream, abort it
+            if len(self._active_streams) == 1:
+                session_id = next(iter(self._active_streams))
+            else:
+                return
 
-        if self._client:
+        self._active_streams.pop(session_id, None)
+        event = self._abort_events.get(session_id)
+        if event:
+            event.set()
+
+        client = self._clients.get(session_id)
+        if client:
             try:
-                if hasattr(self._client, "abort"):
-                    await self._client.abort()
-                elif hasattr(self._client, "interrupt"):
-                    await self._client.interrupt()
+                if hasattr(client, "abort"):
+                    await client.abort()
+                elif hasattr(client, "interrupt"):
+                    await client.interrupt()
             except Exception as exc:
-                logger.warning("Error aborting client: %s", exc)
-            self._client = None
+                logger.warning("Error aborting client for session %s: %s", session_id, exc)
+            self._clients.pop(session_id, None)
+
+    async def abort_all(self) -> None:
+        """Abort all active streaming sessions (used during shutdown)."""
+        session_ids = list(self._active_streams.keys())
+        for sid in session_ids:
+            await self.abort(sid)
 
     @property
     def is_streaming(self) -> bool:
-        """Whether a streaming operation is currently in progress."""
-        return self._is_streaming
+        """Whether any streaming operation is currently in progress."""
+        return bool(self._active_streams)
+
+    def is_session_streaming(self, session_id: str) -> bool:
+        """Whether a specific session is currently streaming."""
+        return session_id in self._active_streams
 
 

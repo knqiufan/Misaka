@@ -9,6 +9,7 @@ to trigger a Flet page refresh.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -47,6 +48,26 @@ class PermissionRequest:
 
 
 StreamingBlock = StreamingTextBlock | StreamingToolUseBlock
+
+
+# ---------------------------------------------------------------------------
+# Background stream tracking
+# ---------------------------------------------------------------------------
+
+class BackgroundStreamStatus(Enum):
+    """Status of a background (detached) streaming session."""
+    STREAMING = "streaming"
+    COMPLETED_UNREAD = "completed"
+
+
+@dataclass
+class BackgroundStreamInfo:
+    """Tracking info for a session streaming in the background."""
+    status: BackgroundStreamStatus
+    blocks: list[StreamingBlock] = field(default_factory=list)
+    result_usage: dict[str, Any] | None = None
+    result_sdk_session_id: str | None = None
+    stream_error: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +116,9 @@ class AppState:
         self.is_streaming: bool = False
         self.streaming_blocks: list[StreamingBlock] = []
         self.streaming_session_id: str | None = None
+
+        # --- Background streams (detached sessions still running) ---
+        self.background_streams: dict[str, BackgroundStreamInfo] = {}
 
         # --- Permission state ---
         self.pending_permission: PermissionRequest | None = None
@@ -183,6 +207,29 @@ class AppState:
         self.streaming_blocks = []
         self.streaming_session_id = None
         self.pending_permission = None
+
+    # ----- Background stream helpers -----
+
+    def mark_background_streaming(self, session_id: str) -> BackgroundStreamInfo:
+        """Register a session as streaming in the background."""
+        info = BackgroundStreamInfo(status=BackgroundStreamStatus.STREAMING)
+        self.background_streams[session_id] = info
+        return info
+
+    def mark_background_completed(self, session_id: str) -> None:
+        """Mark a background session as completed but not yet viewed."""
+        info = self.background_streams.get(session_id)
+        if info:
+            info.status = BackgroundStreamStatus.COMPLETED_UNREAD
+
+    def mark_background_viewed(self, session_id: str) -> None:
+        """Remove a background session entry (user has viewed it)."""
+        self.background_streams.pop(session_id, None)
+
+    def get_background_status(self, session_id: str) -> BackgroundStreamStatus | None:
+        """Return the background status for a session, or None if not backgrounded."""
+        info = self.background_streams.get(session_id)
+        return info.status if info else None
 
     def clear_error(self) -> None:
         """Dismiss the current error message."""

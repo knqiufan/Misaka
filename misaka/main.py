@@ -157,11 +157,11 @@ class ServiceContainer:
         """Release resources held by services."""
         # Abort any active Claude streaming
         if self.claude_service.is_streaming:
-            logger.info("Aborting active Claude stream during shutdown")
+            logger.info("Aborting active Claude stream(s) during shutdown")
             try:
-                await self.claude_service.abort()
+                await self.claude_service.abort_all()
             except (OSError, RuntimeError) as exc:
-                logger.warning("Error aborting Claude stream: %s", exc)
+                logger.warning("Error aborting Claude stream(s): %s", exc)
 
         # Stop all MCP server subprocesses
         try:

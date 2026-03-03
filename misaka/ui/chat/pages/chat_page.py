@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import flet as ft
 
+from misaka.state import BackgroundStreamStatus
 from misaka.ui.chat.components.chat_list import ChatList
 from misaka.ui.chat.components.chat_view import ChatView
 from misaka.ui.file.components.folder_picker import FolderPicker
@@ -59,6 +60,7 @@ class ChatPage(ft.Stack):
             db=db,
             ui_refresh=self._refresh_stream_ui,
             on_title_changed=self._on_title_changed,
+            on_background_status_change=self._on_background_status_change,
         )
 
         self._build_ui()
@@ -149,7 +151,22 @@ class ChatPage(ft.Stack):
 
     def _on_session_select(self, session_id: str) -> None:
         """Handle session selection from the chat list."""
+        # Detach current stream to background if switching away from streaming session
+        if (self.state.is_streaming
+                and self.state.streaming_session_id
+                and self.state.streaming_session_id != session_id):
+            self._stream_handler.detach_to_background()
+
         self.state.current_session_id = session_id
+
+        # Check background status of target session
+        bg_status = self.state.get_background_status(session_id)
+        if bg_status == BackgroundStreamStatus.STREAMING:
+            self._stream_handler.reattach_to_foreground(session_id)
+        elif bg_status == BackgroundStreamStatus.COMPLETED_UNREAD:
+            self.state.mark_background_viewed(session_id)
+
+        # Load messages from DB
         messages, has_more = self.db.get_messages(session_id, limit=10)
         self.state.messages = messages
         self.state.has_more_messages = has_more
@@ -166,7 +183,7 @@ class ChatPage(ft.Stack):
         """Open folder picker, then create a new chat session."""
         if not self.state.page:
             return
-        self._abort_if_streaming()
+        self._detach_if_streaming()
         picker = FolderPicker(
             page=self.state.page,
             on_select=self._on_new_chat_folder_selected,
@@ -188,8 +205,7 @@ class ChatPage(ft.Stack):
 
     def _on_delete_session(self, session_id: str) -> None:
         """Delete a session."""
-        if self.state.current_session_id == session_id:
-            self._abort_if_streaming()
+        self._abort_session_if_streaming(session_id)
         self.db.delete_session(session_id)
         self.state.sessions = [s for s in self.state.sessions if s.id != session_id]
         if self.state.current_session_id == session_id:
@@ -214,8 +230,7 @@ class ChatPage(ft.Stack):
 
     def _on_archive_session(self, session_id: str) -> None:
         """Archive a session."""
-        if self.state.current_session_id == session_id:
-            self._abort_if_streaming()
+        self._abort_session_if_streaming(session_id)
         self.db.update_session_status(session_id, "archived")
         self.state.sessions = [s for s in self.state.sessions if s.id != session_id]
         if self.state.current_session_id == session_id:
@@ -228,8 +243,7 @@ class ChatPage(ft.Stack):
 
     def _on_remove_from_list(self, session_id: str) -> None:
         """Remove a session from the list (mark as hidden)."""
-        if self.state.current_session_id == session_id:
-            self._abort_if_streaming()
+        self._abort_session_if_streaming(session_id)
         self.db.update_session_status(session_id, "hidden")
         self.state.sessions = [s for s in self.state.sessions if s.id != session_id]
         if self.state.current_session_id == session_id:
@@ -572,6 +586,36 @@ class ChatPage(ft.Stack):
         if not self.state.is_streaming:
             return
         self.state.page.run_task(self._stream_handler.abort_claude)
+
+    def _detach_if_streaming(self) -> None:
+        """Detach the current foreground stream to background instead of aborting."""
+        if self.state.is_streaming:
+            self._stream_handler.detach_to_background()
+
+    def _abort_session_if_streaming(self, session_id: str) -> None:
+        """Abort streaming for a specific session (foreground or background).
+
+        Used for destructive operations (delete, archive, clear).
+        """
+        # If it's the foreground stream
+        if (self.state.is_streaming
+                and self.state.streaming_session_id == session_id):
+            self.state.page.run_task(self._stream_handler.abort_claude)
+            return
+        # If it's a background stream
+        if session_id in self.state.background_streams:
+            self.state.background_streams.pop(session_id, None)
+            claude = self.state.get_service("claude_service")
+            if claude and claude.is_session_streaming(session_id):
+                async def _do_abort() -> None:
+                    await claude.abort(session_id)
+                self.state.page.run_task(_do_abort)
+
+    def _on_background_status_change(self) -> None:
+        """Called when a background stream changes status (started/completed)."""
+        if self._chat_list:
+            self._chat_list.refresh()
+        self.state.update()
 
     def _refresh_stream_ui(self) -> None:
         """Refresh message list after stream events."""
