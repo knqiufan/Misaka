@@ -13,6 +13,7 @@ mode changes.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -266,10 +267,8 @@ class ClaudeService:
                 # "Task exception was never retrieved" errors when the
                 # subprocess exits with a non-zero code during cleanup.
                 if hasattr(response_stream, "aclose"):
-                    try:
+                    with contextlib.suppress(Exception):
                         await response_stream.aclose()
-                    except Exception:
-                        pass
 
         except CLINotFoundError:
             error_msg = (
