@@ -18,7 +18,6 @@ from misaka.ui.chat.components.chat_list import ChatList
 from misaka.ui.chat.components.chat_view import ChatView
 from misaka.ui.file.components.folder_picker import FolderPicker
 from misaka.ui.dialogs.import_session_dialog import ImportSessionDialog
-from misaka.ui.dialogs.permission_dialog import PermissionDialog
 from misaka.ui.panels.resize_handle import ResizeHandle
 from misaka.ui.panels.right_panel import RightPanel
 from misaka.ui.chat.pages.stream_handler import StreamHandler
@@ -51,7 +50,6 @@ class ChatPage(ft.Stack):
         self._chat_list: ChatList | None = None
         self._chat_view: ChatView | None = None
         self._right_panel: RightPanel | None = None
-        self._permission_overlay: PermissionDialog | None = None
         self._left_container: ft.Container | None = None
         self._right_container: ft.Container | None = None
         self._import_dialog: ImportSessionDialog | None = None
@@ -97,6 +95,9 @@ class ChatPage(ft.Stack):
             on_open_folder=self._on_open_folder,
             on_load_more=self._on_load_more,
             on_command=self._on_command,
+            on_permission_allow=self._on_permission_allow,
+            on_permission_allow_always=self._on_permission_allow_always,
+            on_permission_deny=self._on_permission_deny,
         )
 
         # --- Right panel ---
@@ -142,14 +143,7 @@ class ChatPage(ft.Stack):
             expand=True,
         )
 
-        # --- Permission overlay ---
-        self._permission_overlay = PermissionDialog(
-            state=self.state,
-            on_allow=self._on_permission_allow,
-            on_deny=self._on_permission_deny,
-        )
-
-        self.controls = [main_row, self._permission_overlay]
+        self.controls = [main_row]
 
     # ---- Session operations ----
 
@@ -544,10 +538,13 @@ class ChatPage(ft.Stack):
     # ---- Permission operations ----
 
     def _on_permission_allow(self) -> None:
-        self._stream_handler.resolve_permission(True)
+        self._stream_handler.resolve_permission(allow=True, always=False)
+
+    def _on_permission_allow_always(self) -> None:
+        self._stream_handler.resolve_permission(allow=True, always=True)
 
     def _on_permission_deny(self) -> None:
-        self._stream_handler.resolve_permission(False)
+        self._stream_handler.resolve_permission(allow=False)
 
     # ---- Helpers ----
 
@@ -559,8 +556,6 @@ class ChatPage(ft.Stack):
             self._chat_view.refresh()
         if self._right_panel:
             self._right_panel.refresh()
-        if self._permission_overlay:
-            self._permission_overlay.refresh()
 
     def refresh(self) -> None:
         self._rebuild_all()
@@ -579,11 +574,9 @@ class ChatPage(ft.Stack):
         self.state.page.run_task(self._stream_handler.abort_claude)
 
     def _refresh_stream_ui(self) -> None:
-        """Refresh message list and permission overlay after stream events."""
+        """Refresh message list after stream events."""
         if self._chat_view:
             self._chat_view.refresh_messages()
-        if self._permission_overlay:
-            self._permission_overlay.refresh()
         self.state.update()
 
     def _load_file_tree(self, session: ChatSession) -> None:

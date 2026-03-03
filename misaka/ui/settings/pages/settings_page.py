@@ -304,12 +304,13 @@ class SettingsPage(ft.Column):
         )
 
     def _handle_check_update(self, e: ft.ControlEvent) -> None:
-        if not e.page:
+        page = e.page
+        if not page:
             return
         self._update_checking = True
         self._build_ui()
         self.state.update()
-        e.page.run_task(self._do_check_update)
+        page.run_task(self._do_check_update)
 
     async def _do_check_update(self) -> None:
         svc = self._get_update_service()
@@ -320,13 +321,14 @@ class SettingsPage(ft.Column):
         self.state.update()
 
     def _handle_perform_update(self, e: ft.ControlEvent) -> None:
-        if not e.page:
+        page = e.page
+        if not page:
             return
         self.state.update_in_progress = True
         self._update_progress_msg = ""
         self._build_ui()
         self.state.update()
-        e.page.run_task(self._do_perform_update)
+        page.run_task(self._do_perform_update)
 
     async def _do_perform_update(self) -> None:
         svc = self._get_update_service()
@@ -463,12 +465,13 @@ class SettingsPage(ft.Column):
         )
 
     def _handle_env_recheck(self, e: ft.ControlEvent) -> None:
-        if not e.page:
+        page = e.page
+        if not page:
             return
         self._env_checking = True
         self._build_ui()
         self.state.update()
-        e.page.run_task(self._do_env_recheck)
+        page.run_task(self._do_env_recheck)
 
     async def _do_env_recheck(self) -> None:
         svc = self._get_env_service()
@@ -479,12 +482,13 @@ class SettingsPage(ft.Column):
         self.state.update()
 
     def _handle_env_install(self, e: ft.ControlEvent, tool_name: str) -> None:
-        if not e.page:
+        page = e.page
+        if not page:
             return
         self._env_installing_tool = tool_name
         self._build_ui()
         self.state.update()
-        e.page.run_task(lambda: self._do_env_install(tool_name))
+        page.run_task(lambda: self._do_env_install(tool_name))
 
     async def _do_env_install(self, tool_name: str) -> None:
         svc = self._get_env_service()

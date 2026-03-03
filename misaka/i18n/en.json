@@ -241,6 +241,7 @@
     "title": "Permission Required",
     "tool_request": "Claude wants to use: {tool_name}",
     "allow": "Allow",
+    "allow_always": "Allow & Don't Ask Again",
     "deny": "Deny"
   },
   "right_panel": {

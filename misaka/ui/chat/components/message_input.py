@@ -57,6 +57,19 @@ class MessageInput(ft.Container):
         self._suppress_focus_close: bool = False
         self._build_ui()
 
+    async def _do_focus(self) -> None:
+        """Async focus on text field. Used by _schedule_focus."""
+        if self._text_field:
+            await self._text_field.focus()
+
+    def _schedule_focus(self, page: ft.Page | None = None) -> None:
+        """Schedule async focus on text field. Safe to call from sync handlers."""
+        if not self._text_field:
+            return
+        p = page or getattr(self, "page", None)
+        if p:
+            p.run_task(self._do_focus)
+
     # ------------------------------------------------------------------
     # UI build
     # ------------------------------------------------------------------
@@ -252,8 +265,7 @@ class MessageInput(ft.Container):
             self._hide_command_menu()
             return
         self._show_command_menu(filter_commands(""))
-        if self._text_field:
-            self._text_field.focus()
+        self._schedule_focus(e.page if e else None)
 
     def _hide_command_menu(self) -> None:
         if self._command_menu_container and self._command_menu_container.visible:
@@ -311,7 +323,7 @@ class MessageInput(ft.Container):
             if self._text_field:
                 self._text_field.value = ""
                 self._text_field.update()
-                self._text_field.focus()
+                self._schedule_focus()
 
     # ------------------------------------------------------------------
     # File menu (@ file picking)
@@ -443,7 +455,7 @@ class MessageInput(ft.Container):
         self._file_menu_container.update()
         if self._text_field:
             self._suppress_focus_close = True
-            self._text_field.focus()
+            self._schedule_focus()
 
     def _build_file_item(self, node: FileTreeNode) -> ft.Control:
         """Build a single file row for the popup menu."""
@@ -494,13 +506,13 @@ class MessageInput(ft.Container):
             self._text_field.value = f"{before}@{new_query}"
             self._text_field.update()
             self._suppress_focus_close = True
-            self._text_field.focus()
+            self._schedule_focus()
             self._show_file_menu(new_query)
             return
 
         self._text_field.value = f"{before}@{node.path} "
         self._text_field.update()
-        self._text_field.focus()
+        self._schedule_focus()
         self._hide_file_menu()
 
     @staticmethod
@@ -541,7 +553,7 @@ class MessageInput(ft.Container):
         self._text_field.value = f"{current}{separator}@{path} "
         self._text_field.update()
         self._suppress_focus_close = True
-        self._text_field.focus()
+        self._schedule_focus()
 
     # ------------------------------------------------------------------
     # Model sub-menu
@@ -774,8 +786,7 @@ class MessageInput(ft.Container):
             paths = [p.strip().strip('"') for p in parts if p.strip()]
             self._append_file_paths(paths)
             page.pop_dialog()
-            if self._text_field:
-                self._text_field.focus()
+            self._schedule_focus(page)
 
         dialog = make_dialog(
             title=t("chat.attach_file"),
@@ -820,5 +831,4 @@ class MessageInput(ft.Container):
             self._send_btn.bgcolor = ft.Colors.ERROR if is_streaming else ft.Colors.PRIMARY
 
     def focus(self) -> None:
-        if self._text_field:
-            self._text_field.focus()
+        self._schedule_focus()

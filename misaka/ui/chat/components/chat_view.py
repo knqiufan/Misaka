@@ -40,6 +40,9 @@ class ChatView(ft.Column):
         on_open_folder: Callable[[], None] | None = None,
         on_load_more: Callable[[], None] | None = None,
         on_command: Callable[[str], None] | None = None,
+        on_permission_allow: Callable[[], None] | None = None,
+        on_permission_allow_always: Callable[[], None] | None = None,
+        on_permission_deny: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(spacing=0, expand=True)
         self.state = state
@@ -53,6 +56,9 @@ class ChatView(ft.Column):
         self._on_open_folder = on_open_folder
         self._on_load_more = on_load_more
         self._on_command = on_command
+        self._on_permission_allow = on_permission_allow
+        self._on_permission_allow_always = on_permission_allow_always
+        self._on_permission_deny = on_permission_deny
 
         self._message_list: MessageList | None = None
         self._message_input: MessageInput | None = None
@@ -183,6 +189,9 @@ class ChatView(ft.Column):
         self._message_list = MessageList(
             self.state,
             on_load_more=self._on_load_more,
+            on_permission_allow=self._on_permission_allow,
+            on_permission_allow_always=self._on_permission_allow_always,
+            on_permission_deny=self._on_permission_deny,
         )
 
         # --- Message input ---

@@ -241,6 +241,7 @@
     "title": "需要權限",
     "tool_request": "Claude 想要使用：{tool_name}",
     "allow": "允許",
+    "allow_always": "允許且不再詢問",
     "deny": "拒絕"
   },
   "right_panel": {

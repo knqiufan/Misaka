@@ -165,6 +165,7 @@ class ClaudeService:
         sdk_session_id: str | None = None,
         mcp_servers: dict[str, Any] | None = None,
         permission_mode: str = "acceptEdits",
+        should_auto_allow: Callable[[str], bool] | None = None,
         on_text: Callable[[str], None] | None = None,
         on_tool_use: Callable[[dict[str, Any]], None] | None = None,
         on_tool_result: Callable[[dict[str, Any]], None] | None = None,
@@ -205,7 +206,13 @@ class ClaudeService:
 
         can_use_tool = None
         if on_permission_request:
-            can_use_tool = self._make_permission_callback(on_permission_request)
+            can_use_tool = self._make_permission_callback(on_permission_request, should_auto_allow)
+
+        # When bypassPermissions is active and no auto-allow callback, let SDK handle it.
+        # Otherwise force "default" so our callback does all filtering.
+        effective_sdk_mode = permission_mode
+        if can_use_tool and permission_mode != "bypassPermissions":
+            effective_sdk_mode = "default"
 
         options = self._build_options(
             model=model,
@@ -213,7 +220,7 @@ class ClaudeService:
             working_directory=working_directory,
             sdk_session_id=sdk_session_id,
             mcp_servers=mcp_servers,
-            permission_mode=permission_mode,
+            permission_mode=effective_sdk_mode,
             provider=provider,
             can_use_tool=can_use_tool,
         )
@@ -316,11 +323,14 @@ class ClaudeService:
     def _make_permission_callback(
         self,
         on_permission_request: Callable[[dict[str, Any]], Any],
+        should_auto_allow: Callable[[str], bool] | None = None,
     ) -> Any:
         """Create the ``can_use_tool`` callback for the SDK.
 
         The callback forwards permission requests to the UI via
         ``on_permission_request`` and waits for the user's decision.
+        If ``should_auto_allow`` is provided, it is checked first and
+        auto-approves matching tools without showing a UI dialog.
         """
         permission_service = self._permission_service
 
@@ -330,6 +340,10 @@ class ClaudeService:
             context: Any = None,
         ) -> Any:
             from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+
+            # Check auto-allow FIRST — before registering a Future
+            if should_auto_allow and should_auto_allow(tool_name):
+                return PermissionResultAllow(updated_input=tool_input)
 
             permission_id = f"perm-{int(time.time() * 1000)}-{os.urandom(3).hex()}"
 

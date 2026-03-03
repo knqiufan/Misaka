@@ -26,6 +26,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Tools that are auto-allowed in "acceptEdits" mode
+_READ_TOOLS = frozenset({"Read", "Glob", "Grep", "WebFetch", "WebSearch", "LS"})
+_EDIT_TOOLS = frozenset({"Edit"})
+
 
 class StreamHandler:
     """Manages a single streaming turn between the user and Claude.
@@ -57,6 +61,7 @@ class StreamHandler:
         self._on_title_changed = on_title_changed
         self._send_override: Any = None
         self._abort_override: Any = None
+        self._always_allowed_tools: set[str] = set()
 
     # ------------------------------------------------------------------
     # Public API
@@ -133,7 +138,8 @@ class StreamHandler:
             working_directory=session.working_directory or None,
             sdk_session_id=session.sdk_session_id or None,
             mcp_servers=self._state.mcp_servers_sdk or None,
-            permission_mode=self._permission_mode_for(session),
+            permission_mode=self._get_global_permission_mode(),
+            should_auto_allow=self._make_should_auto_allow(self._get_global_permission_mode()),
             on_text=on_text,
             on_tool_use=on_tool_use,
             on_tool_result=on_tool_result,
@@ -175,9 +181,11 @@ class StreamHandler:
             return (self._abort_override,)
         return (self.abort_claude,)
 
-    def resolve_permission(self, allow: bool) -> None:
+    def resolve_permission(self, allow: bool, always: bool = False) -> None:
         """Resolve a pending permission request from the SDK."""
         req = self._state.pending_permission
+        if allow and always and req:
+            self._always_allowed_tools.add(req.tool_name)
         self._state.pending_permission = None
         perm_svc = self._state.get_service("permission_service")
         if req and perm_svc:
@@ -385,10 +393,28 @@ class StreamHandler:
     # Utility
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _permission_mode_for(session: ChatSession) -> str:
-        if session.mode == "plan":
-            return "plan"
-        if session.mode == "ask":
-            return "default"
+    def _get_global_permission_mode(self) -> str:
+        """Read the global permission mode from settings."""
+        settings_svc = self._state.get_service("settings_service")
+        if settings_svc and hasattr(settings_svc, "get_permission_mode"):
+            return settings_svc.get_permission_mode()
         return "acceptEdits"
+
+    def _make_should_auto_allow(self, permission_mode: str) -> Callable[[str], bool] | None:
+        """Build a callable that determines whether a tool call should be auto-approved.
+
+        Returns None when bypassPermissions is active (SDK handles everything).
+        """
+        if permission_mode == "bypassPermissions":
+            return None
+
+        always_allowed = self._always_allowed_tools
+
+        def should_auto_allow(tool_name: str) -> bool:
+            if tool_name in always_allowed:
+                return True
+            if permission_mode == "acceptEdits":
+                return tool_name in (_READ_TOOLS | _EDIT_TOOLS)
+            return False  # "default": ask for everything
+
+        return should_auto_allow

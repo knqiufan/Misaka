@@ -14,6 +14,7 @@ import flet as ft
 from misaka.i18n import t
 from misaka.ui.chat.components.message_item import MessageItem
 from misaka.ui.chat.components.streaming_message import StreamingMessage
+from misaka.ui.chat.components.permission_card import PermissionCard
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -26,10 +27,16 @@ class MessageList(ft.Column):
         self,
         state: AppState,
         on_load_more: Callable[[], None] | None = None,
+        on_permission_allow: Callable[[], None] | None = None,
+        on_permission_allow_always: Callable[[], None] | None = None,
+        on_permission_deny: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(spacing=0, expand=True)
         self.state = state
         self._on_load_more = on_load_more
+        self._on_permission_allow = on_permission_allow
+        self._on_permission_allow_always = on_permission_allow_always
+        self._on_permission_deny = on_permission_deny
         self._list_view = ft.ListView(
             expand=True,
             auto_scroll=True,
@@ -88,6 +95,19 @@ class MessageList(ft.Column):
         self._streaming_msg.refresh()
         if self.state.is_streaming:
             items.append(self._streaming_msg)
+
+        if (
+            self.state.pending_permission
+            and self._on_permission_allow
+            and self._on_permission_allow_always
+            and self._on_permission_deny
+        ):
+            items.append(PermissionCard(
+                permission=self.state.pending_permission,
+                on_allow=self._on_permission_allow,
+                on_allow_always=self._on_permission_allow_always,
+                on_deny=self._on_permission_deny,
+            ))
 
         self._list_view.controls = items
 
