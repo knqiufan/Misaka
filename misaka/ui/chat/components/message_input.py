@@ -55,6 +55,7 @@ class MessageInput(ft.Container):
         self._at_start_pos: int = -1
         self._file_menu_active: bool = False
         self._suppress_focus_close: bool = False
+        self._model_options_cache: list[tuple[str, str]] | None = None
         self._build_ui()
 
     async def _do_focus(self) -> None:
@@ -560,7 +561,9 @@ class MessageInput(ft.Container):
     # ------------------------------------------------------------------
 
     def _get_model_options(self) -> list[tuple[str, str]]:
-        """Read model names from settings and build option list."""
+        """Read model names from settings and build option list. Cached."""
+        if self._model_options_cache is not None:
+            return self._model_options_cache
         options: list[tuple[str, str]] = [("default", "Default")]
         cli_svc = self.state.get_service("cli_settings_service")
         if cli_svc:
@@ -575,8 +578,10 @@ class MessageInput(ft.Container):
             options.append(("sonnet", sonnet if sonnet != "Sonnet" else "Sonnet"))
             options.append(("opus", opus if opus != "Opus" else "Opus"))
             options.append(("haiku", haiku if haiku != "Haiku" else "Haiku"))
+            self._model_options_cache = options
             return options
         options.extend([("sonnet", "Sonnet"), ("opus", "Opus"), ("haiku", "Haiku")])
+        self._model_options_cache = options
         return options
 
     def _show_model_menu(self) -> None:

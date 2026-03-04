@@ -55,6 +55,9 @@ class ChatList(ft.Column):
         self._session_list: ft.ListView | None = None
         self._pulse_phase: bool = False
         self._pulse_timer_running: bool = False
+        self._item_cache: dict[str, ft.Control] = {}
+        self._last_selected_id: str | None = None
+        self._search_debounce_timer: asyncio.TimerHandle | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -171,7 +174,9 @@ class ChatList(ft.Column):
                     )
                 )
             for s in group:
-                controls.append(self._build_session_item(s))
+                item = self._build_session_item(s)
+                self._item_cache[s.id] = item
+                controls.append(item)
 
         self._session_list.controls = controls
 
@@ -370,6 +375,21 @@ class ChatList(ft.Column):
     def _on_search(self, e: ft.ControlEvent) -> None:
         _context_menu.dismiss()
         self._search_query = (e.data or "").strip()
+        # Debounce search to avoid rebuilding list on every keystroke
+        if self._search_debounce_timer is not None:
+            self._search_debounce_timer.cancel()
+            self._search_debounce_timer = None
+        try:
+            loop = asyncio.get_event_loop()
+            self._search_debounce_timer = loop.call_later(
+                0.2, self._do_search_refresh,
+            )
+        except RuntimeError:
+            self._do_search_refresh()
+
+    def _do_search_refresh(self) -> None:
+        """Execute the debounced search refresh."""
+        self._search_debounce_timer = None
         self._refresh_list()
         if self._session_list:
             self._session_list.update()
@@ -496,9 +516,45 @@ class ChatList(ft.Column):
 
     def refresh(self) -> None:
         """Rebuild the session list from current state."""
+        self._item_cache.clear()
+        self._last_selected_id = self.state.current_session_id
         self._refresh_list()
         if self.state.background_streams and not self._pulse_timer_running:
             self._start_pulse_timer()
+
+    def refresh_selection(self) -> None:
+        """Update only the selection highlight without rebuilding the list.
+
+        Efficient for session switching — updates bgcolor on old and new
+        selected items only.
+        """
+        new_id = self.state.current_session_id
+        old_id = self._last_selected_id
+        if new_id == old_id:
+            return
+        self._last_selected_id = new_id
+
+        # Update old item bgcolor
+        if old_id and old_id in self._item_cache:
+            old_ctrl = self._item_cache[old_id]
+            inner = getattr(old_ctrl, "content", None)
+            if inner and isinstance(inner, ft.Container):
+                inner.bgcolor = ft.Colors.TRANSPARENT
+                inner.border = ft.Border.all(1, ft.Colors.TRANSPARENT)
+
+        # Update new item bgcolor
+        if new_id and new_id in self._item_cache:
+            new_ctrl = self._item_cache[new_id]
+            inner = getattr(new_ctrl, "content", None)
+            if inner and isinstance(inner, ft.Container):
+                inner.bgcolor = ft.Colors.with_opacity(0.10, ft.Colors.PRIMARY)
+                inner.border = ft.Border.all(
+                    1, ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY),
+                )
+
+        if self._session_list:
+            with contextlib.suppress(Exception):
+                self._session_list.update()
 
     def _update_dots_only(self) -> None:
         """Update only the opacity of existing status dots without rebuilding the list.

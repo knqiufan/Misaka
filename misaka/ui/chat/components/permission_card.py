@@ -15,7 +15,6 @@ import flet as ft
 from misaka.i18n import t
 from misaka.ui.common.theme import (
     MONO_FONT_FAMILY,
-    RADIUS_LG,
     WARNING_AMBER,
     make_divider,
 )

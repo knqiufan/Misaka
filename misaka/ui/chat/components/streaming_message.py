@@ -25,6 +25,10 @@ class StreamingMessage(ft.Container):
         self.state = state
         self._thinking_text: ft.Text | None = None
         self._pulse_low = True
+        # Incremental update tracking
+        self._content_column: ft.Column | None = None
+        self._rendered_block_count: int = 0
+        self._last_text_md: ft.Markdown | None = None
         self._build_ui()
 
     def did_mount(self) -> None:
@@ -47,6 +51,9 @@ class StreamingMessage(ft.Container):
 
     def _build_ui(self) -> None:
         self._thinking_text = None
+        self._content_column = None
+        self._rendered_block_count = 0
+        self._last_text_md = None
         if not self.state.is_streaming:
             self.visible = False
             self.content = ft.Container()
@@ -78,16 +85,14 @@ class StreamingMessage(ft.Container):
 
         for block in self.state.streaming_blocks:
             if hasattr(block, "text") and block.text:
-                # Streaming text - render as markdown
-                controls.append(
-                    ft.Markdown(
-                        value=block.text,
-                        selectable=True,
-                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                    )
+                md = ft.Markdown(
+                    value=block.text,
+                    selectable=True,
+                    extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
                 )
+                controls.append(md)
+                self._last_text_md = md
             elif hasattr(block, "name") and block.name:
-                # Tool use block
                 tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
                 controls.append(
                     ToolCallBlock(
@@ -98,6 +103,8 @@ class StreamingMessage(ft.Container):
                         initially_expanded=tool_block.output is None,
                     )
                 )
+
+        self._rendered_block_count = len(self.state.streaming_blocks)
 
         if len(controls) == 1:
             # Only header, no content yet - show thinking indicator
@@ -116,12 +123,82 @@ class StreamingMessage(ft.Container):
             )
             self._thinking_text = thinking_text
 
-        self.content = ft.Column(controls=controls, spacing=8)
+        self._content_column = ft.Column(controls=controls, spacing=8)
+        self.content = self._content_column
         self.padding = ft.Padding.symmetric(horizontal=20, vertical=12)
         self.margin = ft.Margin.only(bottom=4)
         self.border_radius = 10
 
+    def _incremental_update(self) -> None:
+        """Update the streaming display incrementally when possible.
+
+        Most common case during streaming: last block is text and block
+        count unchanged → update Markdown value in-place.
+        """
+        if not self.state.is_streaming:
+            self._build_ui()
+            return
+
+        # No content column yet → full build needed
+        if self._content_column is None:
+            self._build_ui()
+            return
+
+        blocks = self.state.streaming_blocks
+        current_count = len(blocks)
+
+        # Most common streaming case: same block count, last block is text
+        if (
+            current_count == self._rendered_block_count
+            and current_count > 0
+            and self._last_text_md is not None
+            and hasattr(blocks[-1], "text")
+        ):
+            self._last_text_md.value = blocks[-1].text
+            with contextlib.suppress(Exception):
+                self._last_text_md.update()
+            return
+
+        # New blocks added → append only new block controls
+        if current_count > self._rendered_block_count:
+            # Remove thinking indicator if it was showing
+            if self._thinking_text is not None:
+                # Thinking row is the last control in column
+                col_controls = self._content_column.controls
+                if col_controls and len(col_controls) >= 2:
+                    col_controls.pop()
+                self._thinking_text = None
+
+            for i in range(self._rendered_block_count, current_count):
+                block = blocks[i]
+                if hasattr(block, "text") and block.text:
+                    md = ft.Markdown(
+                        value=block.text,
+                        selectable=True,
+                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                    )
+                    self._content_column.controls.append(md)
+                    self._last_text_md = md
+                elif hasattr(block, "name") and block.name:
+                    tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
+                    self._content_column.controls.append(
+                        ToolCallBlock(
+                            tool_name=tool_block.name,
+                            tool_input=tool_block.input,
+                            tool_output=tool_block.output,
+                            is_error=tool_block.is_error,
+                            initially_expanded=tool_block.output is None,
+                        )
+                    )
+                    self._last_text_md = None
+
+            self._rendered_block_count = current_count
+            return
+
+        # Block count decreased or other structural change → full rebuild
+        self._build_ui()
+
     def refresh(self) -> None:
         """Rebuild the streaming display from current state."""
-        self._build_ui()
+        self._incremental_update()
         self._start_thinking_pulse()

@@ -8,10 +8,13 @@ session orchestration.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from misaka.state import (
     PermissionRequest,
@@ -82,10 +85,48 @@ class StreamHandler:
         self._active_ctx: _StreamContext | None = None
         # Detached contexts still running in background
         self._detached_contexts: dict[str, _StreamContext] = {}
+        # Throttling: limit UI refreshes to ~30fps during streaming
+        self._last_refresh_time: float = 0.0
+        self._refresh_pending: bool = False
+        self._refresh_timer: asyncio.TimerHandle | None = None
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def _throttled_ui_refresh(self) -> None:
+        """Rate-limit UI refreshes to ~30fps (33ms) during streaming.
+
+        If called within 33ms of the last refresh, schedules a deferred
+        refresh instead of refreshing immediately.
+        """
+        now = time.monotonic()
+        elapsed = now - self._last_refresh_time
+        if elapsed >= 0.033:
+            self._last_refresh_time = now
+            self._refresh_pending = False
+            if self._refresh_timer is not None:
+                self._refresh_timer.cancel()
+                self._refresh_timer = None
+            self._ui_refresh()
+        elif not self._refresh_pending:
+            self._refresh_pending = True
+            delay = 0.033 - elapsed
+            try:
+                loop = asyncio.get_event_loop()
+                self._refresh_timer = loop.call_later(
+                    delay, self._flush_pending_refresh,
+                )
+            except RuntimeError:
+                # No event loop — fall back to immediate refresh
+                self._ui_refresh()
+
+    def _flush_pending_refresh(self) -> None:
+        """Execute a deferred refresh scheduled by _throttled_ui_refresh."""
+        self._refresh_pending = False
+        self._refresh_timer = None
+        self._last_refresh_time = time.monotonic()
+        self._ui_refresh()
 
     def persist_user_message(self, text: str) -> None:
         """Save a user message to the DB, append to state, and start streaming."""
@@ -145,7 +186,7 @@ class StreamHandler:
         def on_text(text: str) -> None:
             if ctx.is_foreground:
                 self._append_stream_text(text)
-                self._ui_refresh()
+                self._throttled_ui_refresh()
             _append_text_to_ctx(text)
 
         def on_tool_use(payload: dict) -> None:

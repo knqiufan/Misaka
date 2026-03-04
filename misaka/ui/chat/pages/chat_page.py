@@ -17,11 +17,11 @@ import flet as ft
 from misaka.state import BackgroundStreamStatus
 from misaka.ui.chat.components.chat_list import ChatList
 from misaka.ui.chat.components.chat_view import ChatView
-from misaka.ui.file.components.folder_picker import FolderPicker
+from misaka.ui.chat.pages.stream_handler import StreamHandler
 from misaka.ui.dialogs.import_session_dialog import ImportSessionDialog
+from misaka.ui.file.components.folder_picker import FolderPicker
 from misaka.ui.panels.resize_handle import ResizeHandle
 from misaka.ui.panels.right_panel import RightPanel
-from misaka.ui.chat.pages.stream_handler import StreamHandler
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -53,6 +53,10 @@ class ChatPage(ft.Stack):
         self._right_panel: RightPanel | None = None
         self._left_container: ft.Container | None = None
         self._right_container: ft.Container | None = None
+        self._left_divider: ft.Control | None = None
+        self._left_resize_container: ft.Control | None = None
+        self._right_divider: ft.Control | None = None
+        self._right_resize_container: ft.Control | None = None
         self._import_dialog: ImportSessionDialog | None = None
 
         self._stream_handler = StreamHandler(
@@ -62,6 +66,8 @@ class ChatPage(ft.Stack):
             on_title_changed=self._on_title_changed,
             on_background_status_change=self._on_background_status_change,
         )
+
+        self._file_tree_cache: dict[str, tuple] = {}
 
         self._build_ui()
 
@@ -122,23 +128,31 @@ class ChatPage(ft.Stack):
         left_resize = ResizeHandle(on_resize=self._on_left_resize)
         right_resize = ResizeHandle(on_resize=self._on_right_resize)
 
+        # Store dividers and resize containers as persistent controls
+        self._left_resize_container = ft.Container(
+            content=left_resize, height=float("inf"),
+            visible=self.state.left_panel_open,
+        )
+        self._left_divider = ft.VerticalDivider(
+            width=1, visible=self.state.left_panel_open,
+        )
+        self._right_divider = ft.VerticalDivider(
+            width=1, visible=self.state.right_panel_open,
+        )
+        self._right_resize_container = ft.Container(
+            content=right_resize, height=float("inf"),
+            visible=self.state.right_panel_open,
+        )
+
         # --- Main layout ---
         main_row = ft.Row(
             controls=[
                 self._left_container,
-                ft.Container(content=left_resize, height=float("inf"))
-                if self.state.left_panel_open
-                else ft.Container(width=0),
-                ft.VerticalDivider(width=1)
-                if self.state.left_panel_open
-                else ft.Container(width=0),
+                self._left_resize_container,
+                self._left_divider,
                 ft.Container(content=self._chat_view, expand=True),
-                ft.VerticalDivider(width=1)
-                if self.state.right_panel_open
-                else ft.Container(width=0),
-                ft.Container(content=right_resize, height=float("inf"))
-                if self.state.right_panel_open
-                else ft.Container(width=0),
+                self._right_divider,
+                self._right_resize_container,
                 self._right_container,
             ],
             spacing=0,
@@ -175,11 +189,14 @@ class ChatPage(ft.Stack):
             self.state.tasks = self.db.get_tasks_by_session(session_id)
             self.state.sdk_session_id = session.sdk_session_id or None
             self._load_file_tree(session)
-        # Refresh UI
-        self._rebuild_all()
+        # Refresh UI — targeted refreshes instead of _rebuild_all()
+        if self._chat_list:
+            self._chat_list.refresh()
+        if self._chat_view:
+            self._chat_view.refresh()
+        if self._right_panel:
+            self._right_panel.refresh()
         self.state.update()
-
-    def _on_new_chat(self) -> None:
         """Open folder picker, then create a new chat session."""
         if not self.state.page:
             return
@@ -200,7 +217,10 @@ class ChatPage(ft.Stack):
         self.state.tasks = []
         self._stream_handler.reset_stream_state()
         self._scan_file_tree_async(path)
-        self._rebuild_all()
+        if self._chat_list:
+            self._chat_list.refresh()
+        if self._chat_view:
+            self._chat_view.refresh()
         self.state.update()
 
     def _on_delete_session(self, session_id: str) -> None:
@@ -214,7 +234,10 @@ class ChatPage(ft.Stack):
             self.state.tasks = []
             self.state.file_tree_root = None
             self.state.file_tree_nodes = []
-        self._rebuild_all()
+        if self._chat_list:
+            self._chat_list.refresh()
+        if self._chat_view:
+            self._chat_view.refresh()
         self.state.update()
 
     def _on_rename_session(self, session_id: str, new_title: str) -> None:
@@ -238,7 +261,10 @@ class ChatPage(ft.Stack):
             self.state.messages = []
             self.state.file_tree_root = None
             self.state.file_tree_nodes = []
-        self._rebuild_all()
+        if self._chat_list:
+            self._chat_list.refresh()
+        if self._chat_view:
+            self._chat_view.refresh()
         self.state.update()
 
     def _on_remove_from_list(self, session_id: str) -> None:
@@ -251,7 +277,10 @@ class ChatPage(ft.Stack):
             self.state.messages = []
             self.state.file_tree_root = None
             self.state.file_tree_nodes = []
-        self._rebuild_all()
+        if self._chat_list:
+            self._chat_list.refresh()
+        if self._chat_view:
+            self._chat_view.refresh()
         self.state.update()
 
     def _on_import_session(self) -> None:
@@ -463,12 +492,24 @@ class ChatPage(ft.Stack):
 
     def _toggle_left_panel(self) -> None:
         self.state.left_panel_open = not self.state.left_panel_open
-        self._build_ui()
+        visible = self.state.left_panel_open
+        if self._left_container:
+            self._left_container.visible = visible
+        if self._left_divider:
+            self._left_divider.visible = visible
+        if self._left_resize_container:
+            self._left_resize_container.visible = visible
         self.state.update()
 
     def _toggle_right_panel(self) -> None:
         self.state.right_panel_open = not self.state.right_panel_open
-        self._build_ui()
+        visible = self.state.right_panel_open
+        if self._right_container:
+            self._right_container.visible = visible
+        if self._right_divider:
+            self._right_divider.visible = visible
+        if self._right_resize_container:
+            self._right_resize_container.visible = visible
         self.state.update()
 
     def _on_left_resize(self, delta: float) -> None:
@@ -518,10 +559,11 @@ class ChatPage(ft.Stack):
     def _on_task_status_change(self, task_id: str, new_status: str) -> None:
         """Handle task status change."""
         self.db.update_task(task_id, status=new_status)
-        if self.state.current_session_id:
-            self.state.tasks = self.db.get_tasks_by_session(
-                self.state.current_session_id
-            )
+        # Update in-memory instead of re-querying DB
+        for task in self.state.tasks:
+            if task.id == task_id:
+                task.status = new_status
+                break
         if self._right_panel:
             self._right_panel.refresh()
         self.state.update()
@@ -530,10 +572,8 @@ class ChatPage(ft.Stack):
         """Create a new task."""
         if not self.state.current_session_id:
             return
-        self.db.create_task(self.state.current_session_id, title)
-        self.state.tasks = self.db.get_tasks_by_session(
-            self.state.current_session_id
-        )
+        task = self.db.create_task(self.state.current_session_id, title)
+        self.state.tasks.append(task)
         if self._right_panel:
             self._right_panel.refresh()
         self.state.update()
@@ -541,10 +581,7 @@ class ChatPage(ft.Stack):
     def _on_task_delete(self, task_id: str) -> None:
         """Delete a task."""
         self.db.delete_task(task_id)
-        if self.state.current_session_id:
-            self.state.tasks = self.db.get_tasks_by_session(
-                self.state.current_session_id
-            )
+        self.state.tasks = [t for t in self.state.tasks if t.id != task_id]
         if self._right_panel:
             self._right_panel.refresh()
         self.state.update()
@@ -620,8 +657,7 @@ class ChatPage(ft.Stack):
     def _refresh_stream_ui(self) -> None:
         """Refresh message list after stream events."""
         if self._chat_view:
-            self._chat_view.refresh_messages()
-        self.state.update()
+            self._chat_view.refresh_streaming()
 
     def _load_file_tree(self, session: ChatSession) -> None:
         wd = (session.working_directory or "").strip()
@@ -632,6 +668,14 @@ class ChatPage(ft.Stack):
         self._scan_file_tree_async(wd)
 
     def _scan_file_tree_async(self, working_dir: str) -> None:
+        # Check cache first
+        cached = self._file_tree_cache.get(working_dir)
+        if cached is not None:
+            self.state.file_tree_root, self.state.file_tree_nodes = cached
+            if self._right_panel:
+                self._right_panel.refresh()
+            return
+
         file_svc = self.state.get_service("file_service")
         if not file_svc:
             return
@@ -641,6 +685,7 @@ class ChatPage(ft.Stack):
                 nodes = await file_svc.scan_directory(working_dir)
                 self.state.file_tree_root = working_dir
                 self.state.file_tree_nodes = nodes
+                self._file_tree_cache[working_dir] = (working_dir, nodes)
             except Exception as exc:
                 logger.warning("Failed to scan file tree for %s: %s", working_dir, exc)
                 self.state.file_tree_root = working_dir
@@ -656,4 +701,4 @@ class ChatPage(ft.Stack):
         if self._chat_list:
             self._chat_list.refresh()
         if self._chat_view:
-            self._chat_view.refresh()
+            self._chat_view.refresh_header_only()

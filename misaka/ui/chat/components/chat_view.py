@@ -7,18 +7,19 @@ Orchestrates the chat interaction flow.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import flet as ft
 
 from misaka.i18n import t
-from misaka.ui.status.connection_status import ConnectionStatus
 from misaka.ui.chat.components.message_input import MessageInput
 from misaka.ui.chat.components.message_list import MessageList
-from misaka.ui.panels.offset_menu import OffsetMenu, OffsetMenuOption
-from misaka.ui.status.update_banner import UpdateBanner
 from misaka.ui.common.theme import make_icon_button
+from misaka.ui.panels.offset_menu import OffsetMenu, OffsetMenuOption
+from misaka.ui.status.connection_status import ConnectionStatus
+from misaka.ui.status.update_banner import UpdateBanner
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -66,6 +67,9 @@ class ChatView(ft.Column):
         self._mode_dropdown: OffsetMenu | None = None
         self._error_banner: ft.Container | None = None
         self._update_banner: UpdateBanner | None = None
+        self._header: ft.Container | None = None
+        self._title_text: ft.Text | None = None
+        self._working_dir_text: ft.Text | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -130,27 +134,28 @@ class ChatView(ft.Column):
         title_text = session.title if session else "Misaka"
         working_dir = session.working_directory if session else ""
 
-        title_col_controls = [
-            ft.Text(
-                title_text,
-                size=15,
-                weight=ft.FontWeight.W_500,
+        self._title_text = ft.Text(
+            title_text,
+            size=15,
+            weight=ft.FontWeight.W_500,
+            max_lines=1,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+
+        title_col_controls: list[ft.Control] = [self._title_text]
+        if working_dir:
+            self._working_dir_text = ft.Text(
+                working_dir,
+                size=10,
+                opacity=0.35,
                 max_lines=1,
                 overflow=ft.TextOverflow.ELLIPSIS,
-            ),
-        ]
-        if working_dir:
-            title_col_controls.append(
-                ft.Text(
-                    working_dir,
-                    size=10,
-                    opacity=0.35,
-                    max_lines=1,
-                    overflow=ft.TextOverflow.ELLIPSIS,
-                ),
             )
+            title_col_controls.append(self._working_dir_text)
+        else:
+            self._working_dir_text = None
 
-        header = ft.Container(
+        self._header = ft.Container(
             content=ft.Row(
                 controls=[
                     left_toggle,
@@ -232,7 +237,7 @@ class ChatView(ft.Column):
 
         # --- Assemble ---
         self.controls = [
-            header,
+            self._header,
             self._update_banner,
             self._error_banner,
             self._message_list if has_session else welcome_view,
@@ -328,6 +333,19 @@ class ChatView(ft.Column):
         """Rebuild the chat view from current state."""
         self._build_ui()
 
+    def refresh_header_only(self) -> None:
+        """Update only the header title/working dir without full rebuild."""
+        session = self.state.current_session
+        if self._title_text:
+            self._title_text.value = session.title if session else "Misaka"
+        if self._working_dir_text and session:
+            self._working_dir_text.value = session.working_directory or ""
+        if self._connection_status:
+            self._connection_status.set_status(is_streaming=self.state.is_streaming)
+        if self._header:
+            with contextlib.suppress(Exception):
+                self._header.update()
+
     def refresh_messages(self) -> None:
         """Refresh only the message list and streaming state."""
         if self._message_list:
@@ -337,6 +355,15 @@ class ChatView(ft.Column):
         if self._connection_status:
             self._connection_status.set_status(is_streaming=self.state.is_streaming)
         self._refresh_error_banner()
+
+    def refresh_streaming(self) -> None:
+        """Refresh only the streaming message display.
+
+        Much cheaper than refresh_messages() — skips input, connection
+        status, and error banner updates. Used during streaming deltas.
+        """
+        if self._message_list:
+            self._message_list.refresh_streaming()
 
     def insert_file_path(self, path: str) -> None:
         """Insert a file path into the message input field."""
