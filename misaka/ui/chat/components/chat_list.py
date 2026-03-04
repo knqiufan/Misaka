@@ -514,9 +514,15 @@ class ChatList(ft.Column):
         )
         page.show_dialog(dialog)
 
-    def refresh(self) -> None:
-        """Rebuild the session list from current state."""
-        self._item_cache.clear()
+    def refresh(self, clear_cache: bool = True) -> None:
+        """Rebuild the session list from current state.
+
+        Args:
+            clear_cache: If True, clears the item cache before rebuilding.
+                        Set to False for faster refresh when only updating selection.
+        """
+        if clear_cache:
+            self._item_cache.clear()
         self._last_selected_id = self.state.current_session_id
         self._refresh_list()
         if self.state.background_streams and not self._pulse_timer_running:

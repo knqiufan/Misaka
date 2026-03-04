@@ -81,42 +81,62 @@ class RightPanel(ft.Column):
 
         # Content area
         if is_files:
-            # Parse file tree nodes from state
-            file_nodes = self._parse_file_tree_nodes()
-            self._file_tree = FileTree(
-                nodes=file_nodes,
-                on_file_click=self._handle_file_click,
-                on_file_select=self._handle_file_select,
-            )
-            self._file_preview = FilePreview(preview=self._current_preview)
-
-            if self._current_preview:
-                from misaka.ui.common.theme import make_icon_button
-                back_btn = ft.Container(
-                    content=ft.Row(
+            # Show loading indicator while scanning
+            if self.state.file_tree_loading:
+                loading_indicator = ft.Container(
+                    content=ft.Column(
                         controls=[
-                            make_icon_button(
-                                ft.Icons.ARROW_BACK_ROUNDED,
-                                on_click=self._close_preview,
-                                tooltip=t("right_panel.back_to_tree"),
-                            ),
+                            ft.ProgressRing(width=20, height=20),
                             ft.Text(
-                                t("right_panel.file_preview"),
-                                size=12,
-                                weight=ft.FontWeight.W_500,
+                                t("right_panel.scanning"),
+                                size=11,
+                                opacity=0.5,
                             ),
                         ],
-                        spacing=4,
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=8,
                     ),
-                    padding=ft.Padding.only(left=4, bottom=4),
-                )
-                content = ft.Column(
-                    controls=[back_btn, self._file_preview],
-                    spacing=0,
+                    alignment=ft.Alignment.CENTER,
                     expand=True,
                 )
+                content = loading_indicator
             else:
-                content = self._file_tree
+                # Parse file tree nodes from state
+                file_nodes = self._parse_file_tree_nodes()
+                self._file_tree = FileTree(
+                    nodes=file_nodes,
+                    on_file_click=self._handle_file_click,
+                    on_file_select=self._handle_file_select,
+                )
+                self._file_preview = FilePreview(preview=self._current_preview)
+
+                if self._current_preview:
+                    from misaka.ui.common.theme import make_icon_button
+                    back_btn = ft.Container(
+                        content=ft.Row(
+                            controls=[
+                                make_icon_button(
+                                    ft.Icons.ARROW_BACK_ROUNDED,
+                                    on_click=self._close_preview,
+                                    tooltip=t("right_panel.back_to_tree"),
+                                ),
+                                ft.Text(
+                                    t("right_panel.file_preview"),
+                                    size=12,
+                                    weight=ft.FontWeight.W_500,
+                                ),
+                            ],
+                            spacing=4,
+                        ),
+                        padding=ft.Padding.only(left=4, bottom=4),
+                    )
+                    content = ft.Column(
+                        controls=[back_btn, self._file_preview],
+                        spacing=0,
+                        expand=True,
+                    )
+                else:
+                    content = self._file_tree
         else:
             self._task_list = TaskList(
                 tasks=self.state.tasks,

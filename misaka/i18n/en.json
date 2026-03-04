@@ -256,7 +256,8 @@
     "select_file_preview": "Select a file to preview",
     "copy_content": "Copy content",
     "close_preview": "Close preview",
-    "select": "Select"
+    "select": "Select",
+    "scanning": "Scanning..."
   },
   "common": {
     "ok": "OK",

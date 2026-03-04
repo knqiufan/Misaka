@@ -256,7 +256,8 @@
     "select_file_preview": "选择文件以预览",
     "copy_content": "复制内容",
     "close_preview": "关闭预览",
-    "select": "选择"
+    "select": "选择",
+    "scanning": "扫描中..."
   },
   "common": {
     "ok": "确定",

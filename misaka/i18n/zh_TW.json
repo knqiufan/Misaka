@@ -256,7 +256,8 @@
     "select_file_preview": "選擇檔案以預覽",
     "copy_content": "複製內容",
     "close_preview": "關閉預覽",
-    "select": "選擇"
+    "select": "選擇",
+    "scanning": "掃描中..."
   },
   "common": {
     "ok": "確定",

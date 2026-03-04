@@ -165,6 +165,10 @@ class ChatPage(ft.Stack):
 
     def _on_session_select(self, session_id: str) -> None:
         """Handle session selection from the chat list."""
+        # If clicking the same session that's already selected, do nothing
+        if session_id == self.state.current_session_id:
+            return
+
         # Detach current stream to background if switching away from streaming session
         if (self.state.is_streaming
                 and self.state.streaming_session_id
@@ -190,8 +194,9 @@ class ChatPage(ft.Stack):
             self.state.sdk_session_id = session.sdk_session_id or None
             self._load_file_tree(session)
         # Refresh UI — targeted refreshes instead of _rebuild_all()
+        # Use refresh_selection() for efficient highlight update without rebuilding list
         if self._chat_list:
-            self._chat_list.refresh()
+            self._chat_list.refresh_selection()
         if self._chat_view:
             self._chat_view.refresh()
         if self._right_panel:
@@ -684,6 +689,8 @@ class ChatPage(ft.Stack):
 
         async def _do_scan() -> None:
             try:
+                self.state.file_tree_loading = True
+                self.state.update()
                 nodes = await file_svc.scan_directory(working_dir)
                 self.state.file_tree_root = working_dir
                 self.state.file_tree_nodes = nodes
@@ -692,6 +699,8 @@ class ChatPage(ft.Stack):
                 logger.warning("Failed to scan file tree for %s: %s", working_dir, exc)
                 self.state.file_tree_root = working_dir
                 self.state.file_tree_nodes = []
+            finally:
+                self.state.file_tree_loading = False
             if self._right_panel:
                 self._right_panel.refresh()
             self.state.update()

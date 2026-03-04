@@ -153,6 +153,9 @@ class AppState:
         self.env_check_loading: bool = False
         self.show_env_check_dialog: bool = False
 
+        # --- UI loading states ---
+        self.file_tree_loading: bool = False
+
         # --- Update check state ---
         self.update_check_result: Any = None  # UpdateCheckResult
         self.update_dismissed: bool = False
