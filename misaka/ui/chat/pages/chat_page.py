@@ -197,6 +197,8 @@ class ChatPage(ft.Stack):
         if self._right_panel:
             self._right_panel.refresh()
         self.state.update()
+
+    def _on_new_chat(self) -> None:
         """Open folder picker, then create a new chat session."""
         if not self.state.page:
             return

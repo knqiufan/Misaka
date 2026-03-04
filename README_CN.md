@@ -12,20 +12,22 @@ Misaka 将 Claude Code 的强大能力带入精致的原生桌面体验——多
 
 | 分类 | 详情 |
 |---|---|
-| **多模型对话** | 在任意会话中自由切换 Claude Sonnet、Opus、Haiku |
-| **流式响应** | 实时逐 token 渲染，支持随时中止 |
+| **多模型对话** | 通过 `/model` 命令在 Claude Sonnet、Opus、Haiku 之间自由切换 |
+| **流式响应** | 实时逐 token 渲染，支持随时中止，内置 Thinking 动画 |
 | **会话管理** | 创建、重命名、归档、删除、搜索对话会话 |
-| **三种对话模式** | `Code`（编码）· `Plan`（规划）· `Ask`（问答）——与 Claude Code 原生模式直接对应 |
+| **三种对话模式** | `Code`（编码）· `Plan`（规划）· `Ask`（问答）——下拉选择器 |
 | **文件树浏览器** | 在右侧面板浏览项目目录，支持文件实时预览 |
 | **MCP 服务器支持** | 从 Claude 配置文件加载并管理 Model Context Protocol 服务器 |
-| **技能管理** | 在「技能」页面查看和管理 Claude Code Skills |
+| **技能管理** | 在「技能」页面查看、创建、编辑和刷新 Claude Code Skills |
+| **Claude Code Router** | 多配置系统，管理不同的 API 提供商和模型预设 |
 | **导入 CLI 会话** | 将 Claude Code CLI 的历史会话导入到 Misaka |
 | **多语言界面** | English · 简体中文 · 繁體中文 |
-| **主题切换** | 浅色 / 深色 / 跟随系统——重启后自动恢复 |
+| **主题切换** | 浅色 / 深色 / 跟随系统——重启后自动恢复，支持自定义强调色 |
 | **API 提供商配置** | 添加并管理多个 Anthropic API 提供商，支持自定义 Base URL |
 | **权限控制** | 细粒度工具权限模式，支持交互式审批对话框 |
 | **更新提醒** | 启动时自动检测 Claude Code CLI 是否有新版本 |
 | **跨平台** | Windows · macOS · Linux |
+| **开发者模式** | 支持热重载和调试日志，便于开发调试 |
 
 ---
 
@@ -73,26 +75,27 @@ Misaka/
 │   ├── main.py                 # 入口 & 依赖注入容器
 │   ├── config.py               # 路径、环境变量、配置键
 │   ├── state.py                # 响应式应用状态
+│   ├── commands.py             # 斜杠命令定义
 │   ├── db/                     # 数据库层（SQLite / SeekDB）
 │   │   ├── database.py
 │   │   ├── models.py
 │   │   ├── sqlite_backend.py
-│   │   └── seekdb_backend.py
-│   ├── services/               # 业务逻辑服务层
-│   │   ├── claude_service.py   # Claude Agent SDK 集成
-│   │   ├── session_service.py  # 会话管理
-│   │   ├── message_service.py  # 消息管理
-│   │   ├── provider_service.py # API 提供商管理
-│   │   ├── mcp_service.py      # MCP 服务器管理
-│   │   ├── settings_service.py # 设置持久化
-│   │   ├── permission_service.py
-│   │   ├── skill_service.py
-│   │   └── ...
+│   │   └── migrations.py
+│   ├── services/               # 业务逻辑服务（模块化）
+│   │   ├── chat/               # Claude 集成、消息、会话
+│   │   ├── common/             # 共享工具
+│   │   ├── file/               # 文件操作、版本检查
+│   │   ├── mcp/                # MCP 服务器管理
+│   │   ├── settings/           # 设置、提供商、路由配置
+│   │   ├── skills/             # 技能发现和环境检查
+│   │   └── task/               # 任务管理
 │   ├── ui/
-│   │   ├── app_shell.py        # 根布局外壳
-│   │   ├── theme.py            # Material Design 3 主题
-│   │   ├── components/         # 可复用 UI 组件
-│   │   └── pages/              # 聊天 · 设置 · 插件 · 技能
+│   │   ├── chat/               # 聊天页面及组件
+│   │   ├── settings/           # 设置页面
+│   │   ├── skills/             # 技能扩展页面
+│   │   ├── pages/              # 插件页面
+│   │   ├── common              # 应用外壳、主题、组件
+│   │   └── dialogs/            # 可复用对话框
 │   └── i18n/                   # 多语言文件（en / zh_CN / zh_TW）
 ├── assets/                     # 应用图标
 ├── tests/                      # 单元测试 & 集成测试
@@ -112,6 +115,14 @@ Misaka/
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+### Claude Code Router
+
+「设置」页面中的 Claude Code Router 功能允许您管理多个 API 配置：
+
+- 创建、编辑和删除配置
+- 为每个配置设置不同的模型（Haiku、Sonnet、Opus）
+- 随时切换配置——写入 `~/.claude/settings.json`
 
 ### 数据目录
 
@@ -146,6 +157,11 @@ ruff check misaka/
 
 # 类型检查（mypy）
 mypy misaka/
+
+# 运行开发模式（热重载）
+python -m misaka.main
+# 或使用 flet run
+flet run -m misaka.main -d -r
 ```
 
 ### 打包为独立可执行文件
@@ -165,7 +181,7 @@ Misaka 遵循清晰的分层架构，配合依赖注入：
 UI 层  →  State（状态）  →  Services（服务）  →  数据库 / 外部 API
 ```
 
-- **`ServiceContainer`** — 启动时实例化一次，持有所有服务单例
+- **`ServiceContainer`** — 启动时实例化一次，持有所有服务单例，按领域组织（chat, file, mcp, settings, skills, task）
 - **`AppState`** — 响应式状态对象，贯穿整个 UI 组件树
 - **`DatabaseBackend`** — 可插拔后端（默认 SQLite，可选 SeekDB）
 - **`ClaudeService`** — 封装 `claude-agent-sdk`，处理流式输出、MCP 集成与权限控制

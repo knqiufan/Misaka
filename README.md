@@ -12,20 +12,22 @@ Misaka brings the power of Claude Code to a polished native desktop experience �
 
 | Category | Details |
 |---|---|
-| **Multi-model chat** | Switch between Claude Sonnet, Opus, and Haiku within any session |
-| **Streaming responses** | Real-time token-by-token rendering with abort support |
+| **Multi-model chat** | Switch between Claude Sonnet, Opus, and Haiku via `/model` command |
+| **Streaming responses** | Real-time token-by-token rendering with abort support and thinking animation |
 | **Session management** | Create, rename, archive, delete, and search conversation sessions |
-| **Three conversation modes** | `Code` · `Plan` · `Ask` — maps directly to Claude Code's native modes |
+| **Three conversation modes** | `Code` · `Plan` · `Ask` — dropdown selector for Claude Code's native modes |
 | **File tree browser** | Browse your project directory in the right panel with live file preview |
 | **MCP server support** | Load and manage Model Context Protocol servers from your Claude config |
-| **Skill management** | View and manage Claude Code skills (Extensions page) |
+| **Skill management** | View, create, edit, and refresh Claude Code skills (Extensions page) |
+| **Claude Code Router** | Multi-config system for managing different API providers and model presets |
 | **Import CLI sessions** | Import existing sessions from the Claude Code CLI |
 | **Multi-language UI** | English · 简体中文 · 繁體中文 |
-| **Theme switching** | Light / Dark / System — persisted across restarts |
+| **Theme switching** | Light / Dark / System — persisted across restarts, customizable accent color |
 | **API provider config** | Add and manage multiple Anthropic API providers with custom base URLs |
 | **Permission control** | Fine-grained tool permission modes with interactive approval dialogs |
 | **Update notifications** | Automatic check for Claude Code CLI updates on startup |
 | **Cross-platform** | Windows · macOS · Linux |
+| **Developer mode** | Hot reload and debug logging support for development |
 
 ---
 
@@ -73,26 +75,27 @@ Misaka/
 │   ├── main.py                 # Entry point & dependency injection
 │   ├── config.py               # Paths, env vars, setting keys
 │   ├── state.py                # Reactive application state
+│   ├── commands.py             # Slash command definitions
 │   ├── db/                     # Database layer (SQLite / SeekDB)
 │   │   ├── database.py
 │   │   ├── models.py
 │   │   ├── sqlite_backend.py
-│   │   └── seekdb_backend.py
-│   ├── services/               # Business logic services
-│   │   ├── claude_service.py   # Claude Agent SDK integration
-│   │   ├── session_service.py
-│   │   ├── message_service.py
-│   │   ├── provider_service.py
-│   │   ├── mcp_service.py
-│   │   ├── settings_service.py
-│   │   ├── permission_service.py
-│   │   ├── skill_service.py
-│   │   └── ...
+│   │   └── migrations.py
+│   ├── services/               # Business logic services (modular)
+│   │   ├── chat/               # Claude integration, messages, sessions
+│   │   ├── common/             # Shared utilities
+│   │   ├── file/               # File operations, update checks
+│   │   ├── mcp/                # MCP server management
+│   │   ├── settings/           # Settings, providers, router configs
+│   │   ├── skills/             # Skill discovery & env checks
+│   │   └── task/               # Task management
 │   ├── ui/
-│   │   ├── app_shell.py        # Root layout shell
-│   │   ├── theme.py            # Material Design 3 theming
-│   │   ├── components/         # Reusable UI components
-│   │   └── pages/              # Chat · Settings · Plugins · Extensions
+│   │   ├── chat/               # Chat page & components
+│   │   ├── settings/           # Settings page
+│   │   ├── skills/             # Extensions (Skills) page
+│   │   ├── pages/              # Plugins page
+│   │   ├── common/             # App shell, theme, components
+│   │   └── dialogs/            # Reusable dialogs
 │   └── i18n/                   # Locale files (en / zh_CN / zh_TW)
 ├── assets/                     # App icon
 ├── tests/                      # Unit & integration tests
@@ -112,6 +115,15 @@ Set the environment variable before launching, or add a provider in **Settings �
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+### Claude Code Router
+
+The Claude Code Router feature in Settings allows you to manage multiple API configurations:
+
+- Create, edit, and delete configurations
+- Set different models for each config (Haiku, Sonnet, Opus)
+- Toggle Agent Team mode per configuration
+- Switch between configs instantly — writes to `~/.claude/settings.json`
 
 ### Data Directory
 
@@ -146,6 +158,11 @@ ruff check misaka/
 
 # Type check (mypy)
 mypy misaka/
+
+# Run with hot reload (dev mode)
+python -m misaka.main
+# Or use flet run
+flet run -m misaka.main -d -r
 ```
 
 ### Building a standalone executable
@@ -165,7 +182,7 @@ Misaka follows a clean layered architecture with dependency injection:
 UI Layer  →  State  →  Services  →  Database / External APIs
 ```
 
-- **`ServiceContainer`** — instantiated once at startup, holds all service singletons
+- **`ServiceContainer`** — instantiated once at startup, holds all service singletons, organized by domain (chat, file, mcp, settings, skills, task)
 - **`AppState`** — reactive state object passed through the UI tree
 - **`DatabaseBackend`** — pluggable backend (SQLite default, SeekDB optional)
 - **`ClaudeService`** — wraps `claude-agent-sdk` for streaming, MCP, and permission handling

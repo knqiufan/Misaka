@@ -125,13 +125,9 @@ class FileTree(ft.Column):
             expand=True,
             spacing=0,
             padding=ft.Padding.only(left=4, right=4, top=2, bottom=4),
+            auto_scroll=False,
         )
-        self.controls = [
-            ft.GestureDetector(
-                content=tree_view,
-                on_tap=lambda _: shared_context_menu.dismiss(),
-            )
-        ]
+        self.controls = [tree_view]
 
     # ------------------------------------------------------------------
     # Node building
@@ -198,6 +194,9 @@ class FileTree(ft.Column):
             radius=0,
         )
 
+        # Build full path for tooltip
+        full_path = node.path
+
         title_content = ft.Container(
             content=ft.Row(
                 controls=[
@@ -210,7 +209,7 @@ class FileTree(ft.Column):
                         node.name,
                         size=12,
                         weight=ft.FontWeight.W_500,
-                        tooltip=node.name,
+                        tooltip=full_path,
                         expand=True,
                     ),
                 ],
@@ -220,6 +219,7 @@ class FileTree(ft.Column):
             border_radius=8,
             padding=ft.Padding.symmetric(horizontal=6, vertical=4),
             bgcolor=ft.Colors.TRANSPARENT,
+            tooltip=full_path,
         )
         title_with_menu = self._wrap_with_right_click(node, title_content)
 
@@ -247,6 +247,9 @@ class FileTree(ft.Column):
     def _build_file_node(self, node: FileTreeNode, depth: int) -> ft.Control:
         icon_name, icon_color = self._resolve_file_style(node)
 
+        # Build full path for tooltip
+        full_path = node.path
+
         row = ft.Container(
             content=ft.Row(
                 controls=[
@@ -258,6 +261,7 @@ class FileTree(ft.Column):
                         overflow=ft.TextOverflow.ELLIPSIS,
                         expand=True,
                         color=ft.Colors.ON_SURFACE,
+                        tooltip=full_path,
                     ),
                 ],
                 spacing=6,
@@ -279,6 +283,7 @@ class FileTree(ft.Column):
                 else ft.Colors.TRANSPARENT
             ),
             data=node.path,
+            tooltip=full_path,
         )
         row.on_click = lambda e, p=node.path, c=row: self._handle_click(p, c)
         if self._selected_file_path is not None and self._selected_file_path == node.path:

@@ -154,7 +154,7 @@ class RightPanel(ft.Column):
         self.controls = [
             tab_bar,
             dir_display,
-            ft.Container(content=content, expand=True),
+            ft.Container(content=content, expand=True, clip_behavior=ft.ClipBehavior.HARD_EDGE),
         ]
 
     def _build_tab_button(self, label: str, tab_key: str, is_active: bool) -> ft.Control:
