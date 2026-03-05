@@ -142,6 +142,8 @@ class AppState:
         # --- File tree state ---
         self.file_tree_root: str | None = None
         self.file_tree_nodes: list[dict[str, Any]] = []
+        self.file_tree_expanded_paths: set[str] = set()
+        self.file_tree_loading_paths: set[str] = set()
 
         # --- Connection / status ---
         self.sdk_session_id: str | None = None

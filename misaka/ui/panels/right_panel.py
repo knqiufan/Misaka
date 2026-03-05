@@ -35,6 +35,7 @@ class RightPanel(ft.Column):
         on_task_create: Callable[[str], None] | None = None,
         on_task_delete: Callable[[str], None] | None = None,
         on_refresh_file_tree: Callable[[], None] | None = None,
+        on_load_folder_children: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(spacing=0, expand=True)
         self.state = state
@@ -44,6 +45,7 @@ class RightPanel(ft.Column):
         self._on_task_create = on_task_create
         self._on_task_delete = on_task_delete
         self._on_refresh_file_tree = on_refresh_file_tree
+        self._on_load_folder_children = on_load_folder_children
 
         self._file_tree: FileTree | None = None
         self._file_preview: FilePreview | None = None
@@ -110,6 +112,13 @@ class RightPanel(ft.Column):
                     nodes=file_nodes,
                     on_file_click=self._handle_file_click,
                     on_file_select=self._handle_file_select,
+                    on_load_children=self._on_load_folder_children,
+                    expanded_paths=getattr(
+                        self.state, "file_tree_expanded_paths", set()
+                    ),
+                    loading_paths=getattr(
+                        self.state, "file_tree_loading_paths", set()
+                    ),
                 )
                 self._file_preview = FilePreview(preview=self._current_preview)
 

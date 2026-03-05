@@ -25,7 +25,7 @@ from misaka.ui.panels.right_panel import RightPanel
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
-    from misaka.db.models import ChatSession
+    from misaka.db.models import ChatSession, FileTreeNode
     from misaka.state import AppState
 
 
@@ -117,6 +117,7 @@ class ChatPage(ft.Stack):
             on_task_create=self._on_task_create,
             on_task_delete=self._on_task_delete,
             on_refresh_file_tree=self._on_refresh_file_tree,
+            on_load_folder_children=self._on_load_folder_children,
         )
 
         self._right_container = ft.Container(
@@ -663,9 +664,10 @@ class ChatPage(ft.Stack):
         self.state.update()
 
     def _refresh_stream_ui(self) -> None:
-        """Refresh message list after stream events."""
+        """Refresh message list, send/stop button, and connection status after stream events."""
         if self._chat_view:
             self._chat_view.refresh_streaming()
+        self.state.update()
 
     def _load_file_tree(self, session: ChatSession) -> None:
         wd = (session.working_directory or "").strip()
@@ -690,6 +692,7 @@ class ChatPage(ft.Stack):
         cached = self._file_tree_cache.get(working_dir)
         if cached is not None:
             self.state.file_tree_root, self.state.file_tree_nodes = cached
+            self.state.file_tree_expanded_paths.clear()
             if self._right_panel:
                 self._right_panel.refresh()
             return
@@ -701,8 +704,9 @@ class ChatPage(ft.Stack):
         async def _do_scan() -> None:
             try:
                 self.state.file_tree_loading = True
+                self.state.file_tree_expanded_paths.clear()
                 self.state.update()
-                nodes = await file_svc.scan_directory(working_dir)
+                nodes = await file_svc.scan_directory(working_dir, depth=1)
                 self.state.file_tree_root = working_dir
                 self.state.file_tree_nodes = nodes
                 self._file_tree_cache[working_dir] = (working_dir, nodes)
@@ -717,6 +721,52 @@ class ChatPage(ft.Stack):
             self.state.update()
 
         self.state.page.run_task(_do_scan)
+
+    def _find_node_by_path(
+        self,
+        nodes: list[FileTreeNode],
+        path: str,
+    ) -> FileTreeNode | None:
+        """Find a tree node by path, recursing into directory children."""
+        for node in nodes:
+            if node.path == path:
+                return node
+            if node.type == "directory" and node.children:
+                found = self._find_node_by_path(node.children, path)
+                if found is not None:
+                    return found
+        return None
+
+    def _on_load_folder_children(self, path: str) -> None:
+        """Load children for a folder when expanded (lazy load). Schedules async scan."""
+        file_svc = self.state.get_service("file_service")
+        if not file_svc:
+            return
+
+        self.state.file_tree_loading_paths.add(path)
+        if self._right_panel:
+            self._right_panel.refresh()
+        self.state.update()
+
+        async def _do_load() -> None:
+            try:
+                children = await file_svc.scan_directory(path, depth=1)
+                root_nodes = self.state.file_tree_nodes
+                if not root_nodes:
+                    return
+                node = self._find_node_by_path(list(root_nodes), path)
+                if node is not None and node.type == "directory":
+                    node.children = children
+                    self.state.file_tree_expanded_paths.add(path)
+            except Exception as exc:
+                logger.warning("Failed to load folder children for %s: %s", path, exc)
+            finally:
+                self.state.file_tree_loading_paths.discard(path)
+                if self._right_panel:
+                    self._right_panel.refresh()
+                self.state.update()
+
+        self.state.page.run_task(_do_load)
 
     def _on_title_changed(self) -> None:
         """Called by StreamHandler when the session title is auto-synced."""

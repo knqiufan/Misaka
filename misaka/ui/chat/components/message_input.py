@@ -827,6 +827,7 @@ class MessageInput(ft.Container):
     # ------------------------------------------------------------------
 
     def refresh(self) -> None:
+        """Update send/stop button appearance based on streaming state."""
         if self._send_btn:
             is_streaming = self.state.is_streaming
             self._send_btn.icon = (
@@ -834,6 +835,7 @@ class MessageInput(ft.Container):
             )
             self._send_btn.tooltip = t("chat.stop") if is_streaming else t("chat.send")
             self._send_btn.bgcolor = ft.Colors.ERROR if is_streaming else ft.Colors.PRIMARY
+            self._send_btn.update()
 
     def focus(self) -> None:
         self._schedule_focus()

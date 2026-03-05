@@ -357,13 +357,17 @@ class ChatView(ft.Column):
         self._refresh_error_banner()
 
     def refresh_streaming(self) -> None:
-        """Refresh only the streaming message display.
+        """Refresh streaming-related UI: message list, send/stop button, connection status.
 
-        Much cheaper than refresh_messages() — skips input, connection
-        status, and error banner updates. Used during streaming deltas.
+        Used during streaming deltas and when stream completes, so the
+        send button correctly reverts from stop (red) to send (primary).
         """
         if self._message_list:
             self._message_list.refresh_streaming()
+        if self._message_input:
+            self._message_input.refresh()
+        if self._connection_status:
+            self._connection_status.set_status(is_streaming=self.state.is_streaming)
 
     def insert_file_path(self, path: str) -> None:
         """Insert a file path into the message input field."""

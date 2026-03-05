@@ -84,11 +84,17 @@ class FileTree(ft.Column):
         nodes: list[FileTreeNode] | None = None,
         on_file_click: Callable[[str], None] | None = None,
         on_file_select: Callable[[str], None] | None = None,
+        on_load_children: Callable[[str], None] | None = None,
+        expanded_paths: set[str] | None = None,
+        loading_paths: set[str] | None = None,
     ) -> None:
         super().__init__(spacing=0, expand=True)
         self._nodes = nodes or []
         self._on_file_click = on_file_click
         self._on_file_select = on_file_select
+        self._on_load_children = on_load_children
+        self._expanded_paths = expanded_paths or set()
+        self._loading_paths = loading_paths or set()
         self._selected_file_path: str | None = None
         self._selected_file_row: ft.Container | None = None
         self._build_ui()
@@ -235,22 +241,65 @@ class FileTree(ft.Column):
         )
         title_with_menu = self._wrap_with_right_click(node, title_content)
 
-        return ft.ExpansionTile(
-            title=title_with_menu,
-            leading=None,
-            controls=children if children else [
+        if children:
+            controls_list = children
+        elif node.path in self._loading_paths:
+            controls_list = [
+                ft.Container(
+                    content=ft.Row(
+                        controls=[
+                            ft.ProgressRing(width=14, height=14, stroke_width=2),
+                            ft.Text(
+                                t("right_panel.scanning"),
+                                size=11,
+                                italic=True,
+                                opacity=0.5,
+                            ),
+                        ],
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.Padding.only(
+                        left=left_padding + 18, top=2, bottom=2, right=6
+                    ),
+                )
+            ]
+        else:
+            controls_list = [
                 ft.Container(
                     content=ft.Text("(empty)", size=11, italic=True, opacity=0.3),
                     padding=ft.Padding.only(left=left_padding + 18, top=1, bottom=1),
                 )
-            ],
-            expanded=depth == 0,
+            ]
+        # Wrap in Column for reliable nested ExpansionTile layout
+        controls_content = ft.Column(controls=controls_list, spacing=0)
+
+        tile = ft.ExpansionTile(
+            title=title_with_menu,
+            leading=None,
+            controls=[controls_content],
+            expanded=node.path in self._expanded_paths,
             tile_padding=ft.Padding.only(left=left_padding, right=2),
             controls_padding=ft.Padding.all(0),
             dense=True,
             shape=no_border,
             collapsed_shape=no_border,
         )
+
+        def make_on_change(n: FileTreeNode):
+            def handler(e: ft.ControlEvent) -> None:
+                is_expanded = getattr(e.control, "expanded", False)
+                if is_expanded:
+                    self._expanded_paths.add(n.path)
+                    if self._on_load_children and not n.children:
+                        self._on_load_children(n.path)
+                else:
+                    self._expanded_paths.discard(n.path)
+
+            return handler
+
+        tile.on_change = make_on_change(node)
+        return tile
 
     # ------------------------------------------------------------------
     # File node
