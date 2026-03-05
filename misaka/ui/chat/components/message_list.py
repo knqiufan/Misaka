@@ -46,6 +46,7 @@ class MessageList(ft.Column):
         )
         self._streaming_msg = StreamingMessage(state)
         self._item_cache: dict[str, MessageItem] = {}
+        self._was_streaming: bool = False
         self._empty_view = ft.Container(
             content=ft.Column(
                 controls=[
@@ -154,6 +155,16 @@ class MessageList(ft.Column):
         Skips rebuilding historical MessageItems — much cheaper than
         a full refresh() during streaming deltas.
         """
+        # Detect streaming end - if was streaming but now not, do full sync
+        # to ensure the final message appears as MessageItem
+        if self._was_streaming and not self.state.is_streaming:
+            self._was_streaming = self.state.is_streaming
+            self._sync_controls()
+            with contextlib.suppress(Exception):
+                self._list_view.update()
+            return
+
+        self._was_streaming = self.state.is_streaming
         self._streaming_msg.refresh()
 
         # Handle permission card: check if we need to add/remove it
