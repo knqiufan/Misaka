@@ -22,6 +22,7 @@ from misaka.ui.status.connection_status import ConnectionStatus
 from misaka.ui.status.update_banner import UpdateBanner
 
 if TYPE_CHECKING:
+    from misaka.db.models import Message
     from misaka.state import AppState
 
 
@@ -350,6 +351,16 @@ class ChatView(ft.Column):
         """Refresh only the message list and streaming state."""
         if self._message_list:
             self._message_list.refresh()
+        if self._message_input:
+            self._message_input.refresh()
+        if self._connection_status:
+            self._connection_status.set_status(is_streaming=self.state.is_streaming)
+        self._refresh_error_banner()
+
+    def refresh_messages_minimal(self, new_message: Message) -> None:
+        """Lightweight update on send: append only the new user message."""
+        if self._message_list:
+            self._message_list.append_new_user_message(new_message)
         if self._message_input:
             self._message_input.refresh()
         if self._connection_status:

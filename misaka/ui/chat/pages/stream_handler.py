@@ -26,7 +26,7 @@ from misaka.state import (
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
-    from misaka.db.models import ChatSession
+    from misaka.db.models import ChatSession, Message
     from misaka.state import AppState
 
 logger = logging.getLogger(__name__)
@@ -128,16 +128,20 @@ class StreamHandler:
         self._last_refresh_time = time.monotonic()
         self._ui_refresh()
 
-    def persist_user_message(self, text: str) -> None:
-        """Save a user message to the DB, append to state, and start streaming."""
+    def persist_user_message(self, text: str) -> Message | None:
+        """Save a user message to the DB, append to state, and start streaming.
+
+        Returns the new Message for minimal UI refresh, or None if no session.
+        """
         if not self._state.current_session_id:
-            return
+            return None
         content_json = json.dumps([{"type": "text", "text": text}])
         msg = self._db.add_message(
             self._state.current_session_id, "user", content_json,
         )
         self._state.messages.append(msg)
         self.start_streaming()
+        return msg
 
     async def send_to_claude(self, prompt: str) -> None:
         """Stream a prompt to Claude and finalize the result."""

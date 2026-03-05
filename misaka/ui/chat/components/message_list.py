@@ -18,6 +18,7 @@ from misaka.ui.chat.components.permission_card import PermissionCard
 from misaka.ui.chat.components.streaming_message import StreamingMessage
 
 if TYPE_CHECKING:
+    from misaka.db.models import Message
     from misaka.state import AppState
 
 
@@ -46,6 +47,7 @@ class MessageList(ft.Column):
         )
         self._streaming_msg = StreamingMessage(state)
         self._item_cache: dict[str, MessageItem] = {}
+        self._load_more_button: ft.Control | None = None
         self._was_streaming: bool = False
         self._empty_view = ft.Container(
             content=ft.Column(
@@ -91,7 +93,7 @@ class MessageList(ft.Column):
         items: list[ft.Control] = []
 
         if self.state.has_more_messages and self._on_load_more:
-            items.append(self._build_load_more_button())
+            items.append(self._get_load_more_button())
 
         for msg in self.state.messages:
             cached = self._item_cache.get(msg.id)
@@ -118,6 +120,12 @@ class MessageList(ft.Column):
             ))
 
         self._list_view.controls = items
+
+    def _get_load_more_button(self) -> ft.Control:
+        """Return cached load-more button to avoid rebuilding on every sync."""
+        if self._load_more_button is None:
+            self._load_more_button = self._build_load_more_button()
+        return self._load_more_button
 
     def _build_load_more_button(self) -> ft.Control:
         """Build the 'load earlier messages' button shown at the top."""
@@ -148,6 +156,43 @@ class MessageList(ft.Column):
     def refresh(self) -> None:
         """Rebuild message list from current state."""
         self._sync_controls()
+
+    def append_new_user_message(self, new_message: Message) -> None:
+        """Append only the new user message to avoid full rebuild on send.
+
+        Used for fast UI update when sending; falls back to _sync_controls
+        when the list was empty (first message).
+        """
+        has_messages = bool(self.state.messages) or self.state.is_streaming
+        self._empty_view.visible = not has_messages
+        self._list_view.visible = has_messages
+
+        if not self._list_view.visible or not self._list_view.controls:
+            self._sync_controls()
+            return
+
+        cached = self._item_cache.get(new_message.id)
+        if cached is None:
+            cached = MessageItem(new_message)
+            self._item_cache[new_message.id] = cached
+
+        controls = self._list_view.controls
+        insert_idx = len(controls)
+        if controls and isinstance(controls[-1], PermissionCard):
+            insert_idx -= 1
+        if self.state.is_streaming and self._streaming_msg in controls:
+            insert_idx = controls.index(self._streaming_msg)
+        controls.insert(insert_idx, cached)
+
+        if self.state.is_streaming and self._streaming_msg not in controls:
+            self._streaming_msg.refresh()
+            stream_insert = len(controls)
+            if controls and isinstance(controls[-1], PermissionCard):
+                stream_insert -= 1
+            controls.insert(stream_insert, self._streaming_msg)
+
+        with contextlib.suppress(Exception):
+            self._list_view.update()
 
     def refresh_streaming(self) -> None:
         """Refresh only the streaming message and permission card.

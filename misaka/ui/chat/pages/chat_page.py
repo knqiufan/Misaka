@@ -449,11 +449,18 @@ class ChatPage(ft.Stack):
         """Handle sending a message."""
         if not self.state.current_session_id:
             return
-        self._stream_handler.persist_user_message(text)
-        if self._chat_view:
-            self._chat_view.refresh_messages()
-        self.state.update()
+        msg = self._stream_handler.persist_user_message(text)
         self.state.page.run_task(*self._stream_handler.get_send_coroutine(text))
+        if msg and self._chat_view:
+            self._chat_view.refresh_messages_minimal(msg)
+        self.state.update()
+
+        async def _deferred_full_refresh() -> None:
+            if self._chat_view:
+                self._chat_view.refresh_messages()
+            self.state.update()
+
+        self.state.page.run_task(_deferred_full_refresh)
 
     def _on_abort(self) -> None:
         """Abort the current streaming operation."""
