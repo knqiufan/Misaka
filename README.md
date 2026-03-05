@@ -1,6 +1,6 @@
 # Misaka
 
-**[中文说明](README_CN.md)** · [English](README.md)
+[CN](README_CN.md) · [EN](README.md)
 
 > A desktop GUI client for Claude Code, built with Python and [Flet](https://flet.dev).
 
