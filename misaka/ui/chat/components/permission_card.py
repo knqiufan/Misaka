@@ -98,7 +98,7 @@ class PermissionCard(ft.Container):
             padding=10,
             border_radius=8,
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
-            max_height=160,
+            height=160,
         )
 
         action_row = ft.Row(
