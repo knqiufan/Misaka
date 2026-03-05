@@ -76,7 +76,7 @@ class SettingsService:
         return self.get(SettingKeys.THEME) or "system"
 
     def get_permission_mode(self) -> str:
-        return self.get(SettingKeys.PERMISSION_MODE) or "acceptEdits"
+        return self.get(SettingKeys.PERMISSION_MODE) or "default"
 
     def set_theme(self, theme: str) -> None:
         """Set the theme preference."""

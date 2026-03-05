@@ -268,7 +268,7 @@ class ChatList(ft.Column):
         subtitle = " \u00b7 ".join(subtitle_parts) if subtitle_parts else ""
 
         mode_colors = {
-            "code": ACCENT_BLUE,
+            "agent": ACCENT_BLUE,
             "plan": WARNING_AMBER,
             "ask": SUCCESS_GREEN,
         }

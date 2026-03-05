@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
+from misaka.config import SettingKeys
 from misaka.ui.settings.pages.appearance_section import (
     build_appearance_section,
     build_language_section,
@@ -194,8 +195,12 @@ class SettingsPage(ft.Column):
 
     def _change_permission_mode(self, e: ft.ControlEvent) -> None:
         mode = e.data or e.control.value
-        if mode and self.db:
-            self.db.set_setting("permission_mode", mode)
+        if mode:
+            settings_svc = self.state.get_service("settings_service")
+            if settings_svc:
+                settings_svc.set(SettingKeys.PERMISSION_MODE, mode)
+            elif self.db:
+                self.db.set_setting(SettingKeys.PERMISSION_MODE, mode)
 
     # ------------------------------------------------------------------
     # Claude Code update section

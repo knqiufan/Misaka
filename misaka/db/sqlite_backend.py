@@ -68,7 +68,7 @@ class SQLiteBackend(DatabaseBackend):
                 sdk_session_id TEXT NOT NULL DEFAULT '',
                 project_name TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'active',
-                mode TEXT NOT NULL DEFAULT 'code'
+                mode TEXT NOT NULL DEFAULT 'agent'
             );
 
             CREATE TABLE IF NOT EXISTS messages (
@@ -161,7 +161,7 @@ class SQLiteBackend(DatabaseBackend):
         model: str = "",
         system_prompt: str = "",
         working_directory: str = "",
-        mode: str = "code",
+        mode: str = "agent",
     ) -> ChatSession:
         conn = self._get_conn()
         sid = _generate_id()

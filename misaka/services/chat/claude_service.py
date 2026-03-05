@@ -101,7 +101,8 @@ class ClaudeService:
         working_directory: str | None = None,
         sdk_session_id: str | None = None,
         mcp_servers: dict[str, Any] | None = None,
-        permission_mode: str = "acceptEdits",
+        session_mode: str = "agent",
+        permission_mode: str = "default",
         provider: ApiProvider | None = None,
         can_use_tool: Any = None,
     ) -> Any:
@@ -109,6 +110,11 @@ class ClaudeService:
 
         Returns the options object for the SDK client. Import is deferred
         to avoid import errors when the SDK is not installed.
+
+        Handles session_mode to determine SDK permission behavior:
+        - "plan": SDK native plan mode, no tool execution
+        - "ask": read-only, disallows Write/Edit/Bash
+        - "agent": uses permission_mode setting
         """
         from claude_agent_sdk import ClaudeAgentOptions
 
@@ -118,19 +124,35 @@ class ClaudeService:
         # Check for bypass permissions setting
         skip_permissions = self._db.get_setting(SettingKeys.DANGEROUSLY_SKIP_PERMISSIONS) == "true"
 
-        effective_permission_mode = "bypassPermissions" if skip_permissions else permission_mode
+        # Determine final SDK permission_mode and disallowed_tools based on session_mode
+        final_permission_mode: str
+        final_disallowed_tools: list[str] | None = None
+        final_can_use_tool: Any = None
+
+        if skip_permissions:
+            final_permission_mode = "bypassPermissions"
+        elif session_mode == "plan":
+            # Plan mode: SDK native, no tool execution
+            final_permission_mode = "plan"
+        elif session_mode == "ask":
+            # Ask mode: read-only, disallow write tools
+            final_permission_mode = "default"
+            final_disallowed_tools = ["Write", "Edit", "Bash"]
+            final_can_use_tool = can_use_tool
+        else:
+            # Agent mode: use permission_mode setting
+            final_permission_mode = permission_mode
+            final_can_use_tool = can_use_tool
 
         options = ClaudeAgentOptions(
             cwd=cwd,
             system_prompt=system_prompt,
-            permission_mode=effective_permission_mode,
+            permission_mode=final_permission_mode,
             env=env,
-            allowed_tools=[
-                "Read", "Write", "Edit", "Bash", "Glob", "Grep",
-                "WebFetch", "WebSearch",
-            ],
+            allowed_tools=[],  # Empty to let permission_mode handle access
             include_partial_messages=True,
-            can_use_tool=can_use_tool,
+            can_use_tool=final_can_use_tool,
+            disallowed_tools=final_disallowed_tools,
         )
 
         if skip_permissions:
@@ -166,7 +188,8 @@ class ClaudeService:
         working_directory: str | None = None,
         sdk_session_id: str | None = None,
         mcp_servers: dict[str, Any] | None = None,
-        permission_mode: str = "acceptEdits",
+        session_mode: str = "agent",
+        permission_mode: str = "default",
         should_auto_allow: Callable[[str], bool] | None = None,
         on_text: Callable[[str], None] | None = None,
         on_tool_use: Callable[[dict[str, Any]], None] | None = None,
@@ -211,19 +234,14 @@ class ClaudeService:
         if on_permission_request:
             can_use_tool = self._make_permission_callback(on_permission_request, should_auto_allow)
 
-        # When bypassPermissions is active and no auto-allow callback, let SDK handle it.
-        # Otherwise force "default" so our callback does all filtering.
-        effective_sdk_mode = permission_mode
-        if can_use_tool and permission_mode != "bypassPermissions":
-            effective_sdk_mode = "default"
-
         options = self._build_options(
             model=model,
             system_prompt=system_prompt,
             working_directory=working_directory,
             sdk_session_id=sdk_session_id,
             mcp_servers=mcp_servers,
-            permission_mode=effective_sdk_mode,
+            session_mode=session_mode,
+            permission_mode=permission_mode,
             provider=provider,
             can_use_tool=can_use_tool,
         )

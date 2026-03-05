@@ -48,7 +48,7 @@ class TestSettingsService:
         assert settings_service.get_theme() == "dark"
 
     def test_get_permission_mode(self, settings_service: SettingsService) -> None:
-        assert settings_service.get_permission_mode() == "acceptEdits"  # default
+        assert settings_service.get_permission_mode() == "default"  # default
         settings_service.set("permission_mode", "bypassPermissions")
         assert settings_service.get_permission_mode() == "bypassPermissions"
 

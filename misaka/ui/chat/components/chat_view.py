@@ -83,11 +83,11 @@ class ChatView(ft.Column):
             is_streaming=self.state.is_streaming,
         )
 
-        current_mode = session.mode if session else "code"
+        current_mode = session.mode if session else "agent"
         self._mode_dropdown = OffsetMenu(
             value=current_mode,
             options=[
-                OffsetMenuOption(key="code", label="Code"),
+                OffsetMenuOption(key="agent", label="Agent"),
                 OffsetMenuOption(key="plan", label="Plan"),
                 OffsetMenuOption(key="ask", label="Ask"),
             ],

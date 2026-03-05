@@ -245,8 +245,12 @@ class StreamHandler:
             working_directory=session.working_directory or None,
             sdk_session_id=session.sdk_session_id or None,
             mcp_servers=self._state.mcp_servers_sdk or None,
+            session_mode=session.mode or "agent",
             permission_mode=self._get_global_permission_mode(),
-            should_auto_allow=self._make_should_auto_allow(self._get_global_permission_mode()),
+            should_auto_allow=self._make_should_auto_allow(
+                self._get_global_permission_mode(),
+                session.mode or "agent",
+            ),
             on_text=on_text,
             on_tool_use=on_tool_use,
             on_tool_result=on_tool_result,
@@ -661,12 +665,17 @@ class StreamHandler:
         settings_svc = self._state.get_service("settings_service")
         if settings_svc and hasattr(settings_svc, "get_permission_mode"):
             return settings_svc.get_permission_mode()
-        return "acceptEdits"
+        return "default"
 
-    def _make_should_auto_allow(self, permission_mode: str) -> Callable[[str], bool] | None:
+    def _make_should_auto_allow(
+        self,
+        permission_mode: str,
+        session_mode: str = 'agent',
+    ) -> Callable[[str], bool] | None:
         """Build a callable that determines whether a tool call should be auto-approved.
 
         Returns None when bypassPermissions is active (SDK handles everything).
+        For "ask" mode, only read tools are auto-allowed.
         """
         if permission_mode == "bypassPermissions":
             return None
@@ -676,6 +685,9 @@ class StreamHandler:
         def should_auto_allow(tool_name: str) -> bool:
             if tool_name in always_allowed:
                 return True
+            # In "ask" mode, only allow read tools
+            if session_mode == "ask":
+                return tool_name in _READ_TOOLS
             if permission_mode == "acceptEdits":
                 return tool_name in (_READ_TOOLS | _EDIT_TOOLS)
             return False  # "default": ask for everything

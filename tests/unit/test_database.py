@@ -17,7 +17,7 @@ class TestSQLiteBackend:
         assert session.working_directory == "/tmp/test"
         assert session.project_name == "test"
         assert session.status == "active"
-        assert session.mode == "code"
+        assert session.mode == "agent"
 
     def test_get_all_sessions(self, db: DatabaseBackend) -> None:
         db.create_session(title="Session 1")
