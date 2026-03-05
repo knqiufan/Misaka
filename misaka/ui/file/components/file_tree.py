@@ -173,6 +173,12 @@ class FileTree(ft.Column):
                     on_click=lambda: self._handle_select(node.path),
                     icon_color=type_color,
                 ),
+                ContextMenuItem(
+                    icon=ft.Icons.FOLDER_OPEN_OUTLINED,
+                    label=t("right_panel.open_in_file_manager"),
+                    on_click=lambda: self._handle_open_in_file_manager(node.path),
+                    icon_color="#64748b",
+                ),
             ],
         )
 
@@ -180,6 +186,12 @@ class FileTree(ft.Column):
         shared_context_menu.dismiss()
         if self._on_file_select:
             self._on_file_select(path)
+
+    def _handle_open_in_file_manager(self, path: str) -> None:
+        """Open file/folder in system file manager."""
+        shared_context_menu.dismiss()
+        from misaka.utils.platform import open_in_file_manager
+        open_in_file_manager(path)
 
     # ------------------------------------------------------------------
     # Directory node

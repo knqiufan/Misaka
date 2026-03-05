@@ -35,6 +35,7 @@ class FloatingContextMenu:
         self._menu_overlay: ft.Container | None = None
         self._page: ft.Page | None = None
         self._last_items: list[ContextMenuItem] | None = None
+        self._last_width: int | None = None
 
     def _on_menu_secondary_tap(self, e: ft.TapEvent) -> None:
         """On right-click over menu: reopen it at the new pointer position."""
@@ -44,12 +45,14 @@ class FloatingContextMenu:
             self.dismiss()
             return
         pos = e.global_position
+        width = self._last_width
         self.dismiss()
         self.show(
             page,
             global_x=pos.x,
             global_y=pos.y,
             items=items,
+            width=width,
         )
 
     def show(
@@ -59,11 +62,14 @@ class FloatingContextMenu:
         global_x: float,
         global_y: float,
         items: list[ContextMenuItem],
+        width: int | None = None,
     ) -> None:
         """Open the menu at (*global_x*, *global_y*) with the given items."""
         self.dismiss()
         self._page = page
         self._last_items = items
+        menu_width = width if width is not None else 200
+        self._last_width = menu_width
 
         menu_rows = [self._build_item(item) for item in items]
 
@@ -81,7 +87,7 @@ class FloatingContextMenu:
                 offset=ft.Offset(0, 6),
                 color=ft.Colors.with_opacity(0.16, ft.Colors.BLACK),
             ),
-            width=100,
+            width=menu_width,
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
         # Container with left/top can be placed directly in page.overlay
@@ -111,11 +117,21 @@ class FloatingContextMenu:
         self._last_items = None
 
     def _build_item(self, item: ContextMenuItem) -> ft.Control:
+        row_controls: list[ft.Control] = []
+        if item.icon:
+            row_controls.append(
+                ft.Icon(
+                    item.icon,
+                    size=18,
+                    color=item.icon_color or ft.Colors.ON_SURFACE_VARIANT,
+                ),
+            )
+        row_controls.append(
+            ft.Text(item.label, size=12, weight=ft.FontWeight.W_500),
+        )
         return ft.Container(
             content=ft.Row(
-                controls=[
-                    ft.Text(item.label, size=12, weight=ft.FontWeight.W_500),
-                ],
+                controls=row_controls,
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),

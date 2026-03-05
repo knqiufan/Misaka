@@ -116,6 +116,7 @@ class ChatPage(ft.Stack):
             on_task_status_change=self._on_task_status_change,
             on_task_create=self._on_task_create,
             on_task_delete=self._on_task_delete,
+            on_refresh_file_tree=self._on_refresh_file_tree,
         )
 
         self._right_container = ft.Container(
@@ -217,7 +218,7 @@ class ChatPage(ft.Stack):
     def _on_new_chat_folder_selected(self, path: str) -> None:
         """Create a new session with the selected working directory."""
         session = self.db.create_session(working_directory=path)
-        self.state.sessions.insert(0, session)
+        self.state.sessions = [session] + self.state.sessions
         self.state.current_session_id = session.id
         self.state.messages = []
         self.state.has_more_messages = False
@@ -673,6 +674,16 @@ class ChatPage(ft.Stack):
             self.state.file_tree_nodes = []
             return
         self._scan_file_tree_async(wd)
+
+    def _on_refresh_file_tree(self, e: ft.ControlEvent | None = None) -> None:
+        """Handle refresh button click - bypass cache and rescan."""
+        session = self.state.current_session
+        if session and session.working_directory:
+            # Clear cache for this directory
+            if session.working_directory in self._file_tree_cache:
+                del self._file_tree_cache[session.working_directory]
+            # Trigger rescan - _scan_file_tree_async already handles async internally
+            self._scan_file_tree_async(session.working_directory)
 
     def _scan_file_tree_async(self, working_dir: str) -> None:
         # Check cache first

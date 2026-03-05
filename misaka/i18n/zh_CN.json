@@ -257,7 +257,9 @@
     "copy_content": "复制内容",
     "close_preview": "关闭预览",
     "select": "选择",
-    "scanning": "扫描中..."
+    "scanning": "扫描中...",
+    "refresh": "刷新",
+    "open_in_file_manager": "在文件管理器中打开"
   },
   "common": {
     "ok": "确定",

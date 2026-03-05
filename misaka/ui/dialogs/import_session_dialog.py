@@ -278,7 +278,7 @@ class ImportSessionDialog:
             session = self._service.import_session(session_id, db)
 
             # Add to state
-            self._state.sessions.insert(0, session)
+            self._state.sessions = [session] + self._state.sessions
 
             self.close()
             self._importing_id = None

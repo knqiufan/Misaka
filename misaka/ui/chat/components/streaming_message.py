@@ -23,7 +23,6 @@ class StreamingMessage(ft.Container):
     def __init__(self, state: AppState) -> None:
         super().__init__()
         self.state = state
-        self._thinking_text: ft.Text | None = None
         self._pulse_low = True
         # Incremental update tracking
         self._content_column: ft.Column | None = None
@@ -42,15 +41,15 @@ class StreamingMessage(ft.Container):
         return False
 
     def _start_thinking_pulse(self) -> None:
-        """Toggle the thinking text opacity to create a gentle pulse effect."""
-        if self._thinking_text and self._is_attached_to_page():
-            self._thinking_text.opacity = 0.15 if self._pulse_low else 0.5
+        """Toggle the thinking indicator opacity to create a pulse effect."""
+        if self._thinking_container and self._is_attached_to_page():
+            self._thinking_container.opacity = 0.5 if self._pulse_low else 0.9
             self._pulse_low = not self._pulse_low
             with contextlib.suppress(Exception):
-                self._thinking_text.update()
+                self._thinking_container.update()
 
     def _build_ui(self) -> None:
-        self._thinking_text = None
+        self._thinking_container: ft.Container | None = None
         self._content_column = None
         self._rendered_block_count = 0
         self._last_text_md = None
@@ -89,6 +88,7 @@ class StreamingMessage(ft.Container):
                     value=block.text,
                     selectable=True,
                     extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                    code_theme=ft.MarkdownCodeTheme.GITHUB,
                 )
                 controls.append(md)
                 self._last_text_md = md
@@ -107,21 +107,33 @@ class StreamingMessage(ft.Container):
         self._rendered_block_count = len(self.state.streaming_blocks)
 
         if len(controls) == 1:
-            # Only header, no content yet - show thinking indicator
-            thinking_text = ft.Text(
-                "Thinking...",
-                size=12,
-                italic=True,
-                opacity=0.5,
-                animate_opacity=ft.Animation(800, ft.AnimationCurve.EASE_IN_OUT),
-            )
-            controls.append(
-                ft.Row(
-                    controls=[thinking_text],
+            # Only header, no content yet - show enhanced thinking indicator
+            self._thinking_container = ft.Container(
+                content=ft.Row(
+                    controls=[
+                        ft.ProgressRing(
+                            width=14,
+                            height=14,
+                            stroke_width=1.5,
+                            color=ft.Colors.PRIMARY,
+                        ),
+                        ft.Text(
+                            "Thinking...",
+                            size=12,
+                            weight=ft.FontWeight.BOLD,
+                            color=ft.Colors.PRIMARY,
+                        ),
+                    ],
                     spacing=8,
-                )
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.PRIMARY),
+                border_radius=8,
+                padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+                opacity=0.5 if self._pulse_low else 0.9,
+                animate_opacity=ft.Animation(600, ft.AnimationCurve.EASE_IN_OUT),
             )
-            self._thinking_text = thinking_text
+            controls.append(self._thinking_container)
 
         self._content_column = ft.Column(controls=controls, spacing=8)
         self.content = self._content_column
@@ -162,12 +174,11 @@ class StreamingMessage(ft.Container):
         # New blocks added → append only new block controls
         if current_count > self._rendered_block_count:
             # Remove thinking indicator if it was showing
-            if self._thinking_text is not None:
-                # Thinking row is the last control in column
+            if self._thinking_container is not None:
                 col_controls = self._content_column.controls
                 if col_controls and len(col_controls) >= 2:
                     col_controls.pop()
-                self._thinking_text = None
+                self._thinking_container = None
 
             for i in range(self._rendered_block_count, current_count):
                 block = blocks[i]
@@ -176,6 +187,7 @@ class StreamingMessage(ft.Container):
                         value=block.text,
                         selectable=True,
                         extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                    code_theme=ft.MarkdownCodeTheme.GITHUB,
                     )
                     self._content_column.controls.append(md)
                     self._last_text_md = md

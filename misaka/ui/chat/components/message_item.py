@@ -363,6 +363,7 @@ class MessageItem(ft.Container):
                 value=segments[0][1],
                 selectable=True,
                 extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                code_theme=ft.MarkdownCodeTheme.GITHUB,
                 auto_follow_links=True,
             )
 
@@ -374,6 +375,7 @@ class MessageItem(ft.Container):
                         value=seg_content,
                         selectable=True,
                         extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                code_theme=ft.MarkdownCodeTheme.GITHUB,
                         auto_follow_links=True,
                     )
                 )

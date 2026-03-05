@@ -210,6 +210,37 @@ async def get_claude_version(claude_path: str) -> str | None:
         return None
 
 
+def open_in_file_manager(path: str) -> bool:
+    """Open path in system file manager, selecting if a file.
+
+    Returns True if successful, False otherwise.
+    """
+    import sys
+
+    path_obj = Path(path)
+    if not path_obj.exists():
+        return False
+
+    try:
+        if sys.platform == "win32":
+            # Windows: explorer /select,"path" selects the file
+            subprocess.run(
+                ["explorer", "/select,", path],
+                check=False,
+                **subprocess_creation_flags(),
+            )
+        elif sys.platform == "darwin":
+            # macOS: open -R reveals in Finder
+            subprocess.run(["open", "-R", path], check=False)
+        else:
+            # Linux: xdg-open the parent directory
+            target = path_obj.parent if path_obj.is_file() else path_obj
+            subprocess.run(["xdg-open", str(target)], check=False)
+        return True
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
 async def _run_async(
     cmd: list[str],
     timeout: int = 10,

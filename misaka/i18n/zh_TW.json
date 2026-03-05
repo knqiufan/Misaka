@@ -257,7 +257,9 @@
     "copy_content": "複製內容",
     "close_preview": "關閉預覽",
     "select": "選擇",
-    "scanning": "掃描中..."
+    "scanning": "掃描中...",
+    "refresh": "重新整理",
+    "open_in_file_manager": "在檔案管理員中開啟"
   },
   "common": {
     "ok": "確定",

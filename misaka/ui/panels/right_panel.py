@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
+from misaka.ui.common.theme import make_icon_button
 from misaka.ui.file.components.file_preview import FilePreview
 from misaka.ui.file.components.file_tree import FileTree
 from misaka.ui.task.components.task_list import TaskList
@@ -33,6 +34,7 @@ class RightPanel(ft.Column):
         on_task_status_change: Callable[[str, str], None] | None = None,
         on_task_create: Callable[[str], None] | None = None,
         on_task_delete: Callable[[str], None] | None = None,
+        on_refresh_file_tree: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(spacing=0, expand=True)
         self.state = state
@@ -41,6 +43,7 @@ class RightPanel(ft.Column):
         self._on_task_status_change = on_task_status_change
         self._on_task_create = on_task_create
         self._on_task_delete = on_task_delete
+        self._on_refresh_file_tree = on_refresh_file_tree
 
         self._file_tree: FileTree | None = None
         self._file_preview: FilePreview | None = None
@@ -111,7 +114,6 @@ class RightPanel(ft.Column):
                 self._file_preview = FilePreview(preview=self._current_preview)
 
                 if self._current_preview:
-                    from misaka.ui.common.theme import make_icon_button
                     back_btn = ft.Container(
                         content=ft.Row(
                             controls=[
@@ -162,6 +164,12 @@ class RightPanel(ft.Column):
                         max_lines=1,
                         overflow=ft.TextOverflow.ELLIPSIS,
                         expand=True,
+                    ),
+                    make_icon_button(
+                        ft.Icons.REFRESH_ROUNDED,
+                        on_click=self._handle_refresh,
+                        tooltip=t("right_panel.refresh"),
+                        icon_size=14,
                     ),
                 ],
                 spacing=5,
@@ -246,6 +254,10 @@ class RightPanel(ft.Column):
     def _handle_file_select(self, path: str) -> None:
         if self._on_file_select:
             self._on_file_select(path)
+
+    def _handle_refresh(self, e: ft.ControlEvent) -> None:
+        if self._on_refresh_file_tree:
+            self._on_refresh_file_tree()
 
     def _close_preview(self, e: ft.ControlEvent) -> None:
         self._current_preview = None

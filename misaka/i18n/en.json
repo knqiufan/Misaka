@@ -257,7 +257,9 @@
     "copy_content": "Copy content",
     "close_preview": "Close preview",
     "select": "Select",
-    "scanning": "Scanning..."
+    "scanning": "Scanning...",
+    "refresh": "Refresh",
+    "open_in_file_manager": "Open in File Manager"
   },
   "common": {
     "ok": "OK",
