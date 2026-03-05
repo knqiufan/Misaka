@@ -8,6 +8,21 @@ Misaka 将 Claude Code 的强大能力带入精致的原生桌面体验——多
 
 ---
 
+## 🌟 为什么选择 Misaka？
+
+Misaka 具有以下**独有特性**：
+
+| 特性 | 说明 |
+|------|------|
+| **🔍 环境检查** | 启动时自动检测 Claude Code CLI、Node.js、Python、Git 是否已安装。缺失时提供一键安装，使用平台专属命令（winget/brew/apt）。 |
+| **📦 版本检查** | 启动时自动检测 Claude Code CLI 是否有新版本，支持一键升级（`npm install -g @anthropic-ai/claude-code@latest`）。 |
+| **🔀 Claude Code Router** | 管理多套 API 配置（不同提供商、模型、Agent Team 模式），一键切换并写入 `~/.claude/settings.json`。目前其他 GUI 均无此功能。 |
+| **🖥️ 原生桌面** | 基于 Python + Flet（Flutter），非 Web 应用，以原生窗口运行。 |
+| **🛡️ 权限控制** | 细粒度工具权限模式，在文件编辑或执行 shell 命令前弹出交互式审批对话框。 |
+| **📚 技能管理** | 在应用内直接查看、创建、编辑和刷新 Claude Code Skills（扩展）。 |
+
+---
+
 ## ✨ 功能特性
 
 | 分类 | 详情 |
@@ -67,45 +82,6 @@ python -m misaka.main
 
 ---
 
-## 🗂 项目结构
-
-```
-Misaka/
-├── misaka/
-│   ├── main.py                 # 入口 & 依赖注入容器
-│   ├── config.py               # 路径、环境变量、配置键
-│   ├── state.py                # 响应式应用状态
-│   ├── commands.py             # 斜杠命令定义
-│   ├── db/                     # 数据库层（SQLite / SeekDB）
-│   │   ├── database.py
-│   │   ├── models.py
-│   │   ├── sqlite_backend.py
-│   │   └── migrations.py
-│   ├── services/               # 业务逻辑服务（模块化）
-│   │   ├── chat/               # Claude 集成、消息、会话
-│   │   ├── common/             # 共享工具
-│   │   ├── file/               # 文件操作、版本检查
-│   │   ├── mcp/                # MCP 服务器管理
-│   │   ├── settings/           # 设置、提供商、路由配置
-│   │   ├── skills/             # 技能发现和环境检查
-│   │   └── task/               # 任务管理
-│   ├── ui/
-│   │   ├── chat/               # 聊天页面及组件
-│   │   ├── settings/           # 设置页面
-│   │   ├── skills/             # 技能扩展页面
-│   │   ├── pages/              # 插件页面
-│   │   ├── common              # 应用外壳、主题、组件
-│   │   └── dialogs/            # 可复用对话框
-│   └── i18n/                   # 多语言文件（en / zh_CN / zh_TW）
-├── assets/                     # 应用图标
-├── tests/                      # 单元测试 & 集成测试
-├── docs/                       # 架构设计文档
-├── pyproject.toml
-└── requirements.txt
-```
-
----
-
 ## ⚙️ 配置说明
 
 ### API Key
@@ -116,13 +92,69 @@ Misaka/
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### Claude Code Router
+### Claude Code Router — 快速指南
 
-「设置」页面中的 Claude Code Router 功能允许您管理多个 API 配置：
+**Claude Code Router** 用于管理多套 API 配置，并可一键切换。
 
-- 创建、编辑和删除配置
-- 为每个配置设置不同的模型（Haiku、Sonnet、Opus）
-- 随时切换配置——写入 `~/.claude/settings.json`
+**1. 添加配置**
+
+- 进入 **设置 → Claude Code Router**
+- 点击 **添加配置**
+- 填写：
+  - **提供商名称** — 如「Anthropic 官方」「自定义 API」
+  - **API Key** — 你的 Anthropic API 密钥
+  - **请求 URL** — 默认留空，或填写自定义 Base URL
+  - **主模型 / Haiku / Opus / Sonnet 模型** — 各档位模型 ID
+  - **Agent Team 模式** — 是否启用 Agent Teams 功能
+
+**2. 启用配置**
+
+- 在目标配置上点击 **启用**
+- Misaka 会将配置写入 `~/.claude/settings.json`
+- Claude Code CLI 将使用该配置进行所有会话
+
+**3. 典型场景**
+
+- 在 Anthropic 官方 API 与第三方兼容端点之间切换
+- 不同项目使用不同模型（如 Haiku 快速任务、Opus 复杂编码）
+- 工作与个人 API Key 分开管理
+
+### 第三方插件（MCP 服务器）— 快速指南
+
+MCP（Model Context Protocol）服务器可扩展 Claude Code 能力，例如连接数据库、API、文件系统等。
+
+**方式一：在 Misaka 界面中配置**
+
+1. 从侧边栏打开 **插件**（MCP 服务器）
+2. 点击 **添加服务器**
+3. 选择 **传输类型**：
+   - **stdio** — 本地进程（如 `npx -y @modelcontextprotocol/server-filesystem ~/Documents`）
+   - **http** — 远程 HTTP 端点（如 `https://mcp.notion.com/mcp`）
+   - **sse** — 旧版 SSE 端点
+4. **stdio**：填写 **命令** 和 **参数**（空格分隔）
+5. **http/sse**：填写 **URL**
+6. 点击 **添加** — 配置会保存到 `~/.claude.json` 或 `~/.claude/settings.json`
+
+**方式二：通过配置文件编辑**
+
+编辑 `~/.claude.json` 或 `~/.claude/settings.json`：
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+    },
+    "notion": {
+      "type": "http",
+      "url": "https://mcp.notion.com/mcp"
+    }
+  }
+}
+```
+
+保存后，在插件页面点击 **重新加载配置**。更多示例见 [Claude Code MCP 文档](https://code.claude.com/docs/en/mcp)。
 
 ### 数据目录
 
@@ -131,15 +163,6 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ```bash
 export MISAKA_DATA_DIR=/path/to/custom/dir
 ```
-
-### MCP 服务器
-
-Misaka 会自动从以下路径读取 MCP 服务器配置：
-
-- `~/.claude.json`
-- `~/.claude/settings.json`
-
-也可以直接在应用「插件」页面中管理服务器。
 
 ---
 
@@ -170,23 +193,6 @@ flet run -m misaka.main -d -r
 pip install -e ".[build]"
 pyinstaller misaka.spec
 ```
-
----
-
-## 🏗 架构设计
-
-Misaka 遵循清晰的分层架构，配合依赖注入：
-
-```
-UI 层  →  State（状态）  →  Services（服务）  →  数据库 / 外部 API
-```
-
-- **`ServiceContainer`** — 启动时实例化一次，持有所有服务单例，按领域组织（chat, file, mcp, settings, skills, task）
-- **`AppState`** — 响应式状态对象，贯穿整个 UI 组件树
-- **`DatabaseBackend`** — 可插拔后端（默认 SQLite，可选 SeekDB）
-- **`ClaudeService`** — 封装 `claude-agent-sdk`，处理流式输出、MCP 集成与权限控制
-
-完整架构设计文档见：[`docs/plans/2026-02-23-architecture-design.md`](docs/plans/2026-02-23-architecture-design.md)
 
 ---
 

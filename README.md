@@ -8,6 +8,21 @@ Misaka brings the power of Claude Code to a polished native desktop experience �
 
 ---
 
+## 🌟 Why Misaka?
+
+Misaka stands out with these **unique features**:
+
+| Feature | Description |
+|---------|-------------|
+| **🔍 Environment Check** | On startup, automatically detects Claude Code CLI, Node.js, Python, and Git. Missing tools? One-click install with platform-specific commands (winget/brew/apt). |
+| **📦 Version Check** | Checks for Claude Code CLI updates on startup. One-click upgrade via `npm install -g @anthropic-ai/claude-code@latest`. |
+| **🔀 Claude Code Router** | Manage multiple API configurations (different providers, models, Agent Team mode). Switch instantly — writes to `~/.claude/settings.json`. No other GUI offers this. |
+| **🖥️ Native Desktop** | Python + Flet (Flutter-based). Not a web app — runs as a true native window. |
+| **🛡️ Permission Control** | Fine-grained tool permission modes with interactive approval dialogs before file edits or shell commands. |
+| **📚 Skills Management** | View, create, edit, and refresh Claude Code Skills (Extensions) directly in the app. |
+
+---
+
 ## ✨ Features
 
 | Category | Details |
@@ -67,45 +82,6 @@ The application window opens at **1280 × 860** (minimum 800 × 600). All data �
 
 ---
 
-## 🗂 Project Structure
-
-```
-Misaka/
-├── misaka/
-│   ├── main.py                 # Entry point & dependency injection
-│   ├── config.py               # Paths, env vars, setting keys
-│   ├── state.py                # Reactive application state
-│   ├── commands.py             # Slash command definitions
-│   ├── db/                     # Database layer (SQLite / SeekDB)
-│   │   ├── database.py
-│   │   ├── models.py
-│   │   ├── sqlite_backend.py
-│   │   └── migrations.py
-│   ├── services/               # Business logic services (modular)
-│   │   ├── chat/               # Claude integration, messages, sessions
-│   │   ├── common/             # Shared utilities
-│   │   ├── file/               # File operations, update checks
-│   │   ├── mcp/                # MCP server management
-│   │   ├── settings/           # Settings, providers, router configs
-│   │   ├── skills/             # Skill discovery & env checks
-│   │   └── task/               # Task management
-│   ├── ui/
-│   │   ├── chat/               # Chat page & components
-│   │   ├── settings/           # Settings page
-│   │   ├── skills/             # Extensions (Skills) page
-│   │   ├── pages/              # Plugins page
-│   │   ├── common/             # App shell, theme, components
-│   │   └── dialogs/            # Reusable dialogs
-│   └── i18n/                   # Locale files (en / zh_CN / zh_TW)
-├── assets/                     # App icon
-├── tests/                      # Unit & integration tests
-├── docs/                       # Architecture & planning docs
-├── pyproject.toml
-└── requirements.txt
-```
-
----
-
 ## ⚙️ Configuration
 
 ### API Key
@@ -116,14 +92,69 @@ Set the environment variable before launching, or add a provider in **Settings �
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### Claude Code Router
+### Claude Code Router — Quick Guide
 
-The Claude Code Router feature in Settings allows you to manage multiple API configurations:
+The **Claude Code Router** lets you manage multiple API configurations and switch between them instantly.
 
-- Create, edit, and delete configurations
-- Set different models for each config (Haiku, Sonnet, Opus)
-- Toggle Agent Team mode per configuration
-- Switch between configs instantly — writes to `~/.claude/settings.json`
+**1. Add a configuration**
+
+- Go to **Settings → Claude Code Router**
+- Click **Add Configuration**
+- Fill in:
+  - **Provider Name** — e.g. "Anthropic Official", "Custom API"
+  - **API Key** — your Anthropic API key
+  - **Request URL** — leave empty for default, or use a custom base URL
+  - **Main / Haiku / Opus / Sonnet Model** — model IDs for each tier
+  - **Agent Team Mode** — toggle for Agent Teams feature
+
+**2. Enable a configuration**
+
+- Click **Enable** on the config you want to use
+- Misaka writes the config to `~/.claude/settings.json`
+- Claude Code CLI will use this config for all sessions
+
+**3. Use cases**
+
+- Switch between official Anthropic API and third-party compatible endpoints
+- Use different models per project (e.g. Haiku for quick tasks, Opus for complex coding)
+- Separate configs for work vs personal API keys
+
+### Third-Party Plugins (MCP Servers) — Quick Guide
+
+MCP (Model Context Protocol) servers extend Claude Code with tools like databases, APIs, and file systems.
+
+**Option A: Configure via Misaka UI**
+
+1. Open **Plugins** (MCP Servers) from the sidebar
+2. Click **Add Server**
+3. Choose **Transport Type**:
+   - **stdio** — local process (e.g. `npx -y @modelcontextprotocol/server-filesystem ~/Documents`)
+   - **http** — remote HTTP endpoint (e.g. `https://mcp.notion.com/mcp`)
+   - **sse** — legacy SSE endpoint
+4. For **stdio**: enter **Command** and **Arguments** (space-separated)
+5. For **http/sse**: enter **URL**
+6. Click **Add** — config is saved to `~/.claude.json` or `~/.claude/settings.json`
+
+**Option B: Configure via config files**
+
+Edit `~/.claude.json` or `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+    },
+    "notion": {
+      "type": "http",
+      "url": "https://mcp.notion.com/mcp"
+    }
+  }
+}
+```
+
+Then click **Reload Config** in the Plugins page. See [Claude Code MCP docs](https://code.claude.com/docs/en/mcp) for more examples.
 
 ### Data Directory
 
@@ -132,15 +163,6 @@ Override the default `~/.misaka/` storage location:
 ```bash
 export MISAKA_DATA_DIR=/path/to/custom/dir
 ```
-
-### MCP Servers
-
-Misaka automatically reads MCP server configurations from:
-
-- `~/.claude.json`
-- `~/.claude/settings.json`
-
-You can also manage servers directly from the **Plugins** page inside the app.
 
 ---
 
@@ -171,23 +193,6 @@ flet run -m misaka.main -d -r
 pip install -e ".[build]"
 pyinstaller misaka.spec
 ```
-
----
-
-## 🏗 Architecture
-
-Misaka follows a clean layered architecture with dependency injection:
-
-```
-UI Layer  →  State  →  Services  →  Database / External APIs
-```
-
-- **`ServiceContainer`** — instantiated once at startup, holds all service singletons, organized by domain (chat, file, mcp, settings, skills, task)
-- **`AppState`** — reactive state object passed through the UI tree
-- **`DatabaseBackend`** — pluggable backend (SQLite default, SeekDB optional)
-- **`ClaudeService`** — wraps `claude-agent-sdk` for streaming, MCP, and permission handling
-
-See [`docs/plans/2026-02-23-architecture-design.md`](docs/plans/2026-02-23-architecture-design.md) for the full design document.
 
 ---
 
