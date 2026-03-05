@@ -14,6 +14,29 @@ from dataclasses import dataclass
 
 import flet as ft
 
+# Approximate height per menu row (padding 9*2 + content)
+_ITEM_HEIGHT = 36
+
+
+def _compute_menu_position(
+    global_x: float,
+    global_y: float,
+    menu_width: int,
+    menu_height: int,
+    page_width: float,
+    page_height: float,
+) -> tuple[float, float]:
+    """Compute left/top so the menu stays within the page bounds."""
+    left = global_x
+    top = global_y
+    if left + menu_width > page_width:
+        left = global_x - menu_width
+    if top + menu_height > page_height:
+        top = global_y - menu_height
+    left = max(0.0, min(left, page_width - menu_width))
+    top = max(0.0, min(top, page_height - menu_height))
+    return (left, top)
+
 
 @dataclass(frozen=True)
 class ContextMenuItem:
@@ -32,7 +55,7 @@ class FloatingContextMenu:
     """
 
     def __init__(self) -> None:
-        self._menu_overlay: ft.Container | None = None
+        self._menu_overlay: ft.Control | None = None
         self._page: ft.Page | None = None
         self._last_items: list[ContextMenuItem] | None = None
         self._last_width: int | None = None
@@ -70,10 +93,58 @@ class FloatingContextMenu:
         self._last_items = items
         menu_width = width if width is not None else 200
         self._last_width = menu_width
+        menu_height = len(items) * _ITEM_HEIGHT
+
+        page_w = getattr(page, "width", None) or 800
+        page_h = getattr(page, "height", None) or 600
+        left, top = _compute_menu_position(
+            global_x, global_y, menu_width, menu_height, page_w, page_h,
+        )
 
         menu_rows = [self._build_item(item) for item in items]
+        menu_panel_inner = self._build_menu_panel_inner(menu_rows, menu_width)
+        menu_panel = ft.Container(
+            content=menu_panel_inner,
+            left=left,
+            top=top,
+        )
 
-        menu_panel_inner = ft.Container(
+        backdrop = ft.Container(
+            width=page_w,
+            height=page_h,
+            on_click=lambda _: self.dismiss(),
+        )
+
+        stack = ft.Stack(
+            controls=[backdrop, menu_panel],
+            width=page_w,
+            height=page_h,
+        )
+        overlay_wrapper = ft.GestureDetector(
+            content=stack,
+            on_secondary_tap_down=self._on_menu_secondary_tap,
+        )
+        self._menu_overlay = overlay_wrapper
+        page.overlay.append(overlay_wrapper)
+        page.update()
+
+    def dismiss(self) -> None:
+        """Close the menu and remove overlay controls."""
+        if not self._page or not self._menu_overlay:
+            return
+        if self._menu_overlay in self._page.overlay:
+            self._page.overlay.remove(self._menu_overlay)
+            with contextlib.suppress(Exception):
+                self._page.update()
+        self._menu_overlay = None
+        self._page = None
+        self._last_items = None
+
+    def _build_menu_panel_inner(
+        self, menu_rows: list[ft.Control], menu_width: int
+    ) -> ft.Container:
+        """Build the inner menu panel (column of items with shadow)."""
+        return ft.Container(
             content=ft.Column(controls=menu_rows, spacing=0, tight=True),
             bgcolor=ft.Colors.SURFACE_CONTAINER,
             border_radius=14,
@@ -90,31 +161,6 @@ class FloatingContextMenu:
             width=menu_width,
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
-        # Container with left/top can be placed directly in page.overlay
-        menu_panel = ft.Container(
-            content=ft.GestureDetector(
-                content=menu_panel_inner,
-                on_secondary_tap_down=self._on_menu_secondary_tap,
-            ),
-            left=global_x,
-            top=global_y,
-        )
-
-        self._menu_overlay = menu_panel
-        page.overlay.append(menu_panel)
-        page.update()
-
-    def dismiss(self) -> None:
-        """Close the menu and remove overlay controls."""
-        if not self._page or not self._menu_overlay:
-            return
-        if self._menu_overlay in self._page.overlay:
-            self._page.overlay.remove(self._menu_overlay)
-            with contextlib.suppress(Exception):
-                self._page.update()
-        self._menu_overlay = None
-        self._page = None
-        self._last_items = None
 
     def _build_item(self, item: ContextMenuItem) -> ft.Control:
         row_controls: list[ft.Control] = []
