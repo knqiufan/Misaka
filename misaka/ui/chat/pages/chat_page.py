@@ -18,11 +18,11 @@ from misaka.state import BackgroundStreamStatus
 from misaka.ui.chat.components.chat_list import ChatList
 from misaka.ui.chat.components.chat_view import ChatView
 from misaka.ui.chat.pages.stream_handler import StreamHandler
+from misaka.ui.common.theme import get_panel_card_style
 from misaka.ui.dialogs.import_session_dialog import ImportSessionDialog
 from misaka.ui.file.components.folder_picker import FolderPicker
 from misaka.ui.panels.resize_handle import ResizeHandle
 from misaka.ui.panels.right_panel import RightPanel
-from misaka.ui.common.theme import get_panel_card_style
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -59,6 +59,11 @@ class ChatPage(ft.Stack):
         self._right_divider: ft.Control | None = None
         self._right_resize_container: ft.Control | None = None
         self._import_dialog: ImportSessionDialog | None = None
+
+        # Drag indicator for visual feedback during resize
+        self._drag_indicator: ft.Container | None = None
+        self._dragging_side: str | None = None  # "left" or "right"
+        self._pending_width: float = 0.0
 
         self._stream_handler = StreamHandler(
             state=state,
@@ -103,7 +108,6 @@ class ChatPage(ft.Stack):
             on_toggle_left_panel=self._toggle_left_panel,
             on_toggle_right_panel=self._toggle_right_panel,
             on_clear_messages=self._on_clear_messages,
-            on_open_folder=self._on_open_folder,
             on_load_more=self._on_load_more,
             on_command=self._on_command,
             on_permission_allow=self._on_permission_allow,
@@ -128,8 +132,16 @@ class ChatPage(ft.Stack):
         )
 
         # --- Resize handles ---
-        left_resize = ResizeHandle(on_resize=self._on_left_resize)
-        right_resize = ResizeHandle(on_resize=self._on_right_resize)
+        left_resize = ResizeHandle(
+            on_drag_start=self._on_left_drag_start,
+            on_drag=self._on_left_drag,
+            on_drag_end=self._on_left_drag_end,
+        )
+        right_resize = ResizeHandle(
+            on_drag_start=self._on_right_drag_start,
+            on_drag=self._on_right_drag,
+            on_drag_end=self._on_right_drag_end,
+        )
 
         # Store dividers and resize containers as persistent controls
         self._left_resize_container = ft.Container(
@@ -149,6 +161,16 @@ class ChatPage(ft.Stack):
         self._right_resize_container = ft.Container(
             content=right_resize, height=float("inf"),
             visible=self.state.right_panel_open,
+        )
+
+        # --- Drag indicator (visual feedback during resize) ---
+        self._drag_indicator = ft.Container(
+            width=2,
+            bgcolor=ft.Colors.with_opacity(0.5, ft.Colors.PRIMARY),
+            visible=False,
+            left=0,
+            top=0,
+            bottom=0,
         )
 
         # --- Main layout ---
@@ -171,12 +193,15 @@ class ChatPage(ft.Stack):
             expand=True,
         )
         # Horizontal padding for shadow visibility; vertical=0 to match nav_rail height
+        main_container = ft.Container(
+            content=main_row,
+            expand=True,
+            padding=ft.Padding.symmetric(horizontal=12, vertical=0),
+        )
+        # Stack: main content + drag indicator (on top, positioned absolutely)
         self.controls = [
-            ft.Container(
-                content=main_row,
-                expand=True,
-                padding=ft.Padding.symmetric(horizontal=12, vertical=0),
-            ),
+            main_container,
+            self._drag_indicator,
         ]
 
     # ---- Session operations ----
@@ -321,34 +346,6 @@ class ChatPage(ft.Stack):
     def _on_import_complete(self, session_id: str) -> None:
         """Handle completion of session import — select the imported session."""
         self._on_session_select(session_id)
-
-    def _on_open_folder(self) -> None:
-        """Open the folder picker dialog."""
-        if not self.state.page:
-            return
-        session = self.state.current_session
-        initial = session.working_directory if session and session.working_directory else None
-        picker = FolderPicker(
-            page=self.state.page,
-            on_select=self._on_folder_selected,
-            initial_path=initial,
-        )
-        picker.open()
-
-    def _on_folder_selected(self, path: str) -> None:
-        """Handle folder selection from the folder picker."""
-        if not self.state.current_session_id:
-            return
-        session = self.state.current_session
-        if session:
-            session.working_directory = path
-            self.db.update_session_working_directory(self.state.current_session_id, path)
-        self._scan_file_tree_async(path)
-        if self._chat_view:
-            self._chat_view.refresh()
-        if self._right_panel:
-            self._right_panel.refresh()
-        self.state.update()
 
     def _on_load_more(self) -> None:
         """Load earlier messages for the current session."""
@@ -543,22 +540,94 @@ class ChatPage(ft.Stack):
             self._right_resize_container.visible = visible
         self.state.update()
 
-    def _on_left_resize(self, delta: float) -> None:
-        new_width = self._left_width + delta
+    # ---- Resize drag handlers (visual feedback during drag) ----
+
+    def _on_left_drag_start(self) -> None:
+        """Show drag indicator when left resize starts."""
+        self._dragging_side = "left"
+        self._pending_width = self._left_width
+        if self._drag_indicator:
+            self._drag_indicator.visible = True
+            self._drag_indicator.update()
+
+    def _on_left_drag(self, global_x: float) -> None:
+        """Update drag indicator position during left panel resize."""
+        if self._dragging_side != "left":
+            return
+        # Calculate new width from global x position
+        # Account for left padding (12px from container)
+        new_width = global_x - 12
         new_width = max(self._min_panel_width, min(self._max_panel_width, new_width))
-        self._left_width = new_width
+        self._pending_width = new_width
+
+        # Update indicator position
+        if self._drag_indicator:
+            # Position indicator at the right edge of the left panel area
+            # left = padding + new_width + resize_handle_width(8)
+            self._drag_indicator.left = 12 + new_width + 8
+
+    def _on_left_drag_end(self) -> None:
+        """Hide indicator and apply final width for left panel."""
+        if self._dragging_side != "left":
+            return
+        # Apply final width
+        self._left_width = self._pending_width
         if self._left_container:
-            self._left_container.width = new_width
+            self._left_container.width = self._left_width
             self._left_container.update()
 
-    def _on_right_resize(self, delta: float) -> None:
-        # Right panel resize is inverted (drag left = wider)
-        new_width = self._right_width - delta
+        # Hide indicator
+        self._dragging_side = None
+        if self._drag_indicator:
+            self._drag_indicator.visible = False
+            self._drag_indicator.update()
+
+    def _on_right_drag_start(self) -> None:
+        """Show drag indicator when right resize starts."""
+        self._dragging_side = "right"
+        self._pending_width = self._right_width
+        if self._drag_indicator:
+            self._drag_indicator.visible = True
+            self._drag_indicator.update()
+
+    def _on_right_drag(self, global_x: float) -> None:
+        """Update drag indicator position during right panel resize."""
+        if self._dragging_side != "right":
+            return
+        # For right panel: width is calculated from right edge
+        # Need page width to calculate right edge position
+        # Simplified: use the container's offset and calculate relative position
+        if not self.state.page:
+            return
+        page_width = self.state.page.window_width or 800
+        # Account for padding (12 on each side = 24 total)
+        # Right panel right edge = page_width - 12
+        # new_width = right_edge - global_x
+        new_width = (page_width - 12) - global_x
         new_width = max(self._min_panel_width, min(self._max_panel_width, new_width))
-        self._right_width = new_width
+        self._pending_width = new_width
+
+        # Update indicator position
+        if self._drag_indicator:
+            # Position indicator at the left edge of the right panel area
+            # left = global_x (where the cursor is)
+            self._drag_indicator.left = global_x
+
+    def _on_right_drag_end(self) -> None:
+        """Hide indicator and apply final width for right panel."""
+        if self._dragging_side != "right":
+            return
+        # Apply final width
+        self._right_width = self._pending_width
         if self._right_container:
-            self._right_container.width = new_width
+            self._right_container.width = self._right_width
             self._right_container.update()
+
+        # Hide indicator
+        self._dragging_side = None
+        if self._drag_indicator:
+            self._drag_indicator.visible = False
+            self._drag_indicator.update()
 
     # ---- File and task operations ----
 

@@ -101,13 +101,13 @@ class MessageInput(ft.Container):
             icon=(
                 ft.Icons.STOP_CIRCLE_ROUNDED
                 if is_streaming
-                else ft.Icons.SEND_ROUNDED
+                else ft.Icons.KEYBOARD_RETURN_ROUNDED
             ),
             tooltip=t("chat.stop") if is_streaming else t("chat.send"),
             on_click=self._handle_action,
             icon_color=ft.Colors.WHITE,
             bgcolor=ft.Colors.ERROR if is_streaming else ft.Colors.PRIMARY,
-            icon_size=20,
+            icon_size=15,
             style=ft.ButtonStyle(shape=ft.CircleBorder(), padding=8),
         )
 

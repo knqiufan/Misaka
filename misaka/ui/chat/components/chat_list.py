@@ -256,20 +256,25 @@ class ChatList(ft.Column):
                 margin=ft.Margin.only(right=6),
             )
 
+        mode_icons = {
+            "agent": ft.Icons.TERMINAL,
+            "plan": ft.Icons.LIST,
+            "ask": ft.Icons.HELP_OUTLINE,
+        }
         mode_colors = {
             "agent": ACCENT_BLUE,
             "plan": WARNING_AMBER,
             "ask": SUCCESS_GREEN,
         }
-        mode_color = mode_colors.get(session.mode, "#6b7280")
+        icon_name = mode_icons.get(session.mode, ft.Icons.CHAT_BUBBLE_OUTLINE)
+        icon_color = mode_colors.get(session.mode, "#6b7280")
 
-        # Mode indicator: subtle left accent dot
-        mode_dot = ft.Container(
-            width=4,
-            height=4,
-            border_radius=2,
-            bgcolor=mode_color,
-            margin=ft.Margin.only(right=8),
+        # Mode indicator: icon per mode (agent=terminal, plan=list, ask=help)
+        mode_icon = ft.Icon(
+            icon_name,
+            size=14,
+            color=icon_color,
+            opacity=0.9,
         )
 
         # Main content: title only
@@ -283,8 +288,8 @@ class ChatList(ft.Column):
         )
 
         item_content = ft.Row(
-            controls=[mode_dot, title_text],
-            spacing=0,
+            controls=[mode_icon, title_text],
+            spacing=8,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 

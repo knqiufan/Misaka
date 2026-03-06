@@ -26,7 +26,7 @@
     "toggle_right_panel": "切换右侧面板",
     "no_sessions": "还没有聊天会话",
     "no_matching_sessions": "没有匹配的会话",
-    "type_message": "输入消息...（回车发送，Shift+回车换行）",
+    "type_message": "输入消息（回车发送，Shift+回车换行）",
     "attach_file": "附加文件",
     "search_sessions": "搜索会话...",
     "no_messages": "还没有消息",

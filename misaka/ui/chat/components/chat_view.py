@@ -16,6 +16,7 @@ import flet as ft
 from misaka.i18n import t
 from misaka.ui.chat.components.message_input import MessageInput
 from misaka.ui.chat.components.message_list import MessageList
+from misaka.ui.common.theme import ACCENT_BLUE, SUCCESS_GREEN, WARNING_AMBER
 from misaka.ui.common.theme import make_icon_button
 from misaka.ui.panels.offset_menu import OffsetMenu, OffsetMenuOption
 from misaka.ui.status.connection_status import ConnectionStatus
@@ -39,7 +40,6 @@ class ChatView(ft.Column):
         on_toggle_left_panel: Callable[[], None] | None = None,
         on_toggle_right_panel: Callable[[], None] | None = None,
         on_clear_messages: Callable[[], None] | None = None,
-        on_open_folder: Callable[[], None] | None = None,
         on_load_more: Callable[[], None] | None = None,
         on_command: Callable[[str], None] | None = None,
         on_permission_allow: Callable[[], None] | None = None,
@@ -55,7 +55,6 @@ class ChatView(ft.Column):
         self._on_toggle_left_panel = on_toggle_left_panel
         self._on_toggle_right_panel = on_toggle_right_panel
         self._on_clear_messages = on_clear_messages
-        self._on_open_folder = on_open_folder
         self._on_load_more = on_load_more
         self._on_command = on_command
         self._on_permission_allow = on_permission_allow
@@ -84,6 +83,16 @@ class ChatView(ft.Column):
         )
 
         current_mode = session.mode if session else "agent"
+        mode_icons = {
+            "agent": ft.Icons.TERMINAL,
+            "plan": ft.Icons.LIST,
+            "ask": ft.Icons.HELP_OUTLINE,
+        }
+        mode_colors = {
+            "agent": ACCENT_BLUE,
+            "plan": WARNING_AMBER,
+            "ask": SUCCESS_GREEN,
+        }
         self._mode_dropdown = OffsetMenu(
             value=current_mode,
             options=[
@@ -91,8 +100,10 @@ class ChatView(ft.Column):
                 OffsetMenuOption(key="plan", label="Plan"),
                 OffsetMenuOption(key="ask", label="Ask"),
             ],
-            width=96,
-            menu_width=120,
+            icon_map=mode_icons,
+            color_map=mode_colors,
+            width=110,
+            menu_width=140,
             offset_y=10,
             on_change=self._handle_mode_change,
         )
@@ -122,14 +133,6 @@ class ChatView(ft.Column):
             visible=has_session,
         )
 
-        folder_btn = make_icon_button(
-            ft.Icons.FOLDER_OPEN_ROUNDED,
-            tooltip=t("chat.open_folder"),
-            on_click=lambda e: self._on_open_folder() if self._on_open_folder else None,
-            icon_size=20,
-            visible=has_session,
-        )
-
         # Session title
         title_text = session.title if session else "Misaka"
         self._title_text = ft.Text(
@@ -149,7 +152,6 @@ class ChatView(ft.Column):
                         spacing=0,
                         expand=True,
                     ),
-                    folder_btn,
                     self._mode_dropdown,
                     self._connection_status,
                     clear_btn,
