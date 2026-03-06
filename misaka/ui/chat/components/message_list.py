@@ -49,35 +49,53 @@ class MessageList(ft.Column):
         self._item_cache: dict[str, MessageItem] = {}
         self._load_more_button: ft.Control | None = None
         self._was_streaming: bool = False
-        self._empty_view = ft.Container(
+        self._empty_view = self._build_empty_state()
+        self._build_ui()
+
+    def _build_empty_state(self) -> ft.Container:
+        """Build the empty state placeholder when there are no messages."""
+        icon_circle = ft.Container(
+            content=ft.Icon(
+                ft.Icons.CHAT_BUBBLE_OUTLINE,
+                size=48,
+                color=ft.Colors.with_opacity(0.35, ft.Colors.PRIMARY),
+            ),
+            padding=ft.Padding.all(16),
+            border_radius=999,
+            bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
+        )
+        title = ft.Text(
+            t("chat.no_messages"),
+            size=16,
+            weight=ft.FontWeight.W_500,
+            color=ft.Colors.ON_SURFACE,
+            text_align=ft.TextAlign.CENTER,
+        )
+        subtitle = ft.Text(
+            t("chat.send_to_start"),
+            size=13,
+            color=ft.Colors.ON_SURFACE_VARIANT,
+            text_align=ft.TextAlign.CENTER,
+        )
+        inner = ft.Container(
             content=ft.Column(
-                controls=[
-                    ft.Icon(
-                        ft.Icons.CHAT_BUBBLE_OUTLINE,
-                        size=40,
-                        opacity=0.15,
-                    ),
-                    ft.Text(
-                        t("chat.no_messages"),
-                        size=15,
-                        weight=ft.FontWeight.W_300,
-                        text_align=ft.TextAlign.CENTER,
-                        opacity=0.4,
-                    ),
-                    ft.Text(
-                        t("chat.send_to_start"),
-                        size=12,
-                        text_align=ft.TextAlign.CENTER,
-                        opacity=0.25,
-                    ),
-                ],
+                controls=[icon_circle, title, subtitle],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=8,
+                spacing=14,
             ),
             alignment=ft.Alignment.CENTER,
             expand=True,
         )
-        self._build_ui()
+        card = ft.Container(
+            content=inner,
+            padding=ft.Padding.symmetric(horizontal=40, vertical=270),
+            expand=True,
+        )
+        return ft.Container(
+            content=card,
+            alignment=ft.Alignment.CENTER,
+            expand=True,
+        )
 
     def _build_ui(self) -> None:
         self._item_cache.clear()
