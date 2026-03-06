@@ -47,6 +47,7 @@
   },
   "settings": {
     "title": "設定",
+    "description": "應用外觀、權限、語言與 Claude Code 整合設定",
     "api_providers": "API 提供者",
     "api_providers_desc": "設定 Claude Code 的 API 提供者。已啟用的提供者將用於所有查詢。",
     "add_provider": "新增提供者",

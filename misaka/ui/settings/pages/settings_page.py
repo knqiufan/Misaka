@@ -168,7 +168,7 @@ class SettingsPage(ft.Column):
                                 weight=ft.FontWeight.W_600,
                             ),
                             ft.Text(
-                                t("settings.claude_code_desc"),
+                                t("settings.description"),
                                 size=12,
                                 opacity=0.65,
                             ),

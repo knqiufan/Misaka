@@ -47,6 +47,7 @@
   },
   "settings": {
     "title": "Settings",
+    "description": "Appearance, permissions, language, and Claude Code integration",
     "api_providers": "API Providers",
     "api_providers_desc": "Configure API providers for Claude Code. The active provider will be used for all queries.",
     "add_provider": "Add Provider",
