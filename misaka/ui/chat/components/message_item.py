@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 import flet as ft
 
+from misaka.config import get_assets_path
 from misaka.db.models import Message, MessageContentBlock
 from misaka.ui.chat.components.code_block import CodeBlock
 from misaka.ui.chat.components.tool_call_block import ToolCallBlock
@@ -31,9 +32,15 @@ class _PairedTool:
 class MessageItem(ft.Container):
     """Renders a single chat message with all its content blocks."""
 
-    def __init__(self, message: Message) -> None:
+    def __init__(
+        self,
+        message: Message,
+        *,
+        assistant_label: str = "Claude",
+    ) -> None:
         super().__init__()
         self._message = message
+        self._assistant_label = assistant_label
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -76,13 +83,22 @@ class MessageItem(ft.Container):
             )
 
     def _build_header(self, is_user: bool) -> ft.Control:
-        role_icon = ft.Icon(
-            ft.Icons.PERSON_OUTLINE if is_user else ft.Icons.AUTO_AWESOME_OUTLINED,
-            size=14,
-            color=ft.Colors.ON_SURFACE_VARIANT if is_user else ft.Colors.PRIMARY,
-        )
+        if is_user:
+            role_icon = ft.Icon(
+                ft.Icons.PERSON_OUTLINE,
+                size=14,
+                color=ft.Colors.ON_SURFACE_VARIANT,
+            )
+        else:
+            claude_icon_path = str(get_assets_path() / "claude.png")
+            role_icon = ft.Image(
+                src=claude_icon_path,
+                width=14,
+                height=14,
+                fit=ft.BoxFit.CONTAIN,
+            )
         role_label = ft.Text(
-            "You" if is_user else "Claude",
+            "You" if is_user else self._assistant_label,
             size=12,
             weight=ft.FontWeight.W_600,
             color=ft.Colors.PRIMARY if not is_user else ft.Colors.ON_SURFACE_VARIANT,

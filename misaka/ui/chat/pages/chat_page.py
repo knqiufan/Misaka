@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import flet as ft
@@ -60,10 +61,10 @@ class ChatPage(ft.Stack):
         self._right_resize_container: ft.Control | None = None
         self._import_dialog: ImportSessionDialog | None = None
 
-        # Drag indicator for visual feedback during resize
-        self._drag_indicator: ft.Container | None = None
+        # Drag state for panel resize
         self._dragging_side: str | None = None  # "left" or "right"
-        self._pending_width: float = 0.0
+        self._last_update = 0.0
+        self._update_interval = 1 / 30  # 30fps throttle
 
         self._stream_handler = StreamHandler(
             state=state,
@@ -95,6 +96,7 @@ class ChatPage(ft.Stack):
             content=self._chat_list,
             width=self._left_width,
             visible=self.state.left_panel_open,
+            animate=ft.Animation(30, ft.AnimationCurve.LINEAR),
             **_panel_style,
         )
 
@@ -128,6 +130,7 @@ class ChatPage(ft.Stack):
             content=self._right_panel,
             width=self._right_width,
             visible=self.state.right_panel_open,
+            animate=ft.Animation(30, ft.AnimationCurve.LINEAR),
             **_panel_style,
         )
 
@@ -163,16 +166,6 @@ class ChatPage(ft.Stack):
             visible=self.state.right_panel_open,
         )
 
-        # --- Drag indicator (visual feedback during resize) ---
-        self._drag_indicator = ft.Container(
-            width=2,
-            bgcolor=ft.Colors.with_opacity(0.5, ft.Colors.PRIMARY),
-            visible=False,
-            left=0,
-            top=0,
-            bottom=0,
-        )
-
         # --- Main layout ---
         center_container = ft.Container(
             content=self._chat_view,
@@ -198,11 +191,7 @@ class ChatPage(ft.Stack):
             expand=True,
             padding=ft.Padding.symmetric(horizontal=12, vertical=0),
         )
-        # Stack: main content + drag indicator (on top, positioned absolutely)
-        self.controls = [
-            main_container,
-            self._drag_indicator,
-        ]
+        self.controls = [main_container]
 
     # ---- Session operations ----
 
@@ -540,94 +529,75 @@ class ChatPage(ft.Stack):
             self._right_resize_container.visible = visible
         self.state.update()
 
-    # ---- Resize drag handlers (visual feedback during drag) ----
+    # ---- Resize drag handlers ----
 
     def _on_left_drag_start(self) -> None:
-        """Show drag indicator when left resize starts."""
+        """Initialize left panel resize."""
         self._dragging_side = "left"
-        self._pending_width = self._left_width
-        if self._drag_indicator:
-            self._drag_indicator.visible = True
-            self._drag_indicator.update()
+        self._last_update = 0.0
 
     def _on_left_drag(self, global_x: float) -> None:
-        """Update drag indicator position during left panel resize."""
+        """Update left panel width during drag."""
         if self._dragging_side != "left":
             return
         # Calculate new width from global x position
         # Account for left padding (12px from container)
         new_width = global_x - 12
         new_width = max(self._min_panel_width, min(self._max_panel_width, new_width))
-        self._pending_width = new_width
+        self._left_width = new_width
 
-        # Update indicator position
-        if self._drag_indicator:
-            # Position indicator at the right edge of the left panel area
-            # left = padding + new_width + resize_handle_width(8)
-            self._drag_indicator.left = 12 + new_width + 8
+        # Throttled update
+        now = time.monotonic()
+        if now - self._last_update >= self._update_interval:
+            self._last_update = now
+            if self._left_container:
+                self._left_container.width = new_width
+                self._left_container.update()
 
     def _on_left_drag_end(self) -> None:
-        """Hide indicator and apply final width for left panel."""
+        """Finalize left panel resize."""
         if self._dragging_side != "left":
             return
-        # Apply final width
-        self._left_width = self._pending_width
+        self._dragging_side = None
+        self._last_update = 0.0
+        # Ensure final width is applied
         if self._left_container:
             self._left_container.width = self._left_width
             self._left_container.update()
 
-        # Hide indicator
-        self._dragging_side = None
-        if self._drag_indicator:
-            self._drag_indicator.visible = False
-            self._drag_indicator.update()
-
     def _on_right_drag_start(self) -> None:
-        """Show drag indicator when right resize starts."""
+        """Initialize right panel resize."""
         self._dragging_side = "right"
-        self._pending_width = self._right_width
-        if self._drag_indicator:
-            self._drag_indicator.visible = True
-            self._drag_indicator.update()
+        self._last_update = 0.0
 
     def _on_right_drag(self, global_x: float) -> None:
-        """Update drag indicator position during right panel resize."""
-        if self._dragging_side != "right":
-            return
-        # For right panel: width is calculated from right edge
-        # Need page width to calculate right edge position
-        # Simplified: use the container's offset and calculate relative position
-        if not self.state.page:
+        """Update right panel width during drag."""
+        if self._dragging_side != "right" or not self.state.page:
             return
         page_width = self.state.page.window_width or 800
-        # Account for padding (12 on each side = 24 total)
-        # Right panel right edge = page_width - 12
-        # new_width = right_edge - global_x
+        # Account for padding (12 on right side)
         new_width = (page_width - 12) - global_x
         new_width = max(self._min_panel_width, min(self._max_panel_width, new_width))
-        self._pending_width = new_width
+        self._right_width = new_width
 
-        # Update indicator position
-        if self._drag_indicator:
-            # Position indicator at the left edge of the right panel area
-            # left = global_x (where the cursor is)
-            self._drag_indicator.left = global_x
+        # Throttled update
+        now = time.monotonic()
+        if now - self._last_update >= self._update_interval:
+            self._last_update = now
+            if self._right_container:
+                self._right_container.width = new_width
+                self._right_container.update()
 
     def _on_right_drag_end(self) -> None:
-        """Hide indicator and apply final width for right panel."""
+        """Finalize right panel resize."""
         if self._dragging_side != "right":
             return
-        # Apply final width
-        self._right_width = self._pending_width
+        self._dragging_side = None
+        self._last_update = 0.0
+        # Ensure final width is applied
         if self._right_container:
             self._right_container.width = self._right_width
             self._right_container.update()
-
-        # Hide indicator
-        self._dragging_side = None
-        if self._drag_indicator:
-            self._drag_indicator.visible = False
-            self._drag_indicator.update()
 
     # ---- File and task operations ----
 

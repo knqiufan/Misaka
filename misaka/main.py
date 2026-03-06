@@ -26,23 +26,23 @@ if __package__ in {None, ""}:
 import flet as ft
 
 import misaka.i18n as i18n
-from misaka.config import LOG_PATH, SettingKeys, ensure_data_dir
+from misaka.config import LOG_PATH, SettingKeys, ensure_data_dir, get_assets_path
 from misaka.db.database import DatabaseBackend, create_database
 from misaka.services.chat.claude_service import ClaudeService
-from misaka.services.settings.cli_settings_service import CliSettingsService
-from misaka.services.skills.env_check_service import EnvCheckService
-from misaka.services.file.file_service import FileService
-from misaka.services.mcp.mcp_service import MCPService
 from misaka.services.chat.message_service import MessageService
 from misaka.services.chat.permission_service import PermissionService
+from misaka.services.chat.session_service import SessionService
+from misaka.services.file.file_service import FileService
+from misaka.services.file.update_check_service import UpdateCheckService
+from misaka.services.mcp.mcp_service import MCPService
+from misaka.services.session.session_import_service import SessionImportService
+from misaka.services.settings.cli_settings_service import CliSettingsService
 from misaka.services.settings.provider_service import ProviderService
 from misaka.services.settings.router_config_service import RouterConfigService
-from misaka.services.session.session_import_service import SessionImportService
-from misaka.services.chat.session_service import SessionService
 from misaka.services.settings.settings_service import SettingsService
+from misaka.services.skills.env_check_service import EnvCheckService
 from misaka.services.skills.skill_service import SkillService
 from misaka.services.task.task_service import TaskService
-from misaka.services.file.update_check_service import UpdateCheckService
 from misaka.state import AppState
 from misaka.ui.common.app_shell import AppShell
 from misaka.ui.common.theme import apply_theme
@@ -241,12 +241,7 @@ def _main(page: ft.Page) -> None:
 
     # --- Set up page properties ---
     page.title = "Misaka"
-    if _is_frozen():
-        _base = Path(sys._MEIPASS)  # type: ignore[attr-defined]
-    else:
-        _base = Path(__file__).resolve().parent.parent
-    _icon_path = str(_base / "assets" / "icon.ico")
-    page.window.icon = _icon_path
+    page.window.icon = str(get_assets_path() / "icon.ico")
     page.window.width = 1280
     page.window.height = 860
     page.window.min_width = 800
@@ -322,11 +317,7 @@ def main() -> None:
 
     _setup_logging()
     logger.info("Starting Misaka...")
-    if _is_frozen():
-        assets = str(Path(sys._MEIPASS) / "assets")  # type: ignore[attr-defined]
-    else:
-        assets = str(Path(__file__).resolve().parent.parent / "assets")
-    ft.run(_main, assets_dir=assets)
+    ft.run(_main, assets_dir=str(get_assets_path()))
 
 
 if __name__ == "__main__":

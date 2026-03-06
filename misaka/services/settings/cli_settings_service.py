@@ -62,3 +62,23 @@ class CliSettingsService:
         settings = self.read_settings()
         settings[key] = value
         self.write_settings(settings)
+
+    def get_model_display_name(self, model_key: str) -> str:
+        """Resolve model key (default/sonnet/opus/haiku) to display name.
+
+        Reads from ~/.claude/settings.json env section. Returns 'Claude'
+        when model_key is empty or unknown.
+        """
+        if not model_key:
+            return "Claude"
+        settings = self.read_settings()
+        env = settings.get("env", {})
+        if model_key == "default":
+            main = env.get("ANTHROPIC_MODEL", "")
+            return f"Default ({main})" if main else "Default"
+        mapping = {
+            "sonnet": str(env.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "Sonnet")),
+            "opus": str(env.get("ANTHROPIC_DEFAULT_OPUS_MODEL", "Opus")),
+            "haiku": str(env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL", "Haiku")),
+        }
+        return mapping.get(model_key, "Claude")

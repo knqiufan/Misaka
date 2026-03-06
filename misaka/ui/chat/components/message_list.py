@@ -49,6 +49,8 @@ class MessageList(ft.Column):
         self._item_cache: dict[str, MessageItem] = {}
         self._load_more_button: ft.Control | None = None
         self._was_streaming: bool = False
+        self._model_display_name: str = "Claude"
+        self._last_session_id_for_model: str | None = None
         self._empty_view = self._build_empty_state()
         self._build_ui()
 
@@ -102,11 +104,27 @@ class MessageList(ft.Column):
         self.controls = [self._empty_view, self._list_view]
         self._sync_controls()
 
+    def _resolve_model_display_name_once(self) -> None:
+        """Resolve model display name only when session changes. Avoids repeated reads."""
+        sid = self.state.current_session_id
+        if sid == self._last_session_id_for_model:
+            return
+        self._last_session_id_for_model = sid
+        cli_svc = self.state.get_service("cli_settings_service")
+        session = self.state.current_session
+        if cli_svc and session and session.model:
+            self._model_display_name = cli_svc.get_model_display_name(session.model)
+        else:
+            self._model_display_name = "Claude"
+        self._streaming_msg._assistant_label = self._model_display_name
+
     def _sync_controls(self) -> None:
         """Sync list view controls and visibility from current state."""
         has_messages = bool(self.state.messages) or self.state.is_streaming
         self._empty_view.visible = not has_messages
         self._list_view.visible = has_messages
+
+        self._resolve_model_display_name_once()
 
         items: list[ft.Control] = []
 
@@ -116,7 +134,7 @@ class MessageList(ft.Column):
         for msg in self.state.messages:
             cached = self._item_cache.get(msg.id)
             if cached is None:
-                cached = MessageItem(msg)
+                cached = MessageItem(msg, assistant_label=self._model_display_name)
                 self._item_cache[msg.id] = cached
             items.append(cached)
 
@@ -189,9 +207,10 @@ class MessageList(ft.Column):
             self._sync_controls()
             return
 
+        self._resolve_model_display_name_once()
         cached = self._item_cache.get(new_message.id)
         if cached is None:
-            cached = MessageItem(new_message)
+            cached = MessageItem(new_message, assistant_label=self._model_display_name)
             self._item_cache[new_message.id] = cached
 
         controls = self._list_view.controls

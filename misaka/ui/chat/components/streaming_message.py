@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import flet as ft
 
+from misaka.config import get_assets_path
 from misaka.ui.chat.components.tool_call_block import ToolCallBlock
 
 if TYPE_CHECKING:
@@ -20,9 +21,15 @@ if TYPE_CHECKING:
 class StreamingMessage(ft.Container):
     """Live-updating display of a streaming assistant response."""
 
-    def __init__(self, state: AppState) -> None:
+    def __init__(
+        self,
+        state: AppState,
+        *,
+        assistant_label: str = "Claude",
+    ) -> None:
         super().__init__()
         self.state = state
+        self._assistant_label = assistant_label
         self._pulse_low = True
         # Incremental update tracking
         self._content_column: ft.Column | None = None
@@ -62,16 +69,18 @@ class StreamingMessage(ft.Container):
         controls: list[ft.Control] = []
 
         # Role label with progress indicator
+        claude_icon_path = str(get_assets_path() / "claude.png")
         controls.append(
             ft.Row(
                 controls=[
-                    ft.Icon(
-                        ft.Icons.AUTO_AWESOME_OUTLINED,
-                        size=14,
-                        color=ft.Colors.PRIMARY,
+                    ft.Image(
+                        src=claude_icon_path,
+                        width=14,
+                        height=14,
+                        fit=ft.BoxFit.CONTAIN,
                     ),
                     ft.Text(
-                        "Claude",
+                        self._assistant_label,
                         size=12,
                         weight=ft.FontWeight.W_600,
                         color=ft.Colors.PRIMARY,

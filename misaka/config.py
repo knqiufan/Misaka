@@ -117,6 +117,17 @@ def get_extra_path_dirs() -> list[str]:
     ]
 
 
+def get_assets_path() -> Path:
+    """Return the path to the assets directory.
+
+    Uses sys._MEIPASS when running as a frozen executable (PyInstaller),
+    otherwise the project's assets folder relative to the package root.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS) / "assets"  # type: ignore[attr-defined]
+    return Path(__file__).resolve().parent.parent / "assets"
+
+
 def get_expanded_path() -> str:
     """Build an expanded PATH that includes common CLI tool locations."""
     current = os.environ.get("PATH", "")
