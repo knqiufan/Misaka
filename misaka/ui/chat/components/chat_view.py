@@ -70,7 +70,6 @@ class ChatView(ft.Column):
         self._update_banner: UpdateBanner | None = None
         self._header: ft.Container | None = None
         self._title_text: ft.Text | None = None
-        self._working_dir_text: ft.Text | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -131,10 +130,8 @@ class ChatView(ft.Column):
             visible=has_session,
         )
 
-        # Session title + working directory
+        # Session title
         title_text = session.title if session else "Misaka"
-        working_dir = session.working_directory if session else ""
-
         self._title_text = ft.Text(
             title_text,
             size=15,
@@ -143,25 +140,12 @@ class ChatView(ft.Column):
             overflow=ft.TextOverflow.ELLIPSIS,
         )
 
-        title_col_controls: list[ft.Control] = [self._title_text]
-        if working_dir:
-            self._working_dir_text = ft.Text(
-                working_dir,
-                size=10,
-                opacity=0.35,
-                max_lines=1,
-                overflow=ft.TextOverflow.ELLIPSIS,
-            )
-            title_col_controls.append(self._working_dir_text)
-        else:
-            self._working_dir_text = None
-
         self._header = ft.Container(
             content=ft.Row(
                 controls=[
                     left_toggle,
                     ft.Column(
-                        controls=title_col_controls,
+                        controls=[self._title_text],
                         spacing=0,
                         expand=True,
                     ),
@@ -210,31 +194,7 @@ class ChatView(ft.Column):
         )
 
         # --- Welcome view (when no session selected) ---
-        welcome_view = ft.Container(
-            content=ft.Column(
-                controls=[
-                    ft.Icon(ft.Icons.SMART_TOY_OUTLINED, size=56, opacity=0.15),
-                    ft.Text(
-                        t("app.welcome_title"),
-                        size=22,
-                        weight=ft.FontWeight.W_300,
-                        text_align=ft.TextAlign.CENTER,
-                        opacity=0.4,
-                    ),
-                    ft.Text(
-                        t("app.welcome_subtitle"),
-                        size=13,
-                        text_align=ft.TextAlign.CENTER,
-                        opacity=0.25,
-                    ),
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=10,
-            ),
-            alignment=ft.Alignment.CENTER,
-            expand=True,
-            visible=not has_session,
-        )
+        welcome_view = self._build_welcome_view(visible=not has_session)
 
         # --- Assemble ---
         self.controls = [
@@ -252,6 +212,52 @@ class ChatView(ft.Column):
                 ),
             ),
         ]
+
+    def _build_welcome_view(self, *, visible: bool = True) -> ft.Container:
+        """Build the welcome placeholder when no session is selected."""
+        icon_circle = ft.Container(
+            content=ft.Icon(
+                ft.Icons.BOLT,
+                size=48,
+                color=ft.Colors.with_opacity(0.35, ft.Colors.PRIMARY),
+            ),
+            padding=ft.Padding.all(16),
+            border_radius=999,
+            bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
+        )
+        title = ft.Text(
+            t("app.welcome_title"),
+            size=16,
+            weight=ft.FontWeight.W_500,
+            color=ft.Colors.ON_SURFACE,
+            text_align=ft.TextAlign.CENTER,
+        )
+        subtitle = ft.Text(
+            t("app.welcome_subtitle"),
+            size=13,
+            color=ft.Colors.ON_SURFACE_VARIANT,
+            text_align=ft.TextAlign.CENTER,
+        )
+        inner = ft.Container(
+            content=ft.Column(
+                controls=[icon_circle, title, subtitle],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=14,
+            ),
+            alignment=ft.Alignment.CENTER,
+            expand=True,
+        )
+        card = ft.Container(
+            content=inner,
+            padding=ft.Padding.symmetric(horizontal=40, vertical=270),
+            expand=True,
+        )
+        return ft.Container(
+            content=card,
+            alignment=ft.Alignment.CENTER,
+            expand=True,
+            visible=visible,
+        )
 
     def _refresh_error_banner(self) -> None:
         """Update the error banner visibility and content."""
@@ -335,12 +341,10 @@ class ChatView(ft.Column):
         self._build_ui()
 
     def refresh_header_only(self) -> None:
-        """Update only the header title/working dir without full rebuild."""
+        """Update only the header title without full rebuild."""
         session = self.state.current_session
         if self._title_text:
             self._title_text.value = session.title if session else "Misaka"
-        if self._working_dir_text and session:
-            self._working_dir_text.value = session.working_directory or ""
         if self._connection_status:
             self._connection_status.set_status(is_streaming=self.state.is_streaming)
         if self._header:
