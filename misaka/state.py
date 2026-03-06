@@ -130,7 +130,6 @@ class AppState:
         # --- Panel visibility ---
         self.left_panel_open: bool = True
         self.right_panel_open: bool = True
-        self.right_panel_tab: str = "files"  # "files" | "tasks"
 
         # --- Navigation ---
         self.current_page: str = "chat"  # "chat" | "settings" | "plugins" | "extensions"

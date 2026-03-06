@@ -116,9 +116,6 @@ class ChatPage(ft.Stack):
             state=self.state,
             on_file_click=self._on_file_click,
             on_file_select=self._on_file_select,
-            on_task_status_change=self._on_task_status_change,
-            on_task_create=self._on_task_create,
-            on_task_delete=self._on_task_delete,
             on_refresh_file_tree=self._on_refresh_file_tree,
             on_load_folder_children=self._on_load_folder_children,
         )
@@ -211,7 +208,6 @@ class ChatPage(ft.Stack):
         self.state.has_more_messages = has_more
         session = self.state.current_session
         if session:
-            self.state.tasks = self.db.get_tasks_by_session(session_id)
             self.state.sdk_session_id = session.sdk_session_id or None
             self._load_file_tree(session)
         # Refresh UI — targeted refreshes instead of _rebuild_all()
@@ -590,36 +586,6 @@ class ChatPage(ft.Stack):
         """Handle file/folder selection from right-click menu - insert path into input."""
         if self._chat_view:
             self._chat_view.insert_file_path(path)
-
-    def _on_task_status_change(self, task_id: str, new_status: str) -> None:
-        """Handle task status change."""
-        self.db.update_task(task_id, status=new_status)
-        # Update in-memory instead of re-querying DB
-        for task in self.state.tasks:
-            if task.id == task_id:
-                task.status = new_status
-                break
-        if self._right_panel:
-            self._right_panel.refresh()
-        self.state.update()
-
-    def _on_task_create(self, title: str) -> None:
-        """Create a new task."""
-        if not self.state.current_session_id:
-            return
-        task = self.db.create_task(self.state.current_session_id, title)
-        self.state.tasks.append(task)
-        if self._right_panel:
-            self._right_panel.refresh()
-        self.state.update()
-
-    def _on_task_delete(self, task_id: str) -> None:
-        """Delete a task."""
-        self.db.delete_task(task_id)
-        self.state.tasks = [t for t in self.state.tasks if t.id != task_id]
-        if self._right_panel:
-            self._right_panel.refresh()
-        self.state.update()
 
     # ---- Permission operations ----
 

@@ -101,26 +101,35 @@ class FileTree(ft.Column):
 
     def _build_ui(self) -> None:
         if not self._nodes:
+            icon_circle = ft.Container(
+                content=ft.Icon(
+                    ft.Icons.FOLDER_OPEN_ROUNDED,
+                    size=40,
+                    color=ft.Colors.with_opacity(0.35, ft.Colors.PRIMARY),
+                ),
+                padding=ft.Padding.all(12),
+                border_radius=999,
+                bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
+            )
+            title = ft.Text(
+                t("right_panel.no_files"),
+                size=14,
+                weight=ft.FontWeight.W_500,
+                color=ft.Colors.ON_SURFACE,
+                text_align=ft.TextAlign.CENTER,
+            )
+            empty_content = ft.Container(
+                content=ft.Column(
+                    controls=[icon_circle, title],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=12,
+                ),
+                padding=ft.Padding.symmetric(horizontal=24, vertical=250),
+                alignment=ft.Alignment.CENTER,
+            )
             self.controls = [
                 ft.GestureDetector(
-                    content=ft.Container(
-                        content=ft.Column(
-                            controls=[
-                                ft.Icon(ft.Icons.FOLDER_OPEN, size=28, opacity=0.25),
-                                ft.Text(
-                                    t("right_panel.no_files"),
-                                    italic=True,
-                                    size=12,
-                                    opacity=0.4,
-                                    text_align=ft.TextAlign.CENTER,
-                                ),
-                            ],
-                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                            spacing=6,
-                        ),
-                        padding=24,
-                        alignment=ft.Alignment.CENTER,
-                    ),
+                    content=empty_content,
                     on_tap=lambda _: shared_context_menu.dismiss(),
                 )
             ]

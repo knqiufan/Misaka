@@ -1,8 +1,6 @@
 """Right panel component.
 
-Collapsible panel on the right side containing file tree and task list,
-toggled via tab buttons. Supports dynamic content switching and
-file preview display.
+Collapsible panel on the right side containing file tree and file preview.
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ from misaka.i18n import t
 from misaka.ui.common.theme import make_icon_button
 from misaka.ui.file.components.file_preview import FilePreview
 from misaka.ui.file.components.file_tree import FileTree
-from misaka.ui.task.components.task_list import TaskList
 
 if TYPE_CHECKING:
     from misaka.db.models import FilePreview as FilePreviewModel
@@ -24,16 +21,13 @@ if TYPE_CHECKING:
 
 
 class RightPanel(ft.Column):
-    """Right sidebar with file tree, file preview, and task list tabs."""
+    """Right sidebar with file tree and file preview."""
 
     def __init__(
         self,
         state: AppState,
         on_file_click: Callable[[str], None] | None = None,
         on_file_select: Callable[[str], None] | None = None,
-        on_task_status_change: Callable[[str, str], None] | None = None,
-        on_task_create: Callable[[str], None] | None = None,
-        on_task_delete: Callable[[str], None] | None = None,
         on_refresh_file_tree: Callable[[], None] | None = None,
         on_load_folder_children: Callable[[str], None] | None = None,
     ) -> None:
@@ -41,135 +35,101 @@ class RightPanel(ft.Column):
         self.state = state
         self._on_file_click = on_file_click
         self._on_file_select = on_file_select
-        self._on_task_status_change = on_task_status_change
-        self._on_task_create = on_task_create
-        self._on_task_delete = on_task_delete
         self._on_refresh_file_tree = on_refresh_file_tree
         self._on_load_folder_children = on_load_folder_children
 
         self._file_tree: FileTree | None = None
         self._file_preview: FilePreview | None = None
-        self._task_list: TaskList | None = None
         self._current_preview: FilePreviewModel | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
-        # Tab buttons
-        is_files = self.state.right_panel_tab == "files"
         session = self.state.current_session
         working_dir = (
             self.state.file_tree_root
             or (session.working_directory if session else "")
         )
 
-        files_btn = self._build_tab_button(
-            label=t("right_panel.files"),
-            tab_key="files",
-            is_active=is_files,
-        )
-        tasks_btn = self._build_tab_button(
-            label=t("right_panel.tasks"),
-            tab_key="tasks",
-            is_active=not is_files,
-        )
-
-        tab_bar = ft.Container(
-            content=ft.Row(
-                controls=[files_btn, tasks_btn],
-                spacing=6,
-            ),
-            padding=ft.Padding.symmetric(horizontal=8, vertical=6),
-            margin=ft.Margin.only(left=8, right=8, top=6, bottom=4),
-            # bgcolor=ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
-            border_radius=12,
-        )
-
         # Content area
-        if is_files:
-            # Show loading indicator while scanning
-            if self.state.file_tree_loading:
-                loading_indicator = ft.Container(
-                    content=ft.Column(
+        if self.state.file_tree_loading:
+            loading_indicator = ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.ProgressRing(width=20, height=20),
+                        ft.Text(
+                            t("right_panel.scanning"),
+                            size=11,
+                            opacity=0.5,
+                        ),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=8,
+                ),
+                alignment=ft.Alignment.CENTER,
+                expand=True,
+            )
+            content = loading_indicator
+        else:
+            file_nodes = self._parse_file_tree_nodes()
+            self._file_tree = FileTree(
+                nodes=file_nodes,
+                on_file_click=self._handle_file_click,
+                on_file_select=self._handle_file_select,
+                on_load_children=self._on_load_folder_children,
+                expanded_paths=getattr(
+                    self.state, "file_tree_expanded_paths", set()
+                ),
+                loading_paths=getattr(
+                    self.state, "file_tree_loading_paths", set()
+                ),
+            )
+            self._file_preview = FilePreview(preview=self._current_preview)
+
+            if self._current_preview:
+                back_btn = ft.Container(
+                    content=ft.Row(
                         controls=[
-                            ft.ProgressRing(width=20, height=20),
+                            make_icon_button(
+                                ft.Icons.ARROW_BACK_ROUNDED,
+                                on_click=self._close_preview,
+                                tooltip=t("right_panel.back_to_tree"),
+                            ),
                             ft.Text(
-                                t("right_panel.scanning"),
-                                size=11,
-                                opacity=0.5,
+                                t("right_panel.file_preview"),
+                                size=12,
+                                weight=ft.FontWeight.W_500,
                             ),
                         ],
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=8,
+                        spacing=4,
                     ),
-                    alignment=ft.Alignment.CENTER,
+                    padding=ft.Padding.only(left=4, bottom=4),
+                )
+                content = ft.Column(
+                    controls=[back_btn, self._file_preview],
+                    spacing=0,
                     expand=True,
                 )
-                content = loading_indicator
             else:
-                # Parse file tree nodes from state
-                file_nodes = self._parse_file_tree_nodes()
-                self._file_tree = FileTree(
-                    nodes=file_nodes,
-                    on_file_click=self._handle_file_click,
-                    on_file_select=self._handle_file_select,
-                    on_load_children=self._on_load_folder_children,
-                    expanded_paths=getattr(
-                        self.state, "file_tree_expanded_paths", set()
-                    ),
-                    loading_paths=getattr(
-                        self.state, "file_tree_loading_paths", set()
-                    ),
-                )
-                self._file_preview = FilePreview(preview=self._current_preview)
+                content = self._file_tree
 
-                if self._current_preview:
-                    back_btn = ft.Container(
-                        content=ft.Row(
-                            controls=[
-                                make_icon_button(
-                                    ft.Icons.ARROW_BACK_ROUNDED,
-                                    on_click=self._close_preview,
-                                    tooltip=t("right_panel.back_to_tree"),
-                                ),
-                                ft.Text(
-                                    t("right_panel.file_preview"),
-                                    size=12,
-                                    weight=ft.FontWeight.W_500,
-                                ),
-                            ],
-                            spacing=4,
-                        ),
-                        padding=ft.Padding.only(left=4, bottom=4),
-                    )
-                    content = ft.Column(
-                        controls=[back_btn, self._file_preview],
-                        spacing=0,
-                        expand=True,
-                    )
-                else:
-                    content = self._file_tree
-        else:
-            self._task_list = TaskList(
-                tasks=self.state.tasks,
-                on_status_change=self._on_task_status_change,
-                on_create=self._on_task_create,
-                on_delete=self._on_task_delete,
-            )
-            content = self._task_list
-
+        icon_pill = ft.Container(
+            content=ft.Icon(
+                ft.Icons.FOLDER_OPEN_ROUNDED,
+                size=14,
+                color=ft.Colors.with_opacity(0.35, ft.Colors.PRIMARY),
+            ),
+            padding=ft.Padding.symmetric(horizontal=4, vertical=4),
+            border_radius=999,
+            bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
+        )
         dir_display = ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Icon(
-                        ft.Icons.FOLDER_OPEN_ROUNDED,
-                        size=14,
-                        color=ft.Colors.PRIMARY,
-                        opacity=0.6,
-                    ),
+                    icon_pill,
                     ft.Text(
                         working_dir or t("right_panel.no_files"),
-                        size=11,
-                        opacity=0.5,
+                        size=12,
+                        color=ft.Colors.ON_SURFACE_VARIANT,
                         max_lines=1,
                         overflow=ft.TextOverflow.ELLIPSIS,
                         expand=True,
@@ -181,45 +141,24 @@ class RightPanel(ft.Column):
                         icon_size=14,
                     ),
                 ],
-                spacing=5,
+                spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.Padding.only(left=10, right=10, top=1, bottom=4),
-            visible=is_files,
+            padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+            margin=ft.Margin.only(left=8, right=8, bottom=4),
+            border_radius=10,
+            bgcolor=ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
         )
 
         self.controls = [
-            tab_bar,
+            ft.Container(
+                content=ft.Text(t("right_panel.files"), size=13, weight=ft.FontWeight.W_600),
+                padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+                margin=ft.Margin.only(left=8, right=8, top=6, bottom=4),
+            ),
             dir_display,
             ft.Container(content=content, expand=True, clip_behavior=ft.ClipBehavior.HARD_EDGE),
         ]
-
-    def _build_tab_button(self, label: str, tab_key: str, is_active: bool) -> ft.Control:
-        """Build right-panel tab with clear active/inactive separation."""
-        text_color = ft.Colors.PRIMARY if is_active else ft.Colors.with_opacity(0.68, ft.Colors.ON_SURFACE)
-        return ft.Container(
-            content=ft.Text(
-                label,
-                size=13,
-                weight=ft.FontWeight.W_600 if is_active else ft.FontWeight.W_500,
-                color=text_color,
-            ),
-            padding=ft.Padding.symmetric(horizontal=14, vertical=8),
-            border_radius=10,
-            bgcolor=(
-                ft.Colors.with_opacity(0.14, ft.Colors.PRIMARY)
-                if is_active
-                else ft.Colors.TRANSPARENT
-            ),
-            border=ft.Border.all(
-                1,
-                ft.Colors.with_opacity(0.24, ft.Colors.PRIMARY)
-                if is_active
-                else ft.Colors.TRANSPARENT,
-            ),
-            on_click=lambda e, key=tab_key: self._switch_tab(key),
-            ink=True,
-        )
 
     def _parse_file_tree_nodes(self):
         """Parse file tree nodes from state."""
@@ -250,12 +189,6 @@ class RightPanel(ft.Column):
             extension=d.get("extension"),
         )
 
-    def _switch_tab(self, tab: str) -> None:
-        self.state.right_panel_tab = tab
-        self._current_preview = None
-        self._build_ui()
-        self.update()
-
     def _handle_file_click(self, path: str) -> None:
         if self._on_file_click:
             self._on_file_click(path)
@@ -276,7 +209,6 @@ class RightPanel(ft.Column):
     def show_file_preview(self, preview) -> None:
         """Display a file preview in the panel."""
         self._current_preview = preview
-        self.state.right_panel_tab = "files"
         self._build_ui()
 
     def refresh(self) -> None:
