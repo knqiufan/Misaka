@@ -22,6 +22,7 @@ from misaka.ui.dialogs.import_session_dialog import ImportSessionDialog
 from misaka.ui.file.components.folder_picker import FolderPicker
 from misaka.ui.panels.resize_handle import ResizeHandle
 from misaka.ui.panels.right_panel import RightPanel
+from misaka.ui.common.theme import get_panel_card_style
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -84,10 +85,12 @@ class ChatPage(ft.Stack):
             on_import=self._on_import_session,
         )
 
+        _panel_style = get_panel_card_style()
         self._left_container = ft.Container(
             content=self._chat_list,
             width=self._left_width,
             visible=self.state.left_panel_open,
+            **_panel_style,
         )
 
         # --- Chat view (center panel) ---
@@ -124,6 +127,7 @@ class ChatPage(ft.Stack):
             content=self._right_panel,
             width=self._right_width,
             visible=self.state.right_panel_open,
+            **_panel_style,
         )
 
         # --- Resize handles ---
@@ -136,10 +140,14 @@ class ChatPage(ft.Stack):
             visible=self.state.left_panel_open,
         )
         self._left_divider = ft.VerticalDivider(
-            width=1, visible=self.state.left_panel_open,
+            width=1,
+            color=ft.Colors.TRANSPARENT,
+            visible=self.state.left_panel_open,
         )
         self._right_divider = ft.VerticalDivider(
-            width=1, visible=self.state.right_panel_open,
+            width=1,
+            color=ft.Colors.TRANSPARENT,
+            visible=self.state.right_panel_open,
         )
         self._right_resize_container = ft.Container(
             content=right_resize, height=float("inf"),
@@ -147,12 +155,17 @@ class ChatPage(ft.Stack):
         )
 
         # --- Main layout ---
+        center_container = ft.Container(
+            content=self._chat_view,
+            expand=True,
+            **_panel_style,
+        )
         main_row = ft.Row(
             controls=[
                 self._left_container,
                 self._left_resize_container,
                 self._left_divider,
-                ft.Container(content=self._chat_view, expand=True),
+                center_container,
                 self._right_divider,
                 self._right_resize_container,
                 self._right_container,
@@ -160,8 +173,14 @@ class ChatPage(ft.Stack):
             spacing=0,
             expand=True,
         )
-
-        self.controls = [main_row]
+        # Horizontal padding for shadow visibility; vertical=0 to match nav_rail height
+        self.controls = [
+            ft.Container(
+                content=main_row,
+                expand=True,
+                padding=ft.Padding.symmetric(horizontal=12, vertical=0),
+            ),
+        ]
 
     # ---- Session operations ----
 

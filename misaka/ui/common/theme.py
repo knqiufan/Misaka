@@ -196,6 +196,21 @@ def make_card(
     )
 
 
+def get_panel_card_style() -> dict:
+    """Return common style for chat page panels, matching nav_rail: rounded corners, soft shadow."""
+    return {
+        "border_radius": 12,
+        "bgcolor": ft.Colors.SURFACE_CONTAINER,
+        "shadow": ft.BoxShadow(
+            blur_radius=8,
+            spread_radius=2,
+            color=ft.Colors.with_opacity(0.06, ft.Colors.BLACK),
+            offset=ft.Offset(2, 0),
+        ),
+        "clip_behavior": ft.ClipBehavior.ANTI_ALIAS,
+    }
+
+
 # ---- Section card (settings / config pages) -------------------------------
 
 def make_section_card(content: ft.Control, **kwargs) -> ft.Container:
