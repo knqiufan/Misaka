@@ -105,8 +105,8 @@ class ChatList(ft.Column):
 
         self._session_list = ft.ListView(
             expand=True,
-            spacing=1,
-            padding=ft.Padding.symmetric(horizontal=6, vertical=6),
+            spacing=2,
+            padding=ft.Padding.symmetric(horizontal=8, vertical=6),
         )
 
         list_surface = ft.GestureDetector(
@@ -232,12 +232,12 @@ class ChatList(ft.Column):
         ]
 
     def _build_session_item(self, session: ChatSession) -> ft.Control:
-        """Build a single session list item with hover-visible delete button."""
+        """Build a single session list item with refined minimal design."""
         from misaka.ui.common.theme import ACCENT_BLUE, SUCCESS_GREEN, WARNING_AMBER
 
         is_selected = session.id == self.state.current_session_id
 
-        # Background stream status dot
+        # Background stream status dot (pulsing when streaming)
         bg_status = self.state.get_background_status(session.id)
         status_dot: ft.Control | None = None
         if bg_status is not None:
@@ -247,25 +247,14 @@ class ChatList(ft.Column):
                 else SUCCESS_GREEN
             )
             status_dot = ft.Container(
-                width=7,
-                height=7,
-                border_radius=4,
+                width=6,
+                height=6,
+                border_radius=3,
                 bgcolor=dot_color,
                 opacity=0.3 if self._pulse_phase else 1.0,
                 animate_opacity=ft.Animation(800, ft.AnimationCurve.EASE_IN_OUT),
-                shadow=ft.BoxShadow(
-                    blur_radius=4,
-                    spread_radius=0,
-                    color=ft.Colors.with_opacity(0.4, dot_color),
-                ),
+                margin=ft.Margin.only(right=6),
             )
-
-        subtitle_parts: list[str] = []
-        if session.project_name:
-            subtitle_parts.append(session.project_name)
-        if session.updated_at:
-            subtitle_parts.append(self._format_time(session.updated_at))
-        subtitle = " \u00b7 ".join(subtitle_parts) if subtitle_parts else ""
 
         mode_colors = {
             "agent": ACCENT_BLUE,
@@ -274,82 +263,64 @@ class ChatList(ft.Column):
         }
         mode_color = mode_colors.get(session.mode, "#6b7280")
 
+        # Mode indicator: subtle left accent dot
+        mode_dot = ft.Container(
+            width=4,
+            height=4,
+            border_radius=2,
+            bgcolor=mode_color,
+            margin=ft.Margin.only(right=8),
+        )
+
+        # Main content: title only
+        title_text = ft.Text(
+            session.title or "",
+            size=13,
+            weight=ft.FontWeight.W_500 if is_selected else ft.FontWeight.NORMAL,
+            max_lines=1,
+            overflow=ft.TextOverflow.ELLIPSIS,
+            expand=True,
+        )
+
         item_content = ft.Row(
-            controls=[
-                ft.Column(
-                    controls=[
-                        ft.Text(
-                            session.title,
-                            size=13,
-                            weight=ft.FontWeight.W_500 if is_selected else ft.FontWeight.NORMAL,
-                            max_lines=1,
-                            overflow=ft.TextOverflow.ELLIPSIS,
-                        ),
-                        ft.Row(
-                            controls=[
-                                ft.Container(
-                                    content=ft.Text(
-                                        session.mode.upper(),
-                                        size=8,
-                                        color="#ffffff",
-                                        weight=ft.FontWeight.W_600,
-                                    ),
-                                    bgcolor=mode_color,
-                                    border_radius=5,
-                                    padding=ft.Padding.symmetric(horizontal=6, vertical=1),
-                                ),
-                                ft.Text(
-                                    subtitle,
-                                    size=11,
-                                    opacity=0.35,
-                                    max_lines=1,
-                                    overflow=ft.TextOverflow.ELLIPSIS,
-                                    expand=True,
-                                ),
-                            ],
-                            spacing=6,
-                        ),
-                    ],
-                    spacing=3,
-                    expand=True,
-                ),
-            ],
-            spacing=4,
+            controls=[mode_dot, title_text],
+            spacing=0,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
         if status_dot:
             item_content.controls.insert(0, status_dot)
 
+        sid = session.id
+
         def on_item_hover(e) -> None:
             hovering = e.data == "true"
-            if not is_selected:
+            # Use runtime selection state; do not overwrite selected style
+            now_selected = self.state.current_session_id == sid
+            if now_selected:
+                inner.bgcolor = ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)
+            else:
                 inner.bgcolor = (
-                    ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE)
+                    ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
                     if hovering
                     else ft.Colors.TRANSPARENT
                 )
-                inner.update()
+            inner.update()
 
+        # Flat design: single bgcolor, no border/ink to avoid layered overlay
         inner = ft.Container(
             content=item_content,
-            padding=ft.Padding.only(left=12, right=6, top=8, bottom=8),
-            border_radius=12,
+            padding=ft.Padding.symmetric(horizontal=12, vertical=10),
+            border_radius=8,
             bgcolor=(
-                ft.Colors.with_opacity(0.10, ft.Colors.PRIMARY)
+                ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)
                 if is_selected
                 else ft.Colors.TRANSPARENT
             ),
-            border=ft.Border.all(
-                1,
-                ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)
-                if is_selected
-                else ft.Colors.TRANSPARENT,
-            ),
-            on_click=lambda e, sid=session.id: self._handle_select(sid),
+            on_click=lambda e, s=sid: self._handle_select(s),
             on_hover=on_item_hover,
-            animate=ft.Animation(150, ft.AnimationCurve.EASE_OUT),
-            ink=True,
+            animate=ft.Animation(120, ft.AnimationCurve.EASE_OUT),
+            ink=False,
         )
 
         return ft.GestureDetector(
@@ -540,23 +511,19 @@ class ChatList(ft.Column):
             return
         self._last_selected_id = new_id
 
-        # Update old item bgcolor
+        # Update old item (unselected)
         if old_id and old_id in self._item_cache:
             old_ctrl = self._item_cache[old_id]
             inner = getattr(old_ctrl, "content", None)
             if inner and isinstance(inner, ft.Container):
                 inner.bgcolor = ft.Colors.TRANSPARENT
-                inner.border = ft.Border.all(1, ft.Colors.TRANSPARENT)
 
-        # Update new item bgcolor
+        # Update new item (selected)
         if new_id and new_id in self._item_cache:
             new_ctrl = self._item_cache[new_id]
             inner = getattr(new_ctrl, "content", None)
             if inner and isinstance(inner, ft.Container):
-                inner.bgcolor = ft.Colors.with_opacity(0.10, ft.Colors.PRIMARY)
-                inner.border = ft.Border.all(
-                    1, ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY),
-                )
+                inner.bgcolor = ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)
 
         if self._session_list:
             with contextlib.suppress(Exception):
@@ -581,10 +548,10 @@ class ChatList(ft.Column):
             if not row or not hasattr(row, "controls") or not row.controls:
                 continue
             first = row.controls[0]
-            # Status dot is a small 7×7 Container with border_radius=4
+            # Status dot is a small 6×6 Container with border_radius=3
             if (isinstance(first, ft.Container)
-                    and getattr(first, "width", None) == 7
-                    and getattr(first, "height", None) == 7):
+                    and getattr(first, "width", None) == 6
+                    and getattr(first, "height", None) == 6):
                 first.opacity = target_opacity
 
     def _start_pulse_timer(self) -> None:
@@ -607,9 +574,3 @@ class ChatList(ft.Column):
                 self._pulse_phase = False
 
         self.state.page.run_task(_pulse_loop)
-
-    @staticmethod
-    def _format_time(iso_str: str) -> str:
-        """Format an ISO datetime to a relative or short time."""
-        from misaka.utils.time_utils import format_date_or_time
-        return format_date_or_time(iso_str)
