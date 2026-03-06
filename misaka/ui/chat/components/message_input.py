@@ -24,6 +24,15 @@ if TYPE_CHECKING:
 _FOLDER_COLOR = "#f59e0b"
 _MAX_FILE_RESULTS = 15
 
+# Claude 多模态模型支持的附件格式（图片、文档、表格、演示）
+# 参考: https://docs.anthropic.com/en/docs/build-with-claude/file-support
+_CLAUDE_ATTACH_EXTENSIONS = [
+    "jpg", "jpeg", "png", "gif", "webp",  # 图片
+    "pdf", "docx", "txt", "rtf", "odt", "html", "epub", "json", "md",  # 文档
+    "csv", "tsv", "xlsx",  # 表格
+    "pptx",  # 演示
+]
+
 
 class MessageInput(ft.Container):
     """Message input area with send/stop button, file attachment, and slash commands."""
@@ -767,50 +776,40 @@ class MessageInput(ft.Container):
             self._on_send(user_text)
 
     def _handle_attach(self, e: ft.ControlEvent) -> None:
-        """Open a manual file-path dialog (stable fallback UX)."""
-        page = getattr(self.state, "page", None)
+        """打开系统文件选择器，选择 Claude 多模态支持的附件。"""
+        page = e.page if e and e.page else getattr(self.state, "page", None)
         if not page:
             return
-
-        from misaka.ui.common.theme import make_button, make_dialog, make_text_button
-
-        path_field = ft.TextField(
-            label=t("chat.attach_file"),
-            hint_text="C:/path/to/file.txt\nD:/path/to/image.png",
-            multiline=True,
-            min_lines=3,
-            max_lines=6,
-            autofocus=True,
-        )
-
-        def do_confirm(ev: ft.ControlEvent) -> None:
-            raw = (path_field.value or "").strip()
-            if not raw:
-                return
-            parts = raw.replace(";", "\n").splitlines()
-            paths = [p.strip().strip('"') for p in parts if p.strip()]
+        paths = self._pick_attach_files_native()
+        if paths:
             self._append_file_paths(paths)
-            page.pop_dialog()
-            self._schedule_focus(page)
+        self._schedule_focus(page)
 
-        dialog = make_dialog(
-            title=t("chat.attach_file"),
-            content=ft.Column(
-                controls=[
-                    ft.Text("输入文件绝对路径，可多行粘贴或使用分号分隔。", size=12, opacity=0.7),
-                    path_field,
-                ],
-                spacing=12,
-                tight=True,
-                width=460,
-            ),
-            actions=[
-                make_text_button(t("common.cancel"), on_click=lambda ev: page.pop_dialog()),
-                make_button(t("common.confirm"), on_click=do_confirm),
-            ],
-            modal=True,
-        )
-        page.show_dialog(dialog)
+    @staticmethod
+    def _pick_attach_files_native() -> list[str]:
+        """使用系统原生文件选择器选择附件，返回选中文件路径列表。"""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+        except ImportError:
+            return []
+
+        patterns = " ".join(f"*.{ext}" for ext in _CLAUDE_ATTACH_EXTENSIONS)
+        filetypes = [
+            (t("chat.attach_file"), patterns),
+            ("All files", "*.*"),
+        ]
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        try:
+            selected = filedialog.askopenfilenames(
+                title=t("chat.select_files"),
+                filetypes=filetypes,
+            )
+            return list(selected) if selected else []
+        finally:
+            root.destroy()
 
     def _append_file_paths(self, paths: list[str]) -> None:
         """Append selected file markers into input box."""

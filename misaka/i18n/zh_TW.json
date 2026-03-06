@@ -28,6 +28,7 @@
     "no_matching_sessions": "沒有符合的會話",
     "type_message": "輸入訊息...（Enter 傳送，Shift+Enter 換行）",
     "attach_file": "附加檔案",
+    "select_files": "選擇要附加的檔案",
     "search_sessions": "搜尋會話...",
     "no_messages": "還沒有訊息",
     "send_to_start": "傳送訊息開始對話",

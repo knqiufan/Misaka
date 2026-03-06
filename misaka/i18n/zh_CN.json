@@ -28,6 +28,7 @@
     "no_matching_sessions": "没有匹配的会话",
     "type_message": "输入消息（回车发送，Shift+回车换行）",
     "attach_file": "附加文件",
+    "select_files": "选择要附加的文件",
     "search_sessions": "搜索会话...",
     "no_messages": "还没有消息",
     "send_to_start": "发送消息开始对话",

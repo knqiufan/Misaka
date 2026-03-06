@@ -28,6 +28,7 @@
     "no_matching_sessions": "No matching sessions",
     "type_message": "Type a message... (Enter to send, Shift+Enter for newline)",
     "attach_file": "Attach file",
+    "select_files": "Select files to attach",
     "search_sessions": "Search sessions...",
     "no_messages": "No messages yet",
     "send_to_start": "Send a message to start the conversation",

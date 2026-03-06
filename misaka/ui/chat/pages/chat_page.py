@@ -540,9 +540,8 @@ class ChatPage(ft.Stack):
         """Update left panel width during drag."""
         if self._dragging_side != "left":
             return
-        # Calculate new width from global x position
-        # Account for left padding (12px from container)
-        new_width = global_x - 12
+        # NavRail width (64px) + main_container left padding (12px) = 76px offset
+        new_width = global_x - 64 - 12
         new_width = max(self._min_panel_width, min(self._max_panel_width, new_width))
         self._left_width = new_width
 
@@ -574,7 +573,7 @@ class ChatPage(ft.Stack):
         """Update right panel width during drag."""
         if self._dragging_side != "right" or not self.state.page:
             return
-        page_width = self.state.page.window_width or 800
+        page_width = self.state.page.width or 800
         # Account for padding (12 on right side)
         new_width = (page_width - 12) - global_x
         new_width = max(self._min_panel_width, min(self._max_panel_width, new_width))
