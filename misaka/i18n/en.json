@@ -138,7 +138,7 @@
     "claude_debug_log_desc": "Emit concise SDK debug info (start/end/message stats/errors) for troubleshooting."
   },
   "plugins": {
-    "title": "Plugins (MCP Servers)",
+    "title": "MCP Servers",
     "description": "Manage MCP (Model Context Protocol) servers that extend Claude's capabilities.",
     "add_server": "Add Server",
     "add_mcp_server": "Add MCP Server",

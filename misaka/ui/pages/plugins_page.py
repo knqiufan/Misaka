@@ -14,10 +14,13 @@ import flet as ft
 from misaka.i18n import t
 from misaka.ui.common.theme import (
     MONO_FONT_FAMILY,
+    RADIUS_LG,
+    RADIUS_XL,
     make_badge,
     make_button,
     make_dialog,
     make_divider,
+    make_empty_state,
     make_icon_button,
     make_text_button,
 )
@@ -50,13 +53,80 @@ class PluginsPage(ft.Column):
         # Load MCP config
         self._load_mcp_config()
 
-        header = ft.Container(
+        header = self._build_header()
+        self._server_list = ft.Column(spacing=10)
+        self._refresh_server_list()
+        server_container = self._build_server_container()
+        config_info = self._build_config_info()
+
+        inner = ft.Column(
+            controls=[header, make_divider(), server_container, config_info],
+            spacing=0,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
+
+        main_card = ft.Container(
+            content=inner,
+            margin=ft.Margin.symmetric(horizontal=20, vertical=16),
+            padding=ft.Padding.all(28),
+            expand=True,
+            border_radius=RADIUS_XL,
+            bgcolor=ft.Colors.SURFACE_CONTAINER,
+            border=ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE),
+            ),
+            shadow=[
+                ft.BoxShadow(
+                    blur_radius=24,
+                    spread_radius=-4,
+                    color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 4),
+                ),
+                ft.BoxShadow(
+                    blur_radius=12,
+                    spread_radius=-2,
+                    color=ft.Colors.with_opacity(0.04, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 2),
+                ),
+            ],
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        )
+
+        self.controls = [main_card]
+
+    def _build_header(self) -> ft.Container:
+        """Build page header with title and add button."""
+        return ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Text(
-                        t("plugins.title"),
-                        size=22,
-                        weight=ft.FontWeight.W_600,
+                    ft.Container(
+                        content=ft.Icon(
+                            ft.Icons.EXTENSION,
+                            size=24,
+                            color=ft.Colors.PRIMARY,
+                        ),
+                        width=44,
+                        height=44,
+                        border_radius=RADIUS_LG,
+                        bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY),
+                        alignment=ft.Alignment.CENTER,
+                    ),
+                    ft.Column(
+                        controls=[
+                            ft.Text(
+                                t("plugins.title"),
+                                size=20,
+                                weight=ft.FontWeight.W_600,
+                            ),
+                            ft.Text(
+                                t("plugins.description"),
+                                size=12,
+                                opacity=0.65,
+                            ),
+                        ],
+                        spacing=2,
                         expand=True,
                     ),
                     make_button(
@@ -66,55 +136,67 @@ class PluginsPage(ft.Column):
                     ),
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=16,
             ),
-            padding=ft.Padding.only(left=24, right=24, top=20, bottom=8),
+            padding=ft.Padding.only(bottom=20),
         )
 
-        description = ft.Container(
-            content=ft.Text(
-                t("plugins.description"),
-                size=12,
-                opacity=0.6,
-            ),
-            padding=ft.Padding.symmetric(horizontal=24, vertical=4),
-        )
-
-        self._server_list = ft.Column(spacing=8)
-        self._refresh_server_list()
-
-        server_container = ft.Container(
+    def _build_server_container(self) -> ft.Container:
+        """Build server list container."""
+        return ft.Container(
             content=self._server_list,
-            padding=ft.Padding.symmetric(horizontal=24, vertical=12),
+            padding=ft.Padding.symmetric(vertical=16),
         )
 
-        # Config file info
-        config_info = ft.Container(
+    def _build_config_info(self) -> ft.Container:
+        """Build config files info block with card style."""
+        config_content = ft.Container(
             content=ft.Column(
                 controls=[
-                    make_divider(),
-                    ft.Text(
-                        t("plugins.config_files"),
-                        size=14,
-                        weight=ft.FontWeight.W_500,
+                    ft.Row(
+                        controls=[
+                            ft.Icon(
+                                ft.Icons.FOLDER_OPEN,
+                                size=18,
+                                color=ft.Colors.with_opacity(0.6, ft.Colors.ON_SURFACE),
+                            ),
+                            ft.Text(
+                                t("plugins.config_files"),
+                                size=13,
+                                weight=ft.FontWeight.W_500,
+                            ),
+                        ],
+                        spacing=8,
                     ),
-                    ft.Text(
-                        t("plugins.config_files_desc"),
-                        size=12,
-                        opacity=0.6,
-                        font_family=MONO_FONT_FAMILY,
+                    ft.Container(
+                        content=ft.Text(
+                            t("plugins.config_files_desc"),
+                            size=11,
+                            opacity=0.6,
+                            font_family=MONO_FONT_FAMILY,
+                        ),
+                        padding=ft.Padding.only(top=6),
                     ),
-                    make_button(
-                        t("plugins.reload_config"),
-                        icon=ft.Icons.REFRESH,
-                        on_click=self._reload_config,
+                    ft.Container(
+                        content=make_button(
+                            t("plugins.reload_config"),
+                            icon=ft.Icons.REFRESH,
+                            on_click=self._reload_config,
+                        ),
+                        padding=ft.Padding.only(top=12),
                     ),
                 ],
-                spacing=8,
+                spacing=0,
             ),
-            padding=ft.Padding.symmetric(horizontal=24, vertical=16),
+            padding=ft.Padding.all(16),
+            border_radius=RADIUS_LG,
+            bgcolor=ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            ),
         )
-
-        self.controls = [header, description, ft.Divider(height=1), server_container, config_info]
+        return ft.Container(content=config_content, padding=ft.Padding.only(top=8))
 
     def _load_mcp_config(self) -> None:
         """Load MCP server configurations from settings files."""
@@ -143,29 +225,23 @@ class PluginsPage(ft.Column):
             return
 
         if not self._mcp_configs:
+            empty = make_empty_state(
+                ft.Icons.EXTENSION_OFF,
+                t("plugins.no_servers"),
+                hint=t("plugins.no_servers_hint"),
+                icon_size=48,
+                icon_opacity=0.25,
+            )
             self._server_list.controls = [
                 ft.Container(
-                    content=ft.Column(
-                        controls=[
-                            ft.Icon(ft.Icons.EXTENSION_OFF, size=40, opacity=0.3),
-                            ft.Text(
-                                t("plugins.no_servers"),
-                                size=14,
-                                opacity=0.5,
-                                text_align=ft.TextAlign.CENTER,
-                            ),
-                            ft.Text(
-                                t("plugins.no_servers_hint"),
-                                size=12,
-                                opacity=0.3,
-                                text_align=ft.TextAlign.CENTER,
-                            ),
-                        ],
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        spacing=8,
+                    content=empty,
+                    padding=ft.Padding.symmetric(vertical=40, horizontal=24),
+                    border_radius=RADIUS_LG,
+                    bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
+                    border=ft.Border.all(
+                        1,
+                        ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
                     ),
-                    alignment=ft.Alignment.CENTER,
-                    padding=32,
                 )
             ]
             return
@@ -195,57 +271,76 @@ class PluginsPage(ft.Column):
             "http": "#10b981",
         }
 
+        card_content = ft.Row(
+            controls=[
+                ft.Container(
+                    content=ft.Icon(ft.Icons.EXTENSION, size=22, color=ft.Colors.PRIMARY),
+                    width=40,
+                    height=40,
+                    border_radius=RADIUS_LG,
+                    bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.PRIMARY),
+                    alignment=ft.Alignment.CENTER,
+                ),
+                ft.Column(
+                    controls=[
+                        ft.Row(
+                            controls=[
+                                ft.Text(
+                                    name,
+                                    size=14,
+                                    weight=ft.FontWeight.W_600,
+                                ),
+                                make_badge(
+                                    server_type.upper(),
+                                    bgcolor=type_colors.get(server_type, "#6b7280"),
+                                    size=9,
+                                ),
+                            ],
+                            spacing=8,
+                        ),
+                        ft.Text(
+                            detail,
+                            size=11,
+                            opacity=0.65,
+                            max_lines=1,
+                            overflow=ft.TextOverflow.ELLIPSIS,
+                        ),
+                    ],
+                    spacing=4,
+                    expand=True,
+                ),
+                make_icon_button(
+                    ft.Icons.EDIT_OUTLINED,
+                    tooltip=t("plugins.edit"),
+                    on_click=lambda e, n=name: self._show_edit_dialog(n),
+                ),
+                make_icon_button(
+                    ft.Icons.DELETE_OUTLINE,
+                    tooltip=t("plugins.remove"),
+                    on_click=lambda e, n=name: self._remove_server(n),
+                ),
+            ],
+            spacing=14,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
         return ft.Container(
-            content=ft.Row(
-                controls=[
-                    ft.Icon(ft.Icons.EXTENSION, size=20, color=ft.Colors.PRIMARY),
-                    ft.Column(
-                        controls=[
-                            ft.Row(
-                                controls=[
-                                    ft.Text(
-                                        name,
-                                        size=14,
-                                        weight=ft.FontWeight.W_500,
-                                    ),
-                                    make_badge(
-                                        server_type.upper(),
-                                        bgcolor=type_colors.get(server_type, "#6b7280"),
-                                        size=9,
-                                    ),
-                                ],
-                                spacing=8,
-                            ),
-                            ft.Text(
-                                detail,
-                                size=11,
-                                opacity=0.6,
-                                max_lines=1,
-                                overflow=ft.TextOverflow.ELLIPSIS,
-                            ),
-                        ],
-                        spacing=2,
-                        expand=True,
-                    ),
-                    make_icon_button(
-                        ft.Icons.EDIT_OUTLINED,
-                        tooltip=t("plugins.edit"),
-                        on_click=lambda e, n=name: self._show_edit_dialog(n),
-                    ),
-                    make_icon_button(
-                        ft.Icons.DELETE_OUTLINE,
-                        tooltip=t("plugins.remove"),
-                        on_click=lambda e, n=name: self._remove_server(n),
-                    ),
-                ],
-                spacing=12,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            padding=14,
-            border_radius=12,
+            content=card_content,
+            padding=ft.Padding.symmetric(horizontal=16, vertical=14),
+            border_radius=RADIUS_LG,
+            bgcolor=ft.Colors.with_opacity(0.02, ft.Colors.ON_SURFACE),
             border=ft.Border.all(
-                1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+                1,
+                ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE),
             ),
+            shadow=[
+                ft.BoxShadow(
+                    blur_radius=12,
+                    spread_radius=-2,
+                    color=ft.Colors.with_opacity(0.05, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 2),
+                ),
+            ],
         )
 
     def _show_add_dialog(self, e: ft.ControlEvent) -> None:

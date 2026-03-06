@@ -597,14 +597,34 @@ class SkillService:
         return skills
 
     @staticmethod
+    def _extract_plugin_id(file_path: str) -> str | None:
+        """Extract plugin directory name from a plugin skill file path.
+
+        Path layout: .../marketplaces/<m>/plugins/<plugin>/commands/<file>.md
+        Returns the <plugin> segment, or None if path does not match.
+        """
+        try:
+            p = Path(file_path).resolve(strict=False)
+            # parent = commands dir, parent.parent = plugin dir
+            commands_dir = p.parent
+            plugin_dir = commands_dir.parent
+            if commands_dir.name.lower() != "commands":
+                return None
+            return plugin_dir.name.lower()
+        except (ValueError, IndexError):
+            return None
+
+    @staticmethod
     def _deduplicate_skills(skills: list[SkillFile]) -> list[SkillFile]:
         """Remove duplicate skills from multi-source scans.
 
-        Two-pass strategy:
+        Three-pass strategy:
         1) De-duplicate by canonical file path (handles symlink/junction aliases).
         2) For installed skills only, collapse entries that have the same name and
            same content body (common when both `.agents/skills` and `.claude/skills`
            expose mirrored packages).
+        3) For plugin skills, collapse entries with same (plugin_id, skill_name)
+           when the same plugin exists in multiple marketplaces.
         """
         path_seen: dict[str, SkillFile] = {}
         path_order: list[str] = []
@@ -618,27 +638,35 @@ class SkillService:
 
         installed_priority = {"agents": 0, "claude": 1, None: 2}
         installed_seen: dict[tuple[str, str], int] = {}
+        plugin_seen: dict[tuple[str, str], int] = {}
         result: list[SkillFile] = []
 
         for canonical in path_order:
             skill = path_seen[canonical]
-            if skill.source != "installed":
-                result.append(skill)
+            if skill.source == "installed":
+                key = (skill.name.strip().lower(), skill.content.strip())
+                existing_idx = installed_seen.get(key)
+                if existing_idx is None:
+                    installed_seen[key] = len(result)
+                    result.append(skill)
+                else:
+                    existing = result[existing_idx]
+                    current_rank = installed_priority.get(skill.installed_source, 99)
+                    existing_rank = installed_priority.get(existing.installed_source, 99)
+                    if current_rank < existing_rank:
+                        result[existing_idx] = skill
+                        installed_seen[key] = existing_idx
                 continue
 
-            key = (skill.name.strip().lower(), skill.content.strip())
-            existing_idx = installed_seen.get(key)
-            if existing_idx is None:
-                installed_seen[key] = len(result)
-                result.append(skill)
-                continue
+            if skill.source == "plugin":
+                plugin_id = SkillService._extract_plugin_id(skill.file_path)
+                if plugin_id is not None:
+                    key = (plugin_id, skill.name.strip().lower())
+                    if key in plugin_seen:
+                        continue
+                    plugin_seen[key] = len(result)
 
-            existing = result[existing_idx]
-            current_rank = installed_priority.get(skill.installed_source, 99)
-            existing_rank = installed_priority.get(existing.installed_source, 99)
-            if current_rank < existing_rank:
-                result[existing_idx] = skill
-                installed_seen[key] = existing_idx
+            result.append(skill)
 
         return result
 

@@ -27,10 +27,13 @@ from misaka.ui.settings.pages.provider_section import (
 )
 from misaka.ui.common.theme import (
     ERROR_RED,
+    RADIUS_LG,
+    RADIUS_XL,
     SUCCESS_GREEN,
     WARNING_AMBER,
     make_badge,
     make_button,
+    make_divider,
     make_outlined_button,
     make_section_card,
 )
@@ -73,14 +76,7 @@ class SettingsPage(ft.Column):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        header = ft.Container(
-            content=ft.Text(
-                t("settings.title"),
-                size=22,
-                weight=ft.FontWeight.W_600,
-            ),
-            padding=ft.Padding.only(left=24, top=20, bottom=12),
-        )
+        header = self._build_header()
 
         appearance_section = build_appearance_section(
             self.state,
@@ -98,8 +94,7 @@ class SettingsPage(ft.Column):
         )
         about_section = self._build_about_section()
 
-        self.controls = [
-            header,
+        sections = [
             self._wrap_card(appearance_section),
             self._wrap_card(permission_section),
             self._wrap_card(cli_settings_section),
@@ -110,6 +105,83 @@ class SettingsPage(ft.Column):
             self._wrap_card(about_section),
             ft.Container(height=16),
         ]
+
+        inner = ft.Column(
+            controls=[header, make_divider(), *sections],
+            spacing=0,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
+
+        main_card = ft.Container(
+            content=inner,
+            margin=ft.Margin.symmetric(horizontal=20, vertical=16),
+            padding=ft.Padding.all(28),
+            expand=True,
+            border_radius=RADIUS_XL,
+            bgcolor=ft.Colors.SURFACE_CONTAINER,
+            border=ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE),
+            ),
+            shadow=[
+                ft.BoxShadow(
+                    blur_radius=24,
+                    spread_radius=-4,
+                    color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 4),
+                ),
+                ft.BoxShadow(
+                    blur_radius=12,
+                    spread_radius=-2,
+                    color=ft.Colors.with_opacity(0.04, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 2),
+                ),
+            ],
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        )
+
+        self.controls = [main_card]
+
+    def _build_header(self) -> ft.Container:
+        """Build page header with icon, title and description."""
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Container(
+                        content=ft.Icon(
+                            ft.Icons.SETTINGS,
+                            size=24,
+                            color=ft.Colors.PRIMARY,
+                        ),
+                        width=44,
+                        height=44,
+                        border_radius=RADIUS_LG,
+                        bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY),
+                        alignment=ft.Alignment.CENTER,
+                    ),
+                    ft.Column(
+                        controls=[
+                            ft.Text(
+                                t("settings.title"),
+                                size=20,
+                                weight=ft.FontWeight.W_600,
+                            ),
+                            ft.Text(
+                                t("settings.claude_code_desc"),
+                                size=12,
+                                opacity=0.65,
+                            ),
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=16,
+            ),
+            padding=ft.Padding.only(bottom=20),
+        )
 
     @staticmethod
     def _wrap_card(content: ft.Control) -> ft.Control:
@@ -441,13 +513,14 @@ class SettingsPage(ft.Column):
                 spacing=12,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            padding=ft.Padding.symmetric(horizontal=12, vertical=8),
-            border_radius=12,
+            padding=ft.Padding.symmetric(horizontal=12, vertical=10),
+            border_radius=RADIUS_LG,
             border=ft.Border.all(
                 1,
                 SUCCESS_GREEN if is_installed
                 else ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
+            bgcolor=ft.Colors.with_opacity(0.02, ft.Colors.ON_SURFACE),
         )
 
     def _build_tool_action_widget(
@@ -566,10 +639,8 @@ class SettingsPage(ft.Column):
                     ft.Text(t("settings.about_desc"), size=12, opacity=0.6),
                 ],
                 spacing=8,
-                expand=True,
             ),
             padding=ft.Padding.symmetric(horizontal=24, vertical=16),
-            expand=True,
         )
 
     def refresh(self) -> None:

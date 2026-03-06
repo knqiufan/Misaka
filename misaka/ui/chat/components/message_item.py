@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import webbrowser
 from dataclasses import dataclass
 
 import flet as ft
@@ -371,35 +372,63 @@ class MessageItem(ft.Container):
         return None
 
     def _render_text_block(self, text: str) -> ft.Control:
-        """Render a text block with markdown support."""
+        """Render a text block with markdown support and enhanced styling."""
         segments = self._split_code_blocks(text)
 
         if len(segments) == 1 and segments[0][0] == "text":
-            return ft.Markdown(
-                value=segments[0][1],
-                selectable=True,
-                extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                code_theme=ft.MarkdownCodeTheme.GITHUB,
-                auto_follow_links=True,
+            return self._wrap_markdown(
+                self._create_markdown(segments[0][1]),
+                segments[0][1],
             )
 
         controls: list[ft.Control] = []
         for seg_type, seg_content in segments:
             if seg_type == "text" and seg_content.strip():
                 controls.append(
-                    ft.Markdown(
-                        value=seg_content,
-                        selectable=True,
-                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                code_theme=ft.MarkdownCodeTheme.GITHUB,
-                        auto_follow_links=True,
+                    self._wrap_markdown(
+                        self._create_markdown(seg_content),
+                        seg_content,
                     )
                 )
             elif seg_type == "code":
                 lang, code = seg_content
                 controls.append(CodeBlock(code=code, language=lang))
 
-        return ft.Column(controls=controls, spacing=4)
+        return ft.Column(controls=controls, spacing=10)
+
+    def _create_markdown(self, value: str) -> ft.Markdown:
+        """Create a Markdown component with consistent styling."""
+        return ft.Markdown(
+            value=value,
+            selectable=True,
+            extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+            code_theme=ft.MarkdownCodeTheme.GITHUB,
+            on_tap_link=self._handle_link,
+        )
+
+    def _handle_link(self, e: ft.MarkdownTapLinkEvent) -> None:
+        """Open clicked link in the default browser."""
+        if e.page and e.link:
+            webbrowser.open(e.link)
+
+    def _wrap_markdown(self, md: ft.Markdown, text: str) -> ft.Control:
+        """Wrap markdown in a container with optional blockquote styling."""
+        # Check for blockquote (lines starting with >)
+        has_blockquote = bool(re.search(r"^>\s", text, re.MULTILINE))
+
+        if has_blockquote:
+            return ft.Container(
+                content=md,
+                border=ft.Border(
+                    left=ft.BorderSide(3, ft.Colors.PRIMARY),
+                ),
+                padding=ft.Padding.only(left=12, top=4, bottom=4, right=8),
+            )
+
+        return ft.Container(
+            content=md,
+            padding=ft.Padding.symmetric(horizontal=4, vertical=6),
+        )
 
     @staticmethod
     def _split_code_blocks(text: str) -> list[tuple[str, ...]]:

@@ -47,6 +47,7 @@
   },
   "settings": {
     "title": "设置",
+    "description": "应用配置、外观、权限与 Claude Code 集成",
     "api_providers": "API 提供商",
     "api_providers_desc": "配置 Claude Code 的 API 提供商。激活的提供商将用于所有查询。",
     "add_provider": "添加提供商",
@@ -138,7 +139,7 @@
     "claude_debug_log_desc": "输出精简的 SDK 调试信息（开始/结束/消息统计/异常），便于排查对话问题。"
   },
   "plugins": {
-    "title": "插件（MCP 服务器）",
+    "title": "MCP 服务器",
     "description": "管理扩展 Claude 能力的 MCP（模型上下文协议）服务器。",
     "add_server": "添加服务器",
     "add_mcp_server": "添加 MCP 服务器",

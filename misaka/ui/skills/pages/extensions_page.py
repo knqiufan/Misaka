@@ -15,8 +15,12 @@ import flet as ft
 from misaka.i18n import t
 from misaka.ui.skills.pages.skill_editor_panel import SkillEditorPanel
 from misaka.ui.common.theme import (
+    RADIUS_LG,
+    RADIUS_XL,
     make_button,
     make_dialog,
+    make_divider,
+    make_empty_state,
     make_outlined_button,
     make_text_button,
     make_text_field,
@@ -79,43 +83,25 @@ class ExtensionsPage(ft.Column):
         self._load_skills()
 
         header = self._build_header()
-        description = self._build_description()
 
         search_field = make_text_field(
             hint_text=t("extensions.search_skills"),
             prefix_icon=ft.Icons.SEARCH,
             dense=True,
-            border_radius=12,
-            content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
+            border_radius=RADIUS_LG,
+            content_padding=ft.Padding.symmetric(horizontal=12, vertical=8),
             on_change=self._on_search,
         )
 
         self._skill_list = ft.ListView(
             expand=True,
-            spacing=2,
-            padding=ft.Padding.symmetric(horizontal=4, vertical=4),
+            spacing=6,
+            padding=ft.Padding.symmetric(horizontal=8, vertical=8),
+            scroll=ft.ScrollMode.AUTO,
         )
         self._refresh_skill_list()
 
-        left_panel = ft.Container(
-            content=ft.Column(
-                controls=[
-                    ft.Container(
-                        content=search_field,
-                        padding=ft.Padding.symmetric(horizontal=8, vertical=8),
-                    ),
-                    self._skill_list,
-                ],
-                spacing=0,
-                expand=True,
-            ),
-            width=260,
-            border=ft.Border(
-                right=ft.BorderSide(
-                    1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
-                ),
-            ),
-        )
+        left_panel = self._build_left_panel(search_field)
 
         self._editor_panel = SkillEditorPanel(
             self.state,
@@ -124,27 +110,93 @@ class ExtensionsPage(ft.Column):
             on_skill_deleted=self._handle_skill_deleted,
         )
 
+        editor_wrapper = ft.Container(
+            content=self._editor_panel,
+            expand=True,
+            border_radius=RADIUS_LG,
+            bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            ),
+            padding=0,
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        )
+
         main_content = ft.Row(
-            controls=[left_panel, self._editor_panel],
+            controls=[left_panel, editor_wrapper],
+            spacing=0,
+            expand=True,
+            vertical_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
+
+        inner = ft.Column(
+            controls=[header, make_divider(), main_content],
             spacing=0,
             expand=True,
         )
 
-        self.controls = [
-            header,
-            description,
-            ft.Divider(height=1),
-            main_content,
-        ]
+        main_card = ft.Container(
+            content=inner,
+            margin=ft.Margin.symmetric(horizontal=20, vertical=16),
+            padding=ft.Padding.all(28),
+            expand=True,
+            border_radius=RADIUS_XL,
+            bgcolor=ft.Colors.SURFACE_CONTAINER,
+            border=ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE),
+            ),
+            shadow=[
+                ft.BoxShadow(
+                    blur_radius=24,
+                    spread_radius=-4,
+                    color=ft.Colors.with_opacity(0.08, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 4),
+                ),
+                ft.BoxShadow(
+                    blur_radius=12,
+                    spread_radius=-2,
+                    color=ft.Colors.with_opacity(0.04, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 2),
+                ),
+            ],
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        )
+
+        self.controls = [main_card]
 
     def _build_header(self) -> ft.Container:
+        """Build page header with icon, title, description and action buttons."""
         return ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Text(
-                        t("extensions.title"),
-                        size=22,
-                        weight=ft.FontWeight.W_600,
+                    ft.Container(
+                        content=ft.Icon(
+                            ft.Icons.CODE,
+                            size=24,
+                            color=ft.Colors.PRIMARY,
+                        ),
+                        width=44,
+                        height=44,
+                        border_radius=RADIUS_LG,
+                        bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY),
+                        alignment=ft.Alignment.CENTER,
+                    ),
+                    ft.Column(
+                        controls=[
+                            ft.Text(
+                                t("extensions.title"),
+                                size=20,
+                                weight=ft.FontWeight.W_600,
+                            ),
+                            ft.Text(
+                                t("extensions.description"),
+                                size=12,
+                                opacity=0.65,
+                            ),
+                        ],
+                        spacing=2,
                         expand=True,
                     ),
                     make_outlined_button(
@@ -159,19 +211,35 @@ class ExtensionsPage(ft.Column):
                     ),
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=16,
             ),
-            padding=ft.Padding.only(left=24, right=24, top=20, bottom=8),
+            padding=ft.Padding.only(bottom=20),
         )
 
-    @staticmethod
-    def _build_description() -> ft.Container:
+    def _build_left_panel(self, search_field: ft.TextField) -> ft.Container:
+        """Build left panel with search and skill list, styled as card."""
+        panel_content = ft.Column(
+            controls=[
+                ft.Container(
+                    content=search_field,
+                    padding=ft.Padding.symmetric(horizontal=12, vertical=12),
+                ),
+                self._skill_list,
+            ],
+            spacing=0,
+            expand=True,
+        )
         return ft.Container(
-            content=ft.Text(
-                t("extensions.description"),
-                size=12,
-                opacity=0.6,
+            content=panel_content,
+            width=280,
+            border_radius=RADIUS_LG,
+            bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
-            padding=ft.Padding.symmetric(horizontal=24, vertical=4),
+            padding=ft.Padding.only(right=0),
+            margin=ft.Margin.only(right=20),
         )
 
     # ------------------------------------------------------------------
@@ -217,23 +285,23 @@ class ExtensionsPage(ft.Column):
             if self._search_query
             else t("extensions.no_skills")
         )
+        hint = t("extensions.no_skills_desc") if not self._search_query else None
+        empty = make_empty_state(
+            ft.Icons.CODE_OFF,
+            msg,
+            hint=hint,
+            icon_size=44,
+            icon_opacity=0.25,
+        )
         return ft.Container(
-            content=ft.Column(
-                controls=[
-                    ft.Icon(ft.Icons.CODE_OFF, size=32, opacity=0.3),
-                    ft.Text(
-                        msg,
-                        italic=True,
-                        size=12,
-                        opacity=0.5,
-                        text_align=ft.TextAlign.CENTER,
-                    ),
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=8,
+            content=empty,
+            padding=ft.Padding.symmetric(vertical=32, horizontal=16),
+            border_radius=RADIUS_LG,
+            bgcolor=ft.Colors.with_opacity(0.02, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
             ),
-            alignment=ft.Alignment.CENTER,
-            padding=24,
         )
 
     @staticmethod
@@ -242,10 +310,10 @@ class ExtensionsPage(ft.Column):
             content=ft.Text(
                 label,
                 size=11,
-                weight=ft.FontWeight.BOLD,
-                opacity=0.6,
+                weight=ft.FontWeight.W_600,
+                color=ft.Colors.with_opacity(0.7, ft.Colors.ON_SURFACE),
             ),
-            padding=ft.Padding.only(left=8, top=8, bottom=4),
+            padding=ft.Padding.only(left=4, top=12, bottom=6),
         )
 
     def _is_skill_selected(self, skill) -> bool:
@@ -256,50 +324,78 @@ class ExtensionsPage(ft.Column):
         )
 
     def _build_skill_item(self, skill, is_selected: bool) -> ft.Control:
-        """Build a single skill list item."""
-        return ft.Container(
-            content=ft.Row(
-                controls=[
-                    ft.Container(
-                        width=3,
-                        height=32,
-                        border_radius=2,
-                        bgcolor=ft.Colors.PRIMARY if is_selected else ft.Colors.TRANSPARENT,
+        """Build a single skill list item with card style."""
+        item_content = ft.Row(
+            controls=[
+                ft.Container(
+                    content=ft.Icon(
+                        ft.Icons.DESCRIPTION_OUTLINED,
+                        size=18,
+                        color=ft.Colors.PRIMARY if is_selected else ft.Colors.ON_SURFACE_VARIANT,
                     ),
-                    ft.Column(
-                        controls=[
-                            ft.Text(
-                                skill.name,
-                                size=13,
-                                weight=ft.FontWeight.W_500 if is_selected else ft.FontWeight.NORMAL,
-                                max_lines=1,
-                                overflow=ft.TextOverflow.ELLIPSIS,
-                            ),
-                            ft.Text(
-                                skill.description or skill.file_path,
-                                size=10,
-                                opacity=0.5,
-                                max_lines=1,
-                                overflow=ft.TextOverflow.ELLIPSIS,
-                            ),
-                        ],
-                        spacing=1,
-                        expand=True,
+                    width=36,
+                    height=36,
+                    border_radius=RADIUS_LG,
+                    bgcolor=(
+                        ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)
+                        if is_selected
+                        else ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
                     ),
-                ],
-                spacing=8,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            padding=ft.Padding.symmetric(horizontal=6, vertical=5),
-            border_radius=8,
-            bgcolor=(
+                    alignment=ft.Alignment.CENTER,
+                ),
+                ft.Column(
+                    controls=[
+                        ft.Text(
+                            skill.name,
+                            size=13,
+                            weight=ft.FontWeight.W_600 if is_selected else ft.FontWeight.W_500,
+                            max_lines=1,
+                            overflow=ft.TextOverflow.ELLIPSIS,
+                        ),
+                        ft.Text(
+                            skill.description or skill.file_path,
+                            size=10,
+                            opacity=0.6,
+                            max_lines=1,
+                            overflow=ft.TextOverflow.ELLIPSIS,
+                        ),
+                    ],
+                    spacing=2,
+                    expand=True,
+                ),
+            ],
+            spacing=12,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+        card_style: dict = {
+            "content": item_content,
+            "padding": ft.Padding.symmetric(horizontal=12, vertical=10),
+            "border_radius": RADIUS_LG,
+            "bgcolor": (
                 ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY)
                 if is_selected
-                else ft.Colors.TRANSPARENT
+                else ft.Colors.with_opacity(0.02, ft.Colors.ON_SURFACE)
             ),
-            on_click=lambda e, s=skill: self._select_skill(s),
-            ink=True,
-        )
+            "border": ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)
+                if is_selected
+                else ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            ),
+            "on_click": lambda e, s=skill: self._select_skill(s),
+            "ink": True,
+        }
+        if is_selected:
+            card_style["shadow"] = [
+                ft.BoxShadow(
+                    blur_radius=8,
+                    spread_radius=-1,
+                    color=ft.Colors.with_opacity(0.04, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 1),
+                ),
+            ]
+        return ft.Container(**card_style)
 
     # ------------------------------------------------------------------
     # Event handlers

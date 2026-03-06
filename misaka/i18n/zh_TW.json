@@ -138,7 +138,7 @@
     "claude_debug_log_desc": "輸出精簡的 SDK 偵錯資訊（開始/結束/訊息統計/異常），便於排查對話問題。"
   },
   "plugins": {
-    "title": "外掛（MCP 伺服器）",
+    "title": "MCP 伺服器",
     "description": "管理擴充 Claude 能力的 MCP（模型上下文協定）伺服器。",
     "add_server": "新增伺服器",
     "add_mcp_server": "新增 MCP 伺服器",

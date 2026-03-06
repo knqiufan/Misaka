@@ -7,6 +7,8 @@ with live-updating text, tool call blocks, and a progress indicator.
 from __future__ import annotations
 
 import contextlib
+import re
+import webbrowser
 from typing import TYPE_CHECKING
 
 import flet as ft
@@ -35,6 +37,7 @@ class StreamingMessage(ft.Container):
         self._content_column: ft.Column | None = None
         self._rendered_block_count: int = 0
         self._last_text_md: ft.Markdown | None = None
+        self._last_text_content: str | None = None
         self._build_ui()
 
     def did_mount(self) -> None:
@@ -55,11 +58,54 @@ class StreamingMessage(ft.Container):
             with contextlib.suppress(Exception):
                 self._thinking_container.update()
 
+    # ------------------------------------------------------------------
+    # Markdown rendering helpers
+    # ------------------------------------------------------------------
+
+    def _create_markdown(self, value: str) -> ft.Markdown:
+        """Create a Markdown component with consistent styling."""
+        return ft.Markdown(
+            value=value,
+            selectable=True,
+            extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+            code_theme=ft.MarkdownCodeTheme.GITHUB,
+            on_tap_link=self._handle_link,
+        )
+
+    def _handle_link(self, e: ft.MarkdownTapLinkEvent) -> None:
+        """Open clicked link in the default browser."""
+        if e.page and e.link:
+            webbrowser.open(e.link)
+
+    def _wrap_markdown(self, md: ft.Markdown, text: str) -> ft.Control:
+        """Wrap markdown in a container with optional blockquote styling."""
+        # Check for blockquote (lines starting with >)
+        has_blockquote = bool(re.search(r"^>\s", text, re.MULTILINE))
+
+        if has_blockquote:
+            return ft.Container(
+                content=md,
+                border=ft.Border(
+                    left=ft.BorderSide(3, ft.Colors.PRIMARY),
+                ),
+                padding=ft.Padding.only(left=12, top=4, bottom=4, right=8),
+            )
+
+        return ft.Container(
+            content=md,
+            padding=ft.Padding.symmetric(horizontal=4, vertical=6),
+        )
+
+    # ------------------------------------------------------------------
+    # Build
+    # ------------------------------------------------------------------
+
     def _build_ui(self) -> None:
         self._thinking_container: ft.Container | None = None
         self._content_column = None
         self._rendered_block_count = 0
         self._last_text_md = None
+        self._last_text_content = None
         if not self.state.is_streaming:
             self.visible = False
             self.content = ft.Container()
@@ -93,14 +139,11 @@ class StreamingMessage(ft.Container):
 
         for block in self.state.streaming_blocks:
             if hasattr(block, "text") and block.text:
-                md = ft.Markdown(
-                    value=block.text,
-                    selectable=True,
-                    extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                    code_theme=ft.MarkdownCodeTheme.GITHUB,
-                )
-                controls.append(md)
+                md = self._create_markdown(block.text)
+                wrapped = self._wrap_markdown(md, block.text)
+                controls.append(wrapped)
                 self._last_text_md = md
+                self._last_text_content = block.text
             elif hasattr(block, "name") and block.name:
                 tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
                 controls.append(
@@ -175,7 +218,17 @@ class StreamingMessage(ft.Container):
             and self._last_text_md is not None
             and hasattr(blocks[-1], "text")
         ):
-            self._last_text_md.value = blocks[-1].text
+            new_text = blocks[-1].text
+            # Check if blockquote status changed - need full rebuild if so
+            old_has_blockquote = bool(
+                re.search(r"^>\s", self._last_text_content or "", re.MULTILINE)
+            )
+            new_has_blockquote = bool(re.search(r"^>\s", new_text, re.MULTILINE))
+            if old_has_blockquote != new_has_blockquote:
+                self._build_ui()
+                return
+            self._last_text_md.value = new_text
+            self._last_text_content = new_text
             with contextlib.suppress(Exception):
                 self._last_text_md.update()
             return
@@ -192,14 +245,11 @@ class StreamingMessage(ft.Container):
             for i in range(self._rendered_block_count, current_count):
                 block = blocks[i]
                 if hasattr(block, "text") and block.text:
-                    md = ft.Markdown(
-                        value=block.text,
-                        selectable=True,
-                        extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                    code_theme=ft.MarkdownCodeTheme.GITHUB,
-                    )
-                    self._content_column.controls.append(md)
+                    md = self._create_markdown(block.text)
+                    wrapped = self._wrap_markdown(md, block.text)
+                    self._content_column.controls.append(wrapped)
                     self._last_text_md = md
+                    self._last_text_content = block.text
                 elif hasattr(block, "name") and block.name:
                     tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
                     self._content_column.controls.append(
