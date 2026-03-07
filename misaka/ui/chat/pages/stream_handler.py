@@ -128,14 +128,41 @@ class StreamHandler:
         self._last_refresh_time = time.monotonic()
         self._ui_refresh()
 
-    def persist_user_message(self, text: str) -> Message | None:
+    def persist_user_message(
+        self,
+        text: str,
+        images: list | None = None,
+    ) -> Message | None:
         """Save a user message to the DB, append to state, and start streaming.
+
+        Args:
+            text: The text content of the message.
+            images: Optional list of PendingImage objects.
 
         Returns the new Message for minimal UI refresh, or None if no session.
         """
         if not self._state.current_session_id:
             return None
-        content_json = json.dumps([{"type": "text", "text": text}])
+
+        # Build content blocks
+        content_blocks: list[dict] = []
+
+        # Add image blocks first (if any)
+        if images:
+            for img in images:
+                content_blocks.append({
+                    "type": "image",
+                    "source_type": "file",
+                    "file_path": img.temp_path,
+                    "media_type": img.mime_type,
+                    "alt_text": img.original_name,
+                })
+
+        # Add text block
+        if text:
+            content_blocks.append({"type": "text", "text": text})
+
+        content_json = json.dumps(content_blocks)
         msg = self._db.add_message(
             self._state.current_session_id, "user", content_json,
         )
@@ -143,8 +170,17 @@ class StreamHandler:
         self.start_streaming()
         return msg
 
-    async def send_to_claude(self, prompt: str) -> None:
-        """Stream a prompt to Claude and finalize the result."""
+    async def send_to_claude(
+        self,
+        prompt: str,
+        images: list | None = None,
+    ) -> None:
+        """Stream a prompt to Claude and finalize the result.
+
+        Args:
+            prompt: The text prompt to send.
+            images: Optional list of PendingImage objects to send as multimodal content.
+        """
         session = self._state.current_session
         claude = self._state.get_service("claude_service")
         if not session or not claude:
@@ -241,9 +277,34 @@ class StreamHandler:
             )
             self._ui_refresh()
 
+        # Build multimodal content if images are present
+        if images:
+            content_blocks: list[dict] = []
+            # Add images first - encode as base64
+            image_service = self._state.get_service("image_service")
+            for img in images:
+                base64_data = None
+                if image_service:
+                    base64_data = image_service.get_image_base64(img.temp_path)
+                if base64_data:
+                    content_blocks.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": img.mime_type,
+                            "data": base64_data,
+                        },
+                    })
+            # Add text block
+            if prompt:
+                content_blocks.append({"type": "text", "text": prompt})
+            message_content: str | list[dict] = content_blocks
+        else:
+            message_content = prompt
+
         await claude.send_message(
             session_id=session.id,
-            prompt=prompt,
+            prompt=message_content,
             model=session.model or None,
             system_prompt=session.system_prompt or None,
             working_directory=session.working_directory or None,
@@ -297,11 +358,15 @@ class StreamHandler:
         self._send_override = send_callback
         self._abort_override = abort_callback
 
-    def get_send_coroutine(self, prompt: str) -> tuple[Any, ...]:
+    def get_send_coroutine(
+        self,
+        prompt: str,
+        images: list | None = None,
+    ) -> tuple[Any, ...]:
         """Return ``(coro, *args)`` for dispatching a send task."""
         if self._send_override:
-            return (self._send_override, prompt)
-        return (self.send_to_claude, prompt)
+            return (self._send_override, prompt, images)
+        return (self.send_to_claude, prompt, images)
 
     def get_abort_coroutine(self) -> tuple[Any, ...]:
         """Return ``(coro, *args)`` for dispatching an abort task."""

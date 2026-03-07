@@ -265,6 +265,10 @@ class ChatPage(ft.Stack):
         """Delete a session."""
         self._abort_session_if_streaming(session_id)
         self.db.delete_session(session_id)
+        # Clean up image attachments for this session
+        image_service = self.state.get_service("image_service")
+        if image_service:
+            image_service.cleanup_session_images(session_id)
         self.state.sessions = [s for s in self.state.sessions if s.id != session_id]
         if self.state.current_session_id == session_id:
             self.state.current_session_id = None
@@ -446,12 +450,12 @@ class ChatPage(ft.Stack):
 
     # ---- Message operations ----
 
-    def _on_send_message(self, text: str) -> None:
-        """Handle sending a message."""
+    def _on_send_message(self, text: str, images: list | None = None) -> None:
+        """Handle sending a message with optional images."""
         if not self.state.current_session_id:
             return
-        msg = self._stream_handler.persist_user_message(text)
-        self.state.page.run_task(*self._stream_handler.get_send_coroutine(text))
+        msg = self._stream_handler.persist_user_message(text, images)
+        self.state.page.run_task(*self._stream_handler.get_send_coroutine(text, images))
         if msg and self._chat_view:
             self._chat_view.refresh_messages_minimal(msg)
         self.state.update()

@@ -33,7 +33,7 @@ class ChatView(ft.Column):
     def __init__(
         self,
         state: AppState,
-        on_send: Callable[[str], None] | None = None,
+        on_send: Callable[[str, list | None], None] | None = None,
         on_abort: Callable[[], None] | None = None,
         on_model_change: Callable[[str], None] | None = None,
         on_mode_change: Callable[[str], None] | None = None,

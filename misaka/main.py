@@ -34,6 +34,7 @@ from misaka.services.chat.permission_service import PermissionService
 from misaka.services.chat.session_service import SessionService
 from misaka.services.file.file_service import FileService
 from misaka.services.file.update_check_service import UpdateCheckService
+from misaka.services.images.image_service import ImageService
 from misaka.services.mcp.mcp_service import MCPService
 from misaka.services.session.session_import_service import SessionImportService
 from misaka.services.settings.cli_settings_service import CliSettingsService
@@ -148,6 +149,7 @@ class ServiceContainer:
         self.provider_service = ProviderService(db)
         self.task_service = TaskService(db)
         self.file_service = FileService()
+        self.image_service = ImageService()
         self.mcp_service = MCPService()
         self.claude_service = ClaudeService(db, self.permission_service)
 

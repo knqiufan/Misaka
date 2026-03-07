@@ -181,7 +181,7 @@ class ClaudeService:
     async def send_message(
         self,
         session_id: str,
-        prompt: str,
+        prompt: str | list[dict[str, Any]],
         *,
         model: str | None = None,
         system_prompt: str | None = None,
@@ -204,6 +204,12 @@ class ClaudeService:
         Uses ``ClaudeSDKClient`` for bidirectional communication.
         Callbacks are invoked as messages arrive from the SDK.
         This is a coroutine that runs until the response is complete.
+
+        Args:
+            session_id: Unique identifier for the session.
+            prompt: Either a text string or a list of content blocks for multimodal.
+                For multimodal: [{"type": "image", ...}, {"type": "text", "text": "..."}]
+            ... other args ...
         """
         from claude_agent_sdk import (
             ClaudeSDKClient,
@@ -261,7 +267,22 @@ class ClaudeService:
                 # SDK >= 0.1.39: query() then receive_response()
                 # Older SDK versions may still expose send_message().
                 if hasattr(client, "query") and hasattr(client, "receive_response"):
-                    await client.query(prompt, session_id=session_id)
+                    # SDK query() requires AsyncIterable with full message structure
+                    async def _make_async_iter():
+                        # Build content blocks
+                        if isinstance(prompt, list):
+                            content_blocks = prompt
+                        else:
+                            content_blocks = [{"type": "text", "text": prompt}]
+
+                        # Yield a complete message with content blocks
+                        yield {
+                            "type": "user",
+                            "message": {"role": "user", "content": content_blocks},
+                            "parent_tool_use_id": None,
+                        }
+
+                    await client.query(_make_async_iter(), session_id=session_id)
                     response_stream = client.receive_response()
                 else:
                     response_stream = client.send_message(prompt, can_use_tool=can_use_tool)

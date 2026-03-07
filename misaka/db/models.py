@@ -43,9 +43,9 @@ class MessageContentBlock:
 
     Mirrors the TypeScript ``MessageContentBlock`` union type.
     The ``type`` field discriminates between text, tool_use,
-    tool_result, and code blocks.
+    tool_result, code, and image blocks.
     """
-    type: str  # "text" | "tool_use" | "tool_result" | "code"
+    type: str  # "text" | "tool_use" | "tool_result" | "code" | "image"
     # Text block fields
     text: str | None = None
     # Tool use fields
@@ -59,6 +59,14 @@ class MessageContentBlock:
     # Code block fields
     language: str | None = None
     code: str | None = None
+    # Image block fields
+    source_type: str | None = None  # "file" | "base64" | "url"
+    file_path: str | None = None
+    url: str | None = None
+    media_type: str | None = None  # "image/png", "image/jpeg", etc.
+    alt_text: str | None = None
+    # Base64 data for inline images (not persisted to DB)
+    base64_data: str | None = None
 
 
 @dataclass
@@ -213,6 +221,39 @@ class FilePreview:
     content: str
     language: str
     line_count: int
+
+
+# ---------------------------------------------------------------------------
+# Image attachments
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ImageAttachment:
+    """Metadata for a persisted image attachment."""
+
+    id: str
+    file_path: str  # Path in ~/.misaka/attachments/
+    original_name: str
+    mime_type: str  # image/png, image/jpeg, etc.
+    size_bytes: int
+    width: int | None = None
+    height: int | None = None
+    thumbnail_path: str | None = None
+    created_at: str = ""
+
+
+@dataclass
+class PendingImage:
+    """In-memory image waiting to be sent (not yet persisted)."""
+
+    id: str
+    temp_path: str  # Temporary file path
+    thumbnail: bytes  # Thumbnail image data (for preview)
+    original_name: str
+    mime_type: str
+    size_bytes: int = 0
+    width: int | None = None
+    height: int | None = None
 
 
 # ---------------------------------------------------------------------------

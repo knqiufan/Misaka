@@ -45,10 +45,19 @@ DB_PATH: Path = DATA_DIR / "misaka.db"
 LOG_PATH: Path = DATA_DIR / "misaka.log"
 """Path to the application log file."""
 
+ATTACHMENTS_DIR: Path = DATA_DIR / "attachments"
+"""Root directory for image attachments (organized by session_id)."""
+
+
+def get_session_attachments_dir(session_id: str) -> Path:
+    """Return the attachments directory for a specific session."""
+    return ATTACHMENTS_DIR / session_id
+
 
 def ensure_data_dir() -> None:
     """Create the data directory if it does not exist."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------

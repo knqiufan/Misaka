@@ -3,23 +3,29 @@
 Multi-line text input area with send button, file attachment support,
 slash-command menu, @ file picker overlay, and keyboard shortcut handling.
 Supports Shift+Enter for newline and Enter to send.
+Supports image upload via file picker and clipboard paste (Ctrl+V).
 """
 
 from __future__ import annotations
 
 import contextlib
+import logging
+import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import flet as ft
 
 from misaka.commands import SlashCommand, filter_commands
-from misaka.db.models import FileTreeNode
+from misaka.db.models import FileTreeNode, PendingImage
 from misaka.i18n import t
+from misaka.ui.chat.components.image_preview_bar import ImagePreviewBar
 from misaka.ui.common.theme import MONO_FONT_FAMILY
 
 if TYPE_CHECKING:
     from misaka.state import AppState
+
+logger = logging.getLogger(__name__)
 
 _FOLDER_COLOR = "#f59e0b"
 _MAX_FILE_RESULTS = 15
@@ -33,17 +39,25 @@ _CLAUDE_ATTACH_EXTENSIONS = [
     "pptx",  # 演示
 ]
 
+# Image formats that should be processed as image attachments
+_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
+
 
 class MessageInput(ft.Container):
-    """Message input area with send/stop button, file attachment, and slash commands."""
+    """Message input area with send/stop button, file attachment, and slash commands.
+
+    Supports image upload via file picker and clipboard paste (Ctrl+V).
+    Images are displayed in a preview bar above the input field before sending.
+    """
 
     def __init__(
         self,
         state: AppState,
-        on_send: Callable[[str], None] | None = None,
+        on_send: Callable[[str, list[PendingImage]], None] | None = None,
         on_abort: Callable[[], None] | None = None,
         on_command: Callable[[str], None] | None = None,
         on_model_change: Callable[[str], None] | None = None,
+        on_view_image: Callable[[PendingImage], None] | None = None,
     ) -> None:
         super().__init__()
         self.state = state
@@ -51,6 +65,7 @@ class MessageInput(ft.Container):
         self._on_abort = on_abort
         self._on_command = on_command
         self._on_model_change = on_model_change
+        self._on_view_image = on_view_image
         self._text_field: ft.TextField | None = None
         self._send_btn: ft.IconButton | None = None
         self._command_menu: ft.Column | None = None
@@ -65,6 +80,11 @@ class MessageInput(ft.Container):
         self._file_menu_active: bool = False
         self._suppress_focus_close: bool = False
         self._model_options_cache: list[tuple[str, str]] | None = None
+        # Image preview bar
+        self._image_preview_bar: ImagePreviewBar | None = None
+        self._pending_images: list[PendingImage] = []
+        # Keyboard modifier tracking for Ctrl+V
+        self._ctrl_pressed: bool = False
         self._build_ui()
 
     async def _do_focus(self) -> None:
@@ -175,6 +195,12 @@ class MessageInput(ft.Container):
 
         self._model_indicator = self._build_model_indicator()
 
+        # Image preview bar (above input, hidden by default)
+        self._image_preview_bar = ImagePreviewBar(
+            on_delete_image=self._handle_delete_image,
+            on_view_image=self._handle_view_image,
+        )
+
         input_row = ft.Row(
             controls=[attach_btn, command_btn, self._model_indicator,
                       self._badge_container, self._text_field, self._send_btn],
@@ -190,10 +216,23 @@ class MessageInput(ft.Container):
             on_click=self._handle_shell_click,
         )
 
-        self.content = ft.Column(
-            controls=[self._command_menu_container, self._file_menu_container, self._input_shell],
+        # Content column: menus, image preview bar, input shell
+        content_column = ft.Column(
+            controls=[
+                self._command_menu_container,
+                self._file_menu_container,
+                self._image_preview_bar,
+                self._input_shell,
+            ],
             spacing=0,
             tight=True,
+        )
+
+        # Keyboard listener for Ctrl+V paste (wraps the content)
+        self.content = ft.KeyboardListener(
+            content=content_column,
+            on_key_down=self._handle_key_down,
+            on_key_up=self._handle_key_up,
         )
         self.padding = ft.Padding.symmetric(horizontal=12, vertical=8)
 
@@ -762,27 +801,40 @@ class MessageInput(ft.Container):
             self._text_field.value = ""
             self._text_field.update()
             if self._on_send and prompt:
-                self._on_send(prompt)
+                self._on_send(prompt, [])
             return
 
-        if not user_text:
+        # Check if there's text or images to send
+        has_text = bool(user_text)
+        has_images = bool(self._pending_images)
+
+        if not has_text and not has_images:
             return
+
+        # Capture pending images before clearing
+        images_to_send = list(self._pending_images)
 
         self._text_field.value = ""
         self._text_field.update()
         self._hide_command_menu()
         self._hide_file_menu()
+
+        # Clear image preview bar
+        if self._image_preview_bar:
+            self._image_preview_bar.clear()
+        self._pending_images = []
+
         if self._on_send:
-            self._on_send(user_text)
+            self._on_send(user_text, images_to_send)
 
     def _handle_attach(self, e: ft.ControlEvent) -> None:
-        """打开系统文件选择器，选择 Claude 多模态支持的附件。"""
+        """Open file picker for attachments. Images are added to preview bar."""
         page = e.page if e and e.page else getattr(self.state, "page", None)
         if not page:
             return
         paths = self._pick_attach_files_native()
         if paths:
-            self._append_file_paths(paths)
+            self._process_selected_files(paths)
         self._schedule_focus(page)
 
     @staticmethod
@@ -811,15 +863,201 @@ class MessageInput(ft.Container):
         finally:
             root.destroy()
 
-    def _append_file_paths(self, paths: list[str]) -> None:
-        """Append selected file markers into input box."""
-        if not paths or not self._text_field:
+    def _process_selected_files(self, paths: list[str]) -> None:
+        """Process selected files: images go to preview bar, others as text markers."""
+        if not paths:
             return
+
+        image_paths = []
+        other_paths = []
+
         for path in paths:
-            current = self._text_field.value or ""
-            separator = "\n" if current else ""
-            self._text_field.value = f"{current}{separator}[File: {path}]"
-        self._text_field.update()
+            ext = os.path.splitext(path)[1].lower().lstrip(".")
+            if ext in _IMAGE_EXTENSIONS:
+                image_paths.append(path)
+            else:
+                other_paths.append(path)
+
+        # Process images
+        if image_paths:
+            self._add_images_from_paths(image_paths)
+
+        # Add non-image files as text markers
+        if other_paths and self._text_field:
+            for path in other_paths:
+                current = self._text_field.value or ""
+                separator = "\n" if current else ""
+                self._text_field.value = f"{current}{separator}[File: {path}]"
+            self._text_field.update()
+
+    def _add_images_from_paths(self, paths: list[str]) -> None:
+        """Add images from file paths to the preview bar."""
+        image_service = self.state.get_service("image_service")
+        if not image_service:
+            return
+
+        for path in paths:
+            pending = image_service.create_pending_image(path)
+            if pending:
+                self._pending_images.append(pending)
+
+        if self._image_preview_bar:
+            self._image_preview_bar.update_images(self._pending_images)
+
+    @staticmethod
+    def _is_image_file(path: str) -> bool:
+        """Check if a file path points to a supported image file."""
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        return ext in _IMAGE_EXTENSIONS
+
+    def _handle_delete_image(self, image_id: str) -> None:
+        """Handle deletion of an image from the preview bar."""
+        # Find and remove the image
+        for i, img in enumerate(self._pending_images):
+            if img.id == image_id:
+                # Delete temp file
+                image_service = self.state.get_service("image_service")
+                if image_service:
+                    image_service.delete_pending_image(img)
+                self._pending_images.pop(i)
+                break
+
+        # Update preview bar
+        if self._image_preview_bar:
+            self._image_preview_bar.update_images(self._pending_images)
+
+    def _handle_view_image(self, pending: PendingImage) -> None:
+        """Handle click to view full-size image."""
+        if self._on_view_image:
+            self._on_view_image(pending)
+
+    # ------------------------------------------------------------------
+    # Keyboard handling for clipboard paste
+    # ------------------------------------------------------------------
+
+    def _handle_key_down(self, e: ft.KeyDownEvent) -> None:
+        """Handle key down events for tracking modifiers and paste."""
+        # Track Ctrl key
+        if e.key == "Control" or e.key == "Control Left" or e.key == "Control Right":
+            self._ctrl_pressed = True
+
+        # Check for Ctrl+V
+        if e.key == "V" and self._ctrl_pressed:
+            self._try_paste_clipboard_image()
+
+    def _handle_key_up(self, e: ft.KeyUpEvent) -> None:
+        """Handle key up events for tracking modifiers."""
+        # Track Ctrl key release
+        if e.key == "Control" or e.key == "Control Left" or e.key == "Control Right":
+            self._ctrl_pressed = False
+
+    def _try_paste_clipboard_image(self) -> None:
+        """Try to paste an image from the system clipboard.
+
+        Uses PIL.ImageGrab.grabclipboard() which works on Windows and macOS.
+        """
+        try:
+            from PIL import ImageGrab
+            import io
+        except ImportError:
+            logger.warning("PIL not available for clipboard access")
+            return
+
+        try:
+            # grabclipboard returns:
+            # - None: clipboard is empty or doesn't contain image
+            # - PIL.Image: clipboard contains an image
+            # - list: clipboard contains file paths
+            # - str: clipboard contains text (on some platforms)
+            clipboard_data = ImageGrab.grabclipboard()
+
+            if clipboard_data is None:
+                return
+
+            # Case 1: Clipboard contains an image
+            if hasattr(clipboard_data, "save"):
+                # It's a PIL Image
+                self._process_pil_image(clipboard_data)
+                return
+
+            # Case 2: Clipboard contains file paths (e.g., copied image file)
+            if isinstance(clipboard_data, list):
+                for path in clipboard_data:
+                    if isinstance(path, str) and self._is_image_file(path):
+                        self._add_images_from_paths([path])
+                return
+
+        except Exception as exc:
+            logger.error("Failed to read clipboard: %s", exc)
+
+    def _process_pil_image(self, image) -> None:
+        """Process a PIL Image from clipboard and add to preview."""
+        import io
+
+        image_service = self.state.get_service("image_service")
+        if not image_service:
+            return
+
+        # Convert PIL Image to bytes
+        buffer = io.BytesIO()
+
+        # Determine format based on image mode
+        if image.mode == "RGBA":
+            format_name = "PNG"
+        elif image.mode == "P":
+            # Palette mode - convert to RGBA for transparency support
+            image = image.convert("RGBA")
+            format_name = "PNG"
+        else:
+            # Convert to RGB for JPEG (smaller size)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            format_name = "JPEG"
+
+        image.save(buffer, format=format_name)
+        image_bytes = buffer.getvalue()
+
+        # Create pending image
+        pending = image_service.create_pending_from_clipboard(image_bytes, format_hint=format_name.lower())
+        if pending:
+            self._pending_images.append(pending)
+            if self._image_preview_bar:
+                self._image_preview_bar.update_images(self._pending_images)
+
+    def handle_clipboard_image(self, image_data: bytes) -> None:
+        """Handle image paste from clipboard.
+
+        Called externally when clipboard contains image data.
+
+        Args:
+            image_data: Raw image bytes from clipboard.
+        """
+        if not image_data:
+            return
+
+        image_service = self.state.get_service("image_service")
+        if not image_service:
+            return
+
+        pending = image_service.create_pending_from_clipboard(image_data)
+        if pending:
+            self._pending_images.append(pending)
+            if self._image_preview_bar:
+                self._image_preview_bar.update_images(self._pending_images)
+
+    def get_pending_images(self) -> list[PendingImage]:
+        """Return the current list of pending images."""
+        return list(self._pending_images)
+
+    def clear_pending_images(self) -> None:
+        """Clear all pending images."""
+        image_service = self.state.get_service("image_service")
+        if image_service:
+            for img in self._pending_images:
+                image_service.delete_pending_image(img)
+        self._pending_images = []
+        if self._image_preview_bar:
+            self._image_preview_bar.clear()
 
     # ------------------------------------------------------------------
     # Refresh / focus

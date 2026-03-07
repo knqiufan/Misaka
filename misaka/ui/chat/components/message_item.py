@@ -1,8 +1,8 @@
 """Message item component.
 
 Renders a single message with its content blocks (text, tool calls,
-code blocks). Handles both user and assistant message styling with
-markdown support and distinct visual treatment.
+code blocks, images). Handles both user and assistant message styling
+with markdown support and distinct visual treatment.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import flet as ft
 from misaka.config import get_assets_path
 from misaka.db.models import Message, MessageContentBlock
 from misaka.ui.chat.components.code_block import CodeBlock
+from misaka.ui.chat.components.image_block import ImageBlock
 from misaka.ui.chat.components.tool_call_block import ToolCallBlock
 from misaka.ui.common.theme import MONO_FONT_FAMILY
 
@@ -171,6 +172,13 @@ class MessageItem(ft.Container):
                 controls.append(
                     CodeBlock(code=block.code, language=block.language or "plaintext")
                 )
+                continue
+
+            if block.type == "image":
+                controls.append(
+                    ImageBlock(block, on_click=self._handle_image_click)
+                )
+                continue
 
         return controls
 
@@ -369,7 +377,15 @@ class MessageItem(ft.Container):
             return self._render_text_block(block.text)
         elif block.type == "code" and block.code:
             return CodeBlock(code=block.code, language=block.language or "plaintext")
+        elif block.type == "image":
+            return ImageBlock(block, on_click=self._handle_image_click)
         return None
+
+    def _handle_image_click(self, image_src: str) -> None:
+        """Handle click on an image to view full-size."""
+        from misaka.ui.components.image_overlay import show_image_overlay
+        if self.page:
+            show_image_overlay(self.page, image_src)
 
     def _render_text_block(self, text: str) -> ft.Control:
         """Render a text block with markdown support and enhanced styling."""

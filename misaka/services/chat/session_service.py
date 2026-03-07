@@ -71,9 +71,17 @@ class SessionService:
         """Store the SDK session ID for conversation resume."""
         self._db.update_sdk_session_id(session_id, sdk_session_id)
 
-    def delete(self, session_id: str) -> bool:
-        """Delete a session and all its messages/tasks."""
+    def delete(self, session_id: str, image_service: Any = None) -> bool:
+        """Delete a session and all its messages/tasks.
+
+        Args:
+            session_id: The session ID to delete.
+            image_service: Optional ImageService to clean up attachments.
+        """
         result = self._db.delete_session(session_id)
         if result:
             logger.info("Deleted session %s", session_id)
+            # Clean up image attachments
+            if image_service:
+                image_service.cleanup_session_images(session_id)
         return result
