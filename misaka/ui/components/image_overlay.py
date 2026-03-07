@@ -9,7 +9,7 @@ from __future__ import annotations
 import flet as ft
 
 
-class ImageOverlay(ft.Container):
+class ImageOverlay(ft.Stack):
     """Full-screen modal image viewer.
 
     Features:
@@ -33,13 +33,11 @@ class ImageOverlay(ft.Container):
 
     def _build_ui(self) -> None:
         """Build the overlay UI."""
-        # Dark backdrop
-        backdrop = ft.GestureDetector(
-            content=ft.Container(
-                bgcolor=ft.Colors.with_opacity(0.85, ft.Colors.BLACK),
-                expand=True,
-            ),
-            on_tap=self._handle_close,
+        # Dark backdrop - use Container with on_click instead of GestureDetector
+        backdrop = ft.Container(
+            bgcolor=ft.Colors.with_opacity(0.85, ft.Colors.BLACK),
+            expand=True,
+            on_click=self._handle_close,
         )
 
         # Image with zoom support
@@ -50,14 +48,12 @@ class ImageOverlay(ft.Container):
             gapless_playback=True,
         )
 
-        # Image container (click to close)
-        image_container = ft.GestureDetector(
-            content=ft.Container(
-                content=self._image_control,
-                alignment=ft.Alignment.CENTER,
-                expand=True,
-            ),
-            on_tap=self._handle_close,
+        # Image container - use Container with on_click instead of GestureDetector
+        image_container = ft.Container(
+            content=self._image_control,
+            alignment=ft.Alignment.CENTER,
+            expand=True,
+            on_click=self._handle_close,
         )
 
         # Close button
@@ -119,22 +115,13 @@ class ImageOverlay(ft.Container):
             padding=16,
         )
 
-        # Assemble stack (without keyboard - it wraps the stack)
-        stack_content = ft.Stack(
-            controls=[
-                backdrop,
-                image_container,
-                close_btn,
-                zoom_controls,
-            ],
-            expand=True,
-        )
-
-        # Keyboard handler wraps the stack
-        self.content = ft.KeyboardListener(
-            content=stack_content,
-            on_key=self._handle_key,
-        )
+        # Assemble stack (no keyboard listener - it was blocking click events)
+        self.controls = [
+            backdrop,
+            image_container,
+            close_btn,
+            zoom_controls,
+        ]
         self.expand = True
 
     def _handle_close(self, e: ft.ControlEvent | None = None) -> None:

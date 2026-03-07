@@ -142,7 +142,7 @@ class FilePreview(ft.Column):
         self._preview = preview
         self._build_ui()
 
-    def _copy_content(self, e: ft.ControlEvent) -> None:
+    async def _copy_content(self, e: ft.ControlEvent) -> None:
         """Copy file content to clipboard."""
         if e.page and self._preview:
-            e.page.set_clipboard(self._preview.content)
+            await ft.Clipboard().set(self._preview.content)

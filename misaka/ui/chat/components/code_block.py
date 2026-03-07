@@ -80,7 +80,7 @@ class CodeBlock(ft.Container):
     async def _copy(self, e: ft.ControlEvent) -> None:
         """Copy code to clipboard with check-mark feedback."""
         if e.page:
-            e.page.set_clipboard(self._code)
+            await ft.Clipboard().set(self._code)
             if e.control and hasattr(e.control, 'icon'):
                 e.control.icon = ft.Icons.CHECK_ROUNDED
                 e.control.icon_color = ft.Colors.GREEN
