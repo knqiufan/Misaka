@@ -437,3 +437,68 @@ class TestMCPService:
         with patch.object(Path, "home", return_value=tmp_path):
             result = service.to_config_file_path()
         assert result is None
+
+    def test_load_mcp_servers_with_headers(self, tmp_path: Path) -> None:
+        """Test that headers are loaded from config files."""
+        service = MCPService()
+        config = {
+            "mcpServers": {
+                "api-server": {
+                    "type": "sse",
+                    "url": "http://localhost:8080/mcp",
+                    "headers": {
+                        "Authorization": "Bearer secret-token",
+                        "X-API-Key": "api-key-123",
+                    },
+                },
+            }
+        }
+        config_file = tmp_path / ".claude.json"
+        config_file.write_text(json.dumps(config))
+
+        with patch.object(Path, "home", return_value=tmp_path):
+            servers = service.load_mcp_servers()
+
+        assert "api-server" in servers
+        assert servers["api-server"].headers == {
+            "Authorization": "Bearer secret-token",
+            "X-API-Key": "api-key-123",
+        }
+
+    def test_to_sdk_format_includes_headers_for_sse(self) -> None:
+        """Test that headers are included in SDK format for SSE servers."""
+        service = MCPService()
+        servers = {
+            "api": MCPServerConfig(
+                type="sse",
+                url="http://localhost:8080/mcp",
+                headers={"Authorization": "Bearer token", "X-Custom": "value"},
+            ),
+        }
+        result = service.to_sdk_format(servers)
+        assert result["api"]["type"] == "sse"
+        assert result["api"]["url"] == "http://localhost:8080/mcp"
+        assert result["api"]["headers"] == {"Authorization": "Bearer token", "X-Custom": "value"}
+
+    def test_to_sdk_format_includes_headers_for_http(self) -> None:
+        """Test that headers are included in SDK format for HTTP servers."""
+        service = MCPService()
+        servers = {
+            "web": MCPServerConfig(
+                type="http",
+                url="http://localhost:9090/mcp",
+                headers={"X-API-Key": "key123"},
+            ),
+        }
+        result = service.to_sdk_format(servers)
+        assert result["web"]["type"] == "http"
+        assert result["web"]["headers"] == {"X-API-Key": "key123"}
+
+    def test_to_sdk_format_omits_empty_headers(self) -> None:
+        """Test that empty headers dict is omitted from SDK format."""
+        service = MCPService()
+        servers = {
+            "api": MCPServerConfig(type="sse", url="http://localhost:8080/mcp", headers={}),
+        }
+        result = service.to_sdk_format(servers)
+        assert "headers" not in result["api"]

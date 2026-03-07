@@ -159,7 +159,20 @@
     "remove": "Remove",
     "reload_config": "Reload Config",
     "config_files": "Configuration Files",
-    "config_files_desc": "MCP servers can be configured in:\n  ~/.claude.json (mcpServers section)\n  ~/.claude/settings.json"
+    "config_files_desc": "MCP servers can be configured in:\n  ~/.claude.json (mcpServers section)\n  ~/.claude/settings.json",
+    "basic_info": "Basic Information",
+    "connection_info": "Connection Settings",
+    "request_headers": "Request Headers",
+    "header_name": "Header Name",
+    "header_value": "Header Value",
+    "add_header": "Add Header",
+    "remove_header": "Remove Header",
+    "header_count": "{count} Headers",
+    "validation_name_required": "Server name is required",
+    "validation_command_required": "Command is required for stdio servers",
+    "validation_url_required": "URL is required for remote servers",
+    "save_success": "MCP server saved",
+    "save_failed": "Failed to verify saved MCP server configuration"
   },
   "extensions": {
     "title": "Skills",

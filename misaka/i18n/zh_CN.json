@@ -159,7 +159,20 @@
     "remove": "移除",
     "reload_config": "重新加载配置",
     "config_files": "配置文件",
-    "config_files_desc": "MCP 服务器可以在以下位置配置：\n  ~/.claude.json（mcpServers 部分）\n  ~/.claude/settings.json"
+    "config_files_desc": "MCP 服务器可以在以下位置配置：\n  ~/.claude.json（mcpServers 部分）\n  ~/.claude/settings.json",
+    "basic_info": "基本信息",
+    "connection_info": "连接设置",
+    "request_headers": "请求头",
+    "header_name": "请求头名称",
+    "header_value": "请求头值",
+    "add_header": "添加请求头",
+    "remove_header": "移除请求头",
+    "header_count": "{count} 个请求头",
+    "validation_name_required": "服务器名称不能为空",
+    "validation_command_required": "stdio 服务器必须填写命令",
+    "validation_url_required": "远程服务器必须填写 URL",
+    "save_success": "MCP 服务器已保存",
+    "save_failed": "无法验证已保存的 MCP 服务器配置"
   },
   "extensions": {
     "title": "技能",
