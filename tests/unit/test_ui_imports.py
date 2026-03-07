@@ -155,43 +155,22 @@ class TestUIImports:
 
         opened: list[tuple[object, str]] = []
 
-        def fake_on_view_image(pending) -> None:
-            opened.append((pending.id, pending.temp_path))
+        def fake_show_image_overlay(page: object, image_src: str) -> None:
+            opened.append((page, image_src))
+
+        monkeypatch.setattr(
+            "misaka.ui.components.image_overlay.show_image_overlay",
+            fake_show_image_overlay,
+        )
+        monkeypatch.setattr(MessageInput, "page", property(lambda self: "fake-page"))
 
         state = SimpleNamespace(is_streaming=False, selected_model="default")
-        input_box = MessageInput(state=state, on_view_image=fake_on_view_image)
+        input_box = MessageInput(state=state)
         pending = SimpleNamespace(id="1", temp_path="test.png")
 
         input_box._handle_view_image(pending)
 
-        assert opened == [("1", "test.png")]
-
-    def test_chat_view_has_image_overlay_host_container(self) -> None:
-        from types import SimpleNamespace
-
-        from misaka.ui.chat.components.chat_view import ChatView
-
-        state = SimpleNamespace(
-            is_streaming=False,
-            current_session_id="test-session",
-            current_session=SimpleNamespace(title="Test", model="default", mode="agent"),
-            messages=[],
-            has_more_messages=False,
-            pending_permission=None,
-            error_message=None,
-            update_check_result=None,
-            update_dismissed=False,
-            update_in_progress=False,
-            selected_model="default",
-            page=SimpleNamespace(run_task=lambda fn: None),
-        )
-        state.get_service = lambda name: None
-
-        chat_view = ChatView(state=state)
-
-        assert hasattr(chat_view, "_image_overlay_host")
-        assert chat_view._image_overlay_host is not None
-        assert chat_view._image_overlay_host.visible is False
+        assert opened == [("fake-page", "test.png")]
 
 
 class TestServiceImports:
