@@ -56,7 +56,7 @@ class ImageOverlay(ft.Stack):
             on_click=self._handle_close,
         )
 
-        # Close button
+        # Close button - position via Container inside Stack
         close_btn = ft.Container(
             content=ft.IconButton(
                 icon=ft.Icons.CLOSE_ROUNDED,
@@ -68,11 +68,11 @@ class ImageOverlay(ft.Stack):
                     bgcolor=ft.Colors.with_opacity(0.3, ft.Colors.BLACK),
                 ),
             ),
-            alignment=ft.Alignment(1.0, -1.0),  # top_right
-            padding=16,
+            top=16,
+            right=16,
         )
 
-        # Zoom controls
+        # Zoom buttons
         zoom_in_btn = ft.IconButton(
             icon=ft.Icons.ZOOM_IN_ROUNDED,
             icon_color=ft.Colors.WHITE,
@@ -106,13 +106,16 @@ class ImageOverlay(ft.Stack):
             ),
         )
 
+        # Zoom controls row positioned at bottom center
         zoom_controls = ft.Container(
             content=ft.Row(
                 controls=[zoom_out_btn, reset_btn, zoom_in_btn],
                 spacing=4,
+                alignment=ft.MainAxisAlignment.CENTER,
             ),
-            alignment=ft.Alignment(0.0, 1.0),  # bottom_center
-            padding=16,
+            bottom=16,
+            left=0,
+            right=0,
         )
 
         # Assemble stack (no keyboard listener - it was blocking click events)

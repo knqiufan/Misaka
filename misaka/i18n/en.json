@@ -43,7 +43,8 @@
     "load_earlier": "Load earlier messages",
     "commands_title": "Commands",
     "command_menu": "Command Menu",
-    "select_model": "Select Model"
+    "select_model": "Select Model",
+    "copy_reply": "Copy reply"
   },
   "settings": {
     "title": "Settings",

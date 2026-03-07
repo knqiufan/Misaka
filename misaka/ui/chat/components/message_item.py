@@ -7,6 +7,8 @@ with markdown support and distinct visual treatment.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import re
 import webbrowser
@@ -16,10 +18,11 @@ import flet as ft
 
 from misaka.config import get_assets_path
 from misaka.db.models import Message, MessageContentBlock
+from misaka.i18n import t
 from misaka.ui.chat.components.code_block import CodeBlock
 from misaka.ui.chat.components.image_block import ImageBlock
 from misaka.ui.chat.components.tool_call_block import ToolCallBlock
-from misaka.ui.common.theme import MONO_FONT_FAMILY
+from misaka.ui.common.theme import MONO_FONT_FAMILY, make_icon_button
 
 
 @dataclass
@@ -71,8 +74,13 @@ class MessageItem(ft.Container):
 
         header = self._build_header(is_user)
 
+        if is_user:
+            body = ft.Column(controls=content_controls, spacing=8)
+        else:
+            body = self._wrap_assistant_content(content_controls, blocks)
+
         self.content = ft.Column(
-            controls=[header, *content_controls],
+            controls=[header, body],
             spacing=8,
         )
         self.padding = ft.Padding.symmetric(horizontal=20, vertical=12)
@@ -115,6 +123,63 @@ class MessageItem(ft.Container):
             spacing=6,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
+
+    def _wrap_assistant_content(
+        self,
+        controls: list[ft.Control],
+        blocks: list[MessageContentBlock],
+    ) -> ft.Column:
+        """Build assistant output: content + copy icon row below (left-aligned)."""
+        body_controls: list[ft.Control] = [
+            ft.Column(controls=controls, spacing=8),
+        ]
+
+        markdown_text = self._extract_markdown_from_blocks(blocks)
+        if markdown_text:
+            copy_btn = make_icon_button(
+                ft.Icons.CONTENT_COPY_ROUNDED,
+                tooltip=t("chat.copy_reply"),
+                on_click=self._copy_reply,
+                icon_size=14,
+            )
+            copy_btn.data = markdown_text
+            action_row = ft.Row(
+                controls=[copy_btn],
+                alignment=ft.MainAxisAlignment.START,
+                spacing=4,
+            )
+            body_controls.append(action_row)
+
+        return ft.Column(controls=body_controls, spacing=6)
+
+    def _extract_markdown_from_blocks(
+        self, blocks: list[MessageContentBlock]
+    ) -> str:
+        """Extract markdown representation from content blocks for copying."""
+        parts: list[str] = []
+        for block in blocks:
+            if block.type == "text" and block.text:
+                parts.append(block.text.strip())
+            elif block.type == "code" and block.code:
+                lang = block.language or "plaintext"
+                parts.append(f"```{lang}\n{block.code}\n```")
+        return "\n\n".join(parts) if parts else ""
+
+    async def _copy_reply(self, e: ft.ControlEvent) -> None:
+        """Copy assistant reply markdown to clipboard with visual feedback."""
+        text = getattr(e.control, "data", None) if e.control else None
+        if not text or not e.page:
+            return
+        await ft.Clipboard().set(text)
+        if e.control and hasattr(e.control, "icon"):
+            e.control.icon = ft.Icons.CHECK_ROUNDED
+            e.control.icon_color = ft.Colors.GREEN
+            e.control.update()
+            await asyncio.sleep(1.5)
+            e.control.icon = ft.Icons.CONTENT_COPY_ROUNDED
+            e.control.icon_color = None
+            with contextlib.suppress(Exception):
+                e.control.update()
 
     # ------------------------------------------------------------------
     # Assistant message rendering

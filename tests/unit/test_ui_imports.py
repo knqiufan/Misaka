@@ -108,6 +108,14 @@ class TestUIImports:
     def test_import_extensions_page(self) -> None:
         from misaka.ui.skills.pages import extensions_page  # noqa: F401
 
+    def test_construct_image_overlay(self) -> None:
+        from misaka.ui.components.image_overlay import ImageOverlay
+
+        overlay = ImageOverlay(image_src="test.png")
+
+        assert overlay is not None
+        assert len(overlay.controls) == 4
+
 
 class TestServiceImports:
     """Verify that all service modules can be imported."""

@@ -43,7 +43,8 @@
     "load_earlier": "加载更早的消息",
     "commands_title": "命令",
     "command_menu": "命令菜单",
-    "select_model": "选择模型"
+    "select_model": "选择模型",
+    "copy_reply": "复制回复"
   },
   "settings": {
     "title": "设置",
