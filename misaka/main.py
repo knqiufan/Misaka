@@ -8,6 +8,7 @@ dependency injection and graceful shutdown handling.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import multiprocessing
 import os
@@ -282,6 +283,30 @@ def _main(page: ft.Page) -> None:
 
     # --- Run environment check on startup ---
     async def _run_env_check() -> None:
+        # Suppress "Task exception was never retrieved" for ProcessError from
+        # Claude SDK when user aborts (subprocess exits with code 1).
+        def _asyncio_exception_handler(loop: asyncio.AbstractEventLoop, ctx: dict) -> None:
+            exc = ctx.get("exception")
+            if exc is not None:
+                exc_name = type(exc).__name__
+                if exc_name == "ProcessError" and "exit code 1" in str(exc):
+                    logger.debug(
+                        "Suppressed ProcessError from aborted Claude stream: %s",
+                        exc,
+                    )
+                    return
+            default = getattr(loop, "default_exception_handler", None)
+            if default is not None:
+                default(ctx)
+            else:
+                logger.error("Unhandled task exception: %s", ctx)
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.set_exception_handler(_asyncio_exception_handler)
+        except RuntimeError:
+            pass
+
         result = await services.env_check_service.check_all()
         state.env_check_result = result
         if not result.all_installed:

@@ -244,12 +244,14 @@ class StreamingMessage(ft.Container):
 
             for i in range(self._rendered_block_count, current_count):
                 block = blocks[i]
-                if hasattr(block, "text") and block.text:
-                    md = self._create_markdown(block.text)
-                    wrapped = self._wrap_markdown(md, block.text)
+                if hasattr(block, "text"):
+                    # Add text block even when empty, so _last_text_md is set
+                    # for incremental updates when more chunks arrive
+                    md = self._create_markdown(block.text or "")
+                    wrapped = self._wrap_markdown(md, block.text or "")
                     self._content_column.controls.append(wrapped)
                     self._last_text_md = md
-                    self._last_text_content = block.text
+                    self._last_text_content = block.text or ""
                 elif hasattr(block, "name") and block.name:
                     tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
                     self._content_column.controls.append(

@@ -297,9 +297,18 @@ class ClaudeService:
                 # Explicitly close the async generator to prevent
                 # "Task exception was never retrieved" errors when the
                 # subprocess exits with a non-zero code during cleanup.
+                # When user aborted, ProcessError from aclose is expected.
                 if hasattr(response_stream, "aclose"):
-                    with contextlib.suppress(Exception):
+                    try:
                         await response_stream.aclose()
+                    except Exception as exc:
+                        if abort_event.is_set():
+                            logger.debug(
+                                "Stream aclose raised during abort (expected): %s",
+                                exc,
+                            )
+                        else:
+                            logger.warning("Stream aclose raised: %s", exc)
 
         except CLINotFoundError:
             error_msg = (
@@ -317,25 +326,46 @@ class ClaudeService:
                 on_error(error_msg)
 
         except ProcessError as exc:
-            error_msg = f"Claude process error: {exc}"
-            logger.error(error_msg, exc_info=True)
-            if on_error:
-                on_error(error_msg)
+            if abort_event.is_set():
+                logger.info(
+                    "Claude process exited during user abort (session %s): %s",
+                    session_id,
+                    exc,
+                )
+            else:
+                error_msg = f"Claude process error: {exc}"
+                logger.error(error_msg, exc_info=True)
+                if on_error:
+                    on_error(error_msg)
 
         except ClaudeSDKError as exc:
-            error_msg = f"SDK error: {exc}"
-            logger.error(error_msg, exc_info=True)
-            if on_error:
-                on_error(error_msg)
+            if abort_event.is_set():
+                logger.info(
+                    "SDK error during user abort (session %s): %s",
+                    session_id,
+                    exc,
+                )
+            else:
+                error_msg = f"SDK error: {exc}"
+                logger.error(error_msg, exc_info=True)
+                if on_error:
+                    on_error(error_msg)
 
         except asyncio.CancelledError:
             logger.info("send_message cancelled for session %s", session_id)
 
         except Exception as exc:
-            error_msg = f"Unexpected error: {exc}"
-            logger.error("ClaudeService.send_message error: %s", exc, exc_info=True)
-            if on_error:
-                on_error(error_msg)
+            if abort_event.is_set():
+                logger.info(
+                    "Stream error during user abort (session %s): %s",
+                    session_id,
+                    exc,
+                )
+            else:
+                error_msg = f"Unexpected error: {exc}"
+                logger.error("ClaudeService.send_message error: %s", exc, exc_info=True)
+                if on_error:
+                    on_error(error_msg)
 
         finally:
             self._debug_log(
@@ -495,11 +525,20 @@ class ClaudeService:
             content = getattr(msg_content, "content", []) if msg_content else []
 
         try:
-            from claude_agent_sdk.types import TextBlock, ToolUseBlock
+            from claude_agent_sdk.types import TextBlock, ToolUseBlock, ThinkingBlock
         except (ImportError, AttributeError):
-            TextBlock = ToolUseBlock = None
+            TextBlock = ToolUseBlock = ThinkingBlock = None
 
         for block in content:
+            # Skip ThinkingBlock (extended thinking) - internal reasoning, not user output
+            if ThinkingBlock and isinstance(block, ThinkingBlock):
+                continue
+            block_type = getattr(block, "type", None)
+            if isinstance(block, dict) and block_type is None:
+                block_type = block.get("type")
+            if block_type == "thinking":
+                continue
+
             if TextBlock and isinstance(block, TextBlock) and on_text:
                 if self._saw_text_delta_in_turn:
                     # Prevent duplicate output: when partial text deltas were already streamed,
@@ -512,9 +551,6 @@ class ClaudeService:
                 on_tool_use({"id": block.id, "name": block.name, "input": block.input})
                 continue
 
-            block_type = getattr(block, "type", None)
-            if isinstance(block, dict):
-                block_type = block.get("type", block_type)
             if block_type == "text" and on_text:
                 if self._saw_text_delta_in_turn:
                     continue
@@ -650,7 +686,11 @@ class ClaudeService:
         *,
         on_text: Callable[[str], None] | None = None,
     ) -> None:
-        """Handle a partial/stream event for real-time text updates."""
+        """Handle a partial/stream event for real-time text updates.
+
+        Supports content_block_delta with text_delta. Skips thinking_block_delta
+        (extended thinking) as it is internal reasoning. Event may be dict or object.
+        """
         if not on_text:
             return
 
@@ -659,15 +699,27 @@ class ClaudeService:
             return
 
         event_type = _battr(event, "type", "")
-        if event_type == "content_block_delta":
-            delta = _battr(event, "delta", None)
-            if delta:
-                delta_type = _battr(delta, "type", "")
-                if delta_type == "text_delta":
-                    text = _battr(delta, "text", "")
-                    if text:
-                        self._saw_text_delta_in_turn = True
-                        on_text(text)
+        if event_type != "content_block_delta":
+            # e.g. thinking_block_delta, content_block_start - skip
+            self._debug_log(
+                "stream_event skip event_type=%s (waiting for content_block_delta)",
+                event_type or "(empty)",
+            )
+            return
+
+        delta = _battr(event, "delta", None)
+        if not delta:
+            return
+
+        delta_type = _battr(delta, "type", "")
+        if delta_type != "text_delta":
+            # thinking_block_delta etc - skip, wait for actual text
+            return
+
+        text = _battr(delta, "text", "")
+        if text:
+            self._saw_text_delta_in_turn = True
+            on_text(text)
 
     def _handle_tool_progress(
         self,
