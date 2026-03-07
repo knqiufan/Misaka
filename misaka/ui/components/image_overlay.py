@@ -1,10 +1,12 @@
 """Image overlay component for full-size image viewing.
 
 A modal overlay that displays images at full size with a dark backdrop.
-Supports zoom controls and keyboard navigation (Escape to close).
+Supports zoom controls.
 """
 
 from __future__ import annotations
+
+import contextlib
 
 import flet as ft
 
@@ -16,8 +18,9 @@ class ImageOverlay(ft.Stack):
     - Dark backdrop
     - Close on click-outside
     - Zoom controls
-    - Keyboard support (Escape)
     """
+
+    _BASE_IMAGE_SIZE = 720
 
     def __init__(
         self,
@@ -29,34 +32,35 @@ class ImageOverlay(ft.Stack):
         self._on_close = on_close
         self._zoom_level: float = 1.0
         self._image_control: ft.Image | None = None
+        self._image_container: ft.Container | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
         """Build the overlay UI."""
-        # Dark backdrop - use Container with on_click instead of GestureDetector
         backdrop = ft.Container(
             bgcolor=ft.Colors.with_opacity(0.85, ft.Colors.BLACK),
             expand=True,
             on_click=self._handle_close,
         )
 
-        # Image with zoom support
         self._image_control = ft.Image(
             src=self._image_src,
             fit=ft.BoxFit.CONTAIN,
-            expand=True,
             gapless_playback=True,
         )
-
-        # Image container - use Container with on_click instead of GestureDetector
-        image_container = ft.Container(
+        self._image_container = ft.Container(
             content=self._image_control,
             alignment=ft.Alignment.CENTER,
-            expand=True,
-            on_click=self._handle_close,
+            width=self._BASE_IMAGE_SIZE,
+            height=self._BASE_IMAGE_SIZE,
         )
 
-        # Close button - position via Container inside Stack
+        image_stage = ft.Container(
+            content=self._image_container,
+            alignment=ft.Alignment.CENTER,
+            expand=True,
+        )
+
         close_btn = ft.Container(
             content=ft.IconButton(
                 icon=ft.Icons.CLOSE_ROUNDED,
@@ -72,7 +76,6 @@ class ImageOverlay(ft.Stack):
             right=16,
         )
 
-        # Zoom buttons
         zoom_in_btn = ft.IconButton(
             icon=ft.Icons.ZOOM_IN_ROUNDED,
             icon_color=ft.Colors.WHITE,
@@ -106,42 +109,31 @@ class ImageOverlay(ft.Stack):
             ),
         )
 
-        # Zoom controls row positioned at bottom center
         zoom_controls = ft.Container(
             content=ft.Row(
                 controls=[zoom_out_btn, reset_btn, zoom_in_btn],
                 spacing=4,
                 alignment=ft.MainAxisAlignment.CENTER,
             ),
-            bottom=16,
-            left=0,
-            right=0,
+            alignment=ft.Alignment.BOTTOM_CENTER,
+            expand=True,
+            padding=ft.Padding.only(bottom=16),
         )
 
-        # Assemble stack (no keyboard listener - it was blocking click events)
         self.controls = [
             backdrop,
-            image_container,
+            image_stage,
             close_btn,
             zoom_controls,
         ]
         self.expand = True
+        self._apply_zoom()
 
     def _handle_close(self, e: ft.ControlEvent | None = None) -> None:
         """Close the overlay."""
         if self._on_close:
             self._on_close()
 
-    def _handle_key(self, e: ft.KeyboardEvent) -> None:
-        """Handle keyboard events."""
-        if e.key == "Escape":
-            self._handle_close()
-        elif e.key == "+" or e.key == "=":
-            self._handle_zoom_in(None)
-        elif e.key == "-":
-            self._handle_zoom_out(None)
-        elif e.key == "0":
-            self._handle_zoom_reset(None)
 
     def _handle_zoom_in(self, e: ft.ControlEvent | None) -> None:
         """Zoom in on the image."""
@@ -162,10 +154,16 @@ class ImageOverlay(ft.Stack):
 
     def _apply_zoom(self) -> None:
         """Apply the current zoom level to the image."""
-        if self._image_control and self.page:
-            # For Flet, we need to resize the container, not the image itself
-            # This is a simplified approach
-            self._image_control.update()
+        if not self._image_container:
+            return
+
+        size = int(self._BASE_IMAGE_SIZE * self._zoom_level)
+        self._image_container.width = size
+        self._image_container.height = size
+
+        with contextlib.suppress(RuntimeError):
+            if self.page:
+                self._image_container.update()
 
 
 def show_image_overlay(page: ft.Page, image_src: str) -> None:

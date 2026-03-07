@@ -116,6 +116,42 @@ class TestUIImports:
         assert overlay is not None
         assert len(overlay.controls) == 4
 
+    def test_image_overlay_zoom_updates_rendered_size(self) -> None:
+        from misaka.ui.components.image_overlay import ImageOverlay
+
+        overlay = ImageOverlay(image_src="test.png")
+        initial_width = overlay._image_container.width
+
+        overlay._handle_zoom_in(None)
+
+        assert overlay._image_container.width is not None
+        assert initial_width is not None
+        assert overlay._image_container.width > initial_width
+
+    def test_message_input_pending_image_click_opens_image_overlay(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from types import SimpleNamespace
+
+        from misaka.ui.chat.components.message_input import MessageInput
+
+        opened: list[tuple[object, str]] = []
+
+        def fake_show_image_overlay(page: object, image_src: str) -> None:
+            opened.append((page, image_src))
+
+        monkeypatch.setattr(
+            "misaka.ui.components.image_overlay.show_image_overlay",
+            fake_show_image_overlay,
+        )
+        monkeypatch.setattr(MessageInput, "page", property(lambda self: "fake-page"))
+
+        state = SimpleNamespace(is_streaming=False, selected_model="default")
+        input_box = MessageInput(state=state)
+        pending = SimpleNamespace(id="1", temp_path="test.png")
+
+        input_box._handle_view_image(pending)
+
+        assert opened == [("fake-page", "test.png")]
+
 
 class TestServiceImports:
     """Verify that all service modules can be imported."""
