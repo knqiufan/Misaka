@@ -25,7 +25,7 @@ from misaka.config import SettingKeys
 from misaka.db.database import DatabaseBackend
 from misaka.services.common.claude_env_builder import build_claude_env
 from misaka.services.chat.permission_service import PermissionService
-from misaka.utils.platform import find_claude_binary
+from misaka.utils.platform import find_claude_sdk_binary
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +165,7 @@ class ClaudeService:
             options.mcp_servers = mcp_servers
 
         # Find Claude binary path
-        claude_path = find_claude_binary()
+        claude_path = find_claude_sdk_binary()
         if claude_path:
             # SDK transport executes cli_path directly as a process.
             # On Windows, passing a resolved .js path causes WinError 193.

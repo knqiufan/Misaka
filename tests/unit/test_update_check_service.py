@@ -150,18 +150,48 @@ class TestUpdateCheckService:
             assert version is None
 
     async def test_perform_update_success(self, service: UpdateCheckService) -> None:
-        """perform_update should return True on successful update."""
+        """perform_update should use shared wrapper and hidden-window kwargs."""
         mock_proc = AsyncMock()
         mock_proc.communicate.return_value = (b"updated\n", b"")
         mock_proc.returncode = 0
 
         progress_messages: list[str] = []
 
-        with patch("shutil.which", return_value="/usr/bin/npm"), \
-             patch("asyncio.create_subprocess_exec", return_value=mock_proc), \
+        with patch("shutil.which", return_value="C:/npm/npm.cmd"), \
+             patch(
+                 "misaka.services.file.update_check_service.wrap_windows_script_command",
+                 return_value=[
+                     "cmd.exe",
+                     "/d",
+                     "/s",
+                     "/c",
+                     '""C:/npm/npm.cmd" install -g @anthropic-ai/claude-code@latest"',
+                 ],
+             ) as mock_wrap, \
+             patch(
+                 "misaka.services.file.update_check_service.build_background_subprocess_kwargs",
+                 return_value={"creationflags": 1, "startupinfo": "hidden"},
+             ) as mock_kwargs, \
+             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec, \
              patch("misaka.utils.platform.clear_claude_cache"):
             result = await service.perform_update(on_progress=progress_messages.append)
             assert result is True
+            mock_wrap.assert_called_once_with(
+                "C:/npm/npm.cmd",
+                ["install", "-g", "@anthropic-ai/claude-code@latest"],
+            )
+            mock_kwargs.assert_called_once_with()
+            mock_exec.assert_called_once_with(
+                "cmd.exe",
+                "/d",
+                "/s",
+                "/c",
+                '""C:/npm/npm.cmd" install -g @anthropic-ai/claude-code@latest"',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                creationflags=1,
+                startupinfo="hidden",
+            )
 
     async def test_perform_update_no_npm(self, service: UpdateCheckService) -> None:
         """perform_update should return False when npm is not found."""
@@ -184,15 +214,45 @@ class TestUpdateCheckService:
             assert result is False
 
     async def test_fetch_version_via_npm_cli_success(self, service: UpdateCheckService) -> None:
-        """_fetch_version_via_npm_cli should parse version from npm output."""
+        """_fetch_version_via_npm_cli should use the shared wrapper helper."""
         mock_proc = AsyncMock()
         mock_proc.communicate.return_value = (b"1.2.3\n", b"")
         mock_proc.returncode = 0
 
-        with patch("shutil.which", return_value="/usr/bin/npm"), \
-             patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        with patch("shutil.which", return_value="C:/npm/npm.cmd"), \
+             patch(
+                 "misaka.services.file.update_check_service.wrap_windows_script_command",
+                 return_value=[
+                     "cmd.exe",
+                     "/d",
+                     "/s",
+                     "/c",
+                     '""C:/npm/npm.cmd" view @anthropic-ai/claude-code version"',
+                 ],
+             ) as mock_wrap, \
+             patch(
+                 "misaka.services.file.update_check_service.build_background_subprocess_kwargs",
+                 return_value={"creationflags": 1, "startupinfo": "hidden"},
+             ) as mock_kwargs, \
+             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
             version = await service._fetch_version_via_npm_cli("@anthropic-ai/claude-code")
             assert version == "1.2.3"
+            mock_wrap.assert_called_once_with(
+                "C:/npm/npm.cmd",
+                ["view", "@anthropic-ai/claude-code", "version"],
+            )
+            mock_kwargs.assert_called_once_with()
+            mock_exec.assert_called_once_with(
+                "cmd.exe",
+                "/d",
+                "/s",
+                "/c",
+                '""C:/npm/npm.cmd" view @anthropic-ai/claude-code version"',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                creationflags=1,
+                startupinfo="hidden",
+            )
 
     async def test_fetch_version_via_npm_cli_no_npm(self, service: UpdateCheckService) -> None:
         """_fetch_version_via_npm_cli should return None when npm is missing."""

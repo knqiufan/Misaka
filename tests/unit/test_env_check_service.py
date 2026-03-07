@@ -5,6 +5,7 @@ Tests for the EnvCheckService.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -276,19 +277,35 @@ class TestEnvCheckService:
             assert version is None
 
     async def test_get_version_windows_cmd_wrapper(self, service: EnvCheckService) -> None:
-        """_get_version should use cmd /c for .cmd files on Windows."""
+        """_get_version should delegate .cmd wrappers to the shared command helper."""
         mock_proc = AsyncMock()
         mock_proc.communicate.return_value = (b"v18.0.0\n", b"")
         mock_proc.returncode = 0
 
-        with patch("misaka.services.skills.env_check_service.IS_WINDOWS", True), \
-             patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+        with patch(
+            "misaka.services.skills.env_check_service.wrap_windows_script_command",
+            return_value=["cmd.exe", "/d", "/s", "/c", '""C:/npm/node.cmd" --version"'],
+        ) as mock_wrap, patch(
+            "misaka.services.skills.env_check_service.build_background_subprocess_kwargs",
+            return_value={"creationflags": 1, "startupinfo": "hidden"},
+        ) as mock_kwargs, patch(
+            "asyncio.create_subprocess_exec", return_value=mock_proc
+        ) as mock_exec:
             version = await service._get_version("C:\\npm\\node.cmd", "--version")
             assert version == "18.0.0"
-            # Verify cmd /c was used
-            call_args = mock_exec.call_args[0]
-            assert call_args[0] == "cmd"
-            assert call_args[1] == "/c"
+            mock_wrap.assert_called_once_with("C:\\npm\\node.cmd", ["--version"])
+            mock_kwargs.assert_called_once_with()
+            mock_exec.assert_called_once_with(
+                "cmd.exe",
+                "/d",
+                "/s",
+                "/c",
+                '""C:/npm/node.cmd" --version"',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                creationflags=1,
+                startupinfo="hidden",
+            )
 
     async def test_check_tool_multi_uses_first_found(self, service: EnvCheckService) -> None:
         """_check_tool_multi should use the first working command."""

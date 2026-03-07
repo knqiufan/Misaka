@@ -19,6 +19,7 @@ import pytest
 
 from misaka.services.chat.claude_service import ClaudeService
 from misaka.services.chat.permission_service import PermissionService
+from misaka.utils.platform import find_claude_sdk_binary
 from misaka.services.common.claude_env_builder import _sanitize_env, _sanitize_env_value
 
 
@@ -294,7 +295,7 @@ class TestClaudeServiceSendMessage:
 
         collected: list[str] = []
 
-        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_sdk_binary", return_value=None):
             await claude_service.send_message(
                 "session-1", "Say hello",
                 on_text=collected.append,
@@ -314,7 +315,7 @@ class TestClaudeServiceSendMessage:
         mock_sdk.ClaudeSDKClient = MagicMock(return_value=mock_client)
 
         errors: list[str] = []
-        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_sdk_binary", return_value=None):
             await claude_service.send_message(
                 "session-1", "hi",
                 on_error=errors.append,
@@ -332,7 +333,7 @@ class TestClaudeServiceSendMessage:
         mock_sdk.ClaudeSDKClient = MagicMock(return_value=mock_client)
 
         errors: list[str] = []
-        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_sdk_binary", return_value=None):
             await claude_service.send_message(
                 "session-1", "hi",
                 on_error=errors.append,
@@ -352,7 +353,7 @@ class TestClaudeServiceSendMessage:
         mock_sdk.ClaudeSDKClient = MagicMock(return_value=mock_client)
 
         errors: list[str] = []
-        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_sdk_binary", return_value=None):
             await claude_service.send_message(
                 "session-1", "hi",
                 on_error=errors.append,
@@ -393,7 +394,7 @@ class TestClaudeServiceSendMessage:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_sdk.ClaudeSDKClient = MagicMock(return_value=mock_client)
 
-        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_sdk_binary", return_value=None):
             await claude_service.send_message("session-1", "hi")
 
         assert claude_service.is_streaming is False
@@ -407,21 +408,21 @@ class TestBuildOptions:
 
     def test_build_options_default(self, claude_service: ClaudeService, mock_sdk: Any) -> None:
         mock_sdk.ClaudeAgentOptions = MagicMock(return_value=MagicMock())
-        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_sdk_binary", return_value=None):
             options = claude_service._build_options()
             mock_sdk.ClaudeAgentOptions.assert_called_once()
 
     def test_build_options_with_resume(self, claude_service: ClaudeService, mock_sdk: Any) -> None:
         mock_opts_instance = MagicMock()
         mock_sdk.ClaudeAgentOptions = MagicMock(return_value=mock_opts_instance)
-        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_sdk_binary", return_value=None):
             claude_service._build_options(sdk_session_id="sdk-resume-123")
             assert mock_opts_instance.resume == "sdk-resume-123"
 
     def test_build_options_with_model(self, claude_service: ClaudeService, mock_sdk: Any) -> None:
         mock_opts_instance = MagicMock()
         mock_sdk.ClaudeAgentOptions = MagicMock(return_value=mock_opts_instance)
-        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_sdk_binary", return_value=None):
             claude_service._build_options(model="claude-opus-4")
             assert mock_opts_instance.model == "claude-opus-4"
 
@@ -429,7 +430,7 @@ class TestBuildOptions:
         db.set_setting("dangerously_skip_permissions", "true")
         mock_opts_instance = MagicMock()
         mock_sdk.ClaudeAgentOptions = MagicMock(return_value=mock_opts_instance)
-        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_sdk_binary", return_value=None):
             claude_service._build_options()
             call_kwargs = mock_sdk.ClaudeAgentOptions.call_args
             assert call_kwargs.kwargs.get("permission_mode") == "bypassPermissions"
@@ -438,9 +439,21 @@ class TestBuildOptions:
         mock_opts_instance = MagicMock()
         mock_sdk.ClaudeAgentOptions = MagicMock(return_value=mock_opts_instance)
         mcp = {"fs": {"command": "npx", "args": ["-y", "@anthropic/fs-mcp"]}}
-        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_sdk_binary", return_value=None):
             claude_service._build_options(mcp_servers=mcp)
             assert mock_opts_instance.mcp_servers == mcp
+
+    def test_build_options_uses_sdk_safe_claude_binary(
+        self, claude_service: ClaudeService, mock_sdk: Any
+    ) -> None:
+        mock_opts_instance = MagicMock()
+        mock_sdk.ClaudeAgentOptions = MagicMock(return_value=mock_opts_instance)
+        with patch(
+            "misaka.services.chat.claude_service.find_claude_sdk_binary",
+            return_value="C:/npm/claude.exe",
+        ):
+            options = claude_service._build_options()
+            assert options.cli_path == "C:/npm/claude.exe"
 
 
 # ---------------------------------------------------------------------------

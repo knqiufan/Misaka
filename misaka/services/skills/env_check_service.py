@@ -16,7 +16,11 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from misaka.config import IS_MACOS, IS_WINDOWS, get_expanded_path
-from misaka.utils.platform import subprocess_creation_flags
+from misaka.utils.platform import (
+    build_background_subprocess_kwargs,
+    subprocess_creation_flags,
+    wrap_windows_script_command,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -337,20 +341,13 @@ class EnvCheckService:
     ) -> str | None:
         """Run a binary with its version flag and parse the version string."""
         try:
-            # On Windows, .cmd/.bat files need shell=True equivalent,
-            # but asyncio.create_subprocess_exec doesn't support shell=True.
-            # Instead we handle it by running cmd.exe /c for .cmd/.bat files.
-            cmd: list[str]
-            if IS_WINDOWS and binary_path.lower().endswith((".cmd", ".bat")):
-                cmd = ["cmd", "/c", binary_path, version_flag]
-            else:
-                cmd = [binary_path, version_flag]
+            cmd = wrap_windows_script_command(binary_path, [version_flag])
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                **subprocess_creation_flags(),
+                **build_background_subprocess_kwargs(),
             )
 
             stdout, stderr = await asyncio.wait_for(

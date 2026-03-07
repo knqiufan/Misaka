@@ -25,10 +25,22 @@ logger = logging.getLogger(__name__)
 
 # When running as a PyInstaller GUI exe (console=False) on Windows, every
 # subprocess.Popen / asyncio.create_subprocess_exec call will briefly flash
-# a console window.  Passing CREATE_NO_WINDOW prevents this.
-_SUBPROCESS_FLAGS: int = (
-    subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
-)
+# a console window. Passing CREATE_NO_WINDOW and STARTF_USESHOWWINDOW hides it.
+_SUBPROCESS_FLAGS: int = subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
+
+
+def build_background_subprocess_kwargs() -> dict[str, object]:
+    """Return hidden-window subprocess kwargs for background commands."""
+    if not IS_WINDOWS:
+        return {}
+
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = 0
+    return {
+        "creationflags": _SUBPROCESS_FLAGS,
+        "startupinfo": startupinfo,
+    }
 
 
 def subprocess_creation_flags() -> dict[str, int]:
@@ -40,9 +52,21 @@ def subprocess_creation_flags() -> dict[str, int]:
             *cmd, stdout=PIPE, stderr=PIPE, **subprocess_creation_flags(),
         )
     """
-    if _SUBPROCESS_FLAGS:
-        return {"creationflags": _SUBPROCESS_FLAGS}
+    kwargs = build_background_subprocess_kwargs()
+    creationflags = kwargs.get("creationflags")
+    if isinstance(creationflags, int) and creationflags:
+        return {"creationflags": creationflags}
     return {}
+
+
+def wrap_windows_script_command(binary_path: str, args: list[str]) -> list[str]:
+    """Wrap Windows script launchers so they run silently under cmd.exe."""
+    if IS_WINDOWS and binary_path.lower().endswith((".cmd", ".bat")):
+        quoted_binary = f'"{binary_path}"'
+        quoted_args = subprocess.list2cmdline(args)
+        cmdline = quoted_binary if not quoted_args else f"{quoted_binary} {quoted_args}"
+        return ["cmd.exe", "/d", "/s", "/c", f'"{cmdline}"']
+    return [binary_path, *args]
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +89,9 @@ def find_binary_in_path(cmd: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 _cached_claude_path: str | None = None
+_cached_claude_sdk_path: str | None = None
 _cache_valid: bool = False
+_cache_sdk_valid: bool = False
 
 
 def find_claude_binary() -> str | None:
@@ -90,10 +116,24 @@ def find_claude_binary() -> str | None:
 
 def clear_claude_cache() -> None:
     """Clear the cached Claude binary path (e.g., after installation)."""
-    global _cached_claude_path, _cache_valid
+    global _cached_claude_path, _cached_claude_sdk_path, _cache_valid, _cache_sdk_valid
     _cached_claude_path = None
+    _cached_claude_sdk_path = None
     _cache_valid = False
+    _cache_sdk_valid = False
 
+
+def find_claude_sdk_binary() -> str | None:
+    """Find a Claude CLI path suitable for SDK process launch on Windows."""
+    global _cached_claude_sdk_path, _cache_sdk_valid
+    if _cache_sdk_valid:
+        return _cached_claude_sdk_path
+
+    found = _find_claude_sdk_binary_uncached()
+    if found:
+        _cached_claude_sdk_path = found
+        _cache_sdk_valid = True
+    return found
 
 def _get_claude_candidate_paths() -> list[str]:
     """Return candidate paths where the Claude CLI might be installed."""
@@ -139,17 +179,43 @@ def _find_claude_binary_uncached() -> str | None:
     return None
 
 
+def _find_claude_sdk_binary_uncached() -> str | None:
+    """Search for a Claude binary, preferring direct executables on Windows."""
+    if not IS_WINDOWS:
+        return _find_claude_binary_uncached()
+
+    candidates = _get_claude_candidate_paths()
+    direct_candidates = [
+        path for path in candidates
+        if Path(path).suffix.lower() in {".exe", ""}
+    ]
+    wrapper_candidates = [
+        path for path in candidates
+        if Path(path).suffix.lower() in {".cmd", ".bat"}
+    ]
+
+    for path in [*direct_candidates, *wrapper_candidates]:
+        if _validate_claude_binary(path):
+            return path
+
+    expanded = get_expanded_path()
+    found = shutil.which("claude", path=expanded)
+    if found and _validate_claude_binary(found):
+        return found
+    return None
+
+
 def _validate_claude_binary(path: str) -> bool:
     """Verify that a binary at *path* is a working Claude CLI."""
     if not os.path.isfile(path):
         return False
     try:
+        command = wrap_windows_script_command(path, ["--version"])
         subprocess.run(
-            [path, "--version"],
+            command,
             capture_output=True,
             timeout=5,
-            shell=IS_WINDOWS and path.lower().endswith((".cmd", ".bat")),
-            **subprocess_creation_flags(),
+            **build_background_subprocess_kwargs(),
         )
         return True
     except (subprocess.SubprocessError, OSError):
@@ -251,7 +317,7 @@ async def _run_async(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        **subprocess_creation_flags(),
+        **build_background_subprocess_kwargs(),
     )
     stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     return subprocess.CompletedProcess(

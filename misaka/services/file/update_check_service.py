@@ -18,7 +18,11 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from misaka.config import IS_WINDOWS, get_expanded_path
-from misaka.utils.platform import subprocess_creation_flags
+from misaka.utils.platform import (
+    build_background_subprocess_kwargs,
+    subprocess_creation_flags,
+    wrap_windows_script_command,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,23 +108,16 @@ class UpdateCheckService:
                     on_progress("npm not found, cannot update")
                 return False
 
-            cmd: list[str]
-            if IS_WINDOWS and npm_path.lower().endswith((".cmd", ".bat")):
-                cmd = [
-                    "cmd", "/c", npm_path,
-                    "install", "-g", "@anthropic-ai/claude-code@latest",
-                ]
-            else:
-                cmd = [
-                    npm_path,
-                    "install", "-g", "@anthropic-ai/claude-code@latest",
-                ]
+            cmd = wrap_windows_script_command(
+                npm_path,
+                ["install", "-g", "@anthropic-ai/claude-code@latest"],
+            )
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                **subprocess_creation_flags(),
+                **build_background_subprocess_kwargs(),
             )
 
             stdout, stderr = await asyncio.wait_for(
@@ -238,17 +235,16 @@ class UpdateCheckService:
             if not npm_path:
                 return None
 
-            cmd: list[str]
-            if IS_WINDOWS and npm_path.lower().endswith((".cmd", ".bat")):
-                cmd = ["cmd", "/c", npm_path, "view", package_name, "version"]
-            else:
-                cmd = [npm_path, "view", package_name, "version"]
+            cmd = wrap_windows_script_command(
+                npm_path,
+                ["view", package_name, "version"],
+            )
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                **subprocess_creation_flags(),
+                **build_background_subprocess_kwargs(),
             )
 
             stdout, stderr = await asyncio.wait_for(
