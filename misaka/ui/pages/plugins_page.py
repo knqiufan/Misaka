@@ -453,11 +453,13 @@ class PluginsPage(ft.Column):
         existing_config: dict[str, Any] | None = None,
     ) -> None:
         """Show add or edit dialog for MCP server with headers support."""
-        from misaka.ui.common.theme import make_dropdown as _mdd
         from misaka.ui.common.theme import make_text_field as _mtf
 
         is_edit = mode == "edit"
         config = existing_config or {}
+        initial_type = config.get("type", "stdio")
+        if initial_type not in ("stdio", "sse", "http"):
+            initial_type = "stdio"
 
         # Basic fields
         name_field = _mtf(
@@ -465,13 +467,13 @@ class PluginsPage(ft.Column):
             value=existing_name if is_edit else "",
             autofocus=True,
         )
-        type_dropdown = _mdd(
-            label=t("plugins.transport_type"),
-            value=config.get("type", "stdio"),
-            options=[
-                ft.dropdown.Option("stdio"),
-                ft.dropdown.Option("sse"),
-                ft.dropdown.Option("http"),
+        type_selector = ft.SegmentedButton(
+            selected=[initial_type],
+            allow_multiple_selection=False,
+            segments=[
+                ft.Segment(value="stdio", label=ft.Text("stdio")),
+                ft.Segment(value="sse", label=ft.Text("sse")),
+                ft.Segment(value="http", label=ft.Text("http")),
             ],
         )
 
@@ -487,12 +489,6 @@ class PluginsPage(ft.Column):
         headers_container = ft.Column(spacing=8, visible=False)
         header_rows: list[ft.Container] = []
         error_text = ft.Text(color=ft.Colors.ERROR, size=11, visible=False)
-
-        def update_headers_visibility(e=None):
-            server_type = type_dropdown.value or "stdio"
-            headers_container.visible = server_type in ("sse", "http")
-            if page:
-                page.update()
 
         def add_header_row(key: str = "", value: str = ""):
             def on_delete(e):
@@ -525,7 +521,7 @@ class PluginsPage(ft.Column):
         # Initialize existing headers
         for key, value in config.get("headers", {}).items():
             add_header_row(key, value)
-        if not header_rows and config.get("type", "stdio") in ("sse", "http"):
+        if not header_rows and initial_type in ("sse", "http"):
             add_header_row()
 
         add_header_btn = make_text_button(
@@ -533,9 +529,6 @@ class PluginsPage(ft.Column):
             icon=ft.Icons.ADD,
             on_click=add_new_header,
         )
-
-        type_dropdown.on_change = update_headers_visibility
-        update_headers_visibility()
 
         # Build sectioned form
         def show_error(message: str) -> None:
@@ -548,7 +541,8 @@ class PluginsPage(ft.Column):
                 controls=[
                     ft.Text(t("plugins.basic_info"), size=13, weight=ft.FontWeight.W_600),
                     name_field,
-                    type_dropdown,
+                    ft.Text(t("plugins.transport_type"), size=12, opacity=0.8),
+                    type_selector,
                 ],
                 spacing=12,
             ),
@@ -587,8 +581,12 @@ class PluginsPage(ft.Column):
         )
 
         # Update headers section visibility based on type
+        dialog_ref: list[ft.AlertDialog | None] = [None]
+
         def update_sections_visibility(e=None):
-            server_type = type_dropdown.value or "stdio"
+            # SegmentedButton.selected 为列表，取第一个
+            sel = type_selector.selected
+            server_type = (sel[0] if sel else "stdio").strip()
             is_remote = server_type in ("sse", "http")
             command_field.visible = not is_remote
             args_field.visible = not is_remote
@@ -598,9 +596,13 @@ class PluginsPage(ft.Column):
             if is_remote and not header_rows:
                 add_header_row()
             if page:
-                page.update()
+                # 显式更新对话框，确保 overlay 中的内容正确刷新
+                if dialog_ref[0]:
+                    page.update(dialog_ref[0])
+                else:
+                    page.update()
 
-        type_dropdown.on_change = update_sections_visibility
+        type_selector.on_change = update_sections_visibility
         update_sections_visibility()
 
         def save(ev):
@@ -610,7 +612,8 @@ class PluginsPage(ft.Column):
                 show_error(t("plugins.validation_name_required"))
                 return
 
-            server_type = type_dropdown.value or "stdio"
+            sel = type_selector.selected
+            server_type = sel[0] if sel else "stdio"
             new_config: dict[str, Any] = {"type": server_type}
 
             if server_type == "stdio":
@@ -685,6 +688,7 @@ class PluginsPage(ft.Column):
                 ),
             ],
         )
+        dialog_ref[0] = dialog
         page.show_dialog(dialog)
 
     def _show_edit_dialog(self, name: str) -> None:

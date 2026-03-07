@@ -138,15 +138,14 @@ def test_show_server_dialog_shows_headers_when_http_selected_from_event(monkeypa
     assert dummy_page.dialog is not None
     dialog_content = dummy_page.dialog.content
     basic_section, _, headers_section, _ = dialog_content.controls
-    type_dropdown = basic_section.content.controls[2]
+    type_selector = basic_section.content.controls[3]  # Text, name_field, label, SegmentedButton
     headers_container = headers_section.content.controls[1]
 
     assert headers_section.visible is False
     assert headers_container.visible is False
 
-    event = SimpleNamespace(control=SimpleNamespace(value="http"), page=dummy_page)
-    type_dropdown.value = ""
-    type_dropdown.on_change(event)
+    type_selector.selected = ["http"]
+    type_selector.on_change(SimpleNamespace(control=type_selector, page=dummy_page))
 
     assert headers_section.visible is True
     assert headers_container.visible is True
