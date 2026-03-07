@@ -80,7 +80,6 @@ Misaka/
 │   │   │   └── permission_service.py  # 工具权限请求
 │   │   ├── settings/                # 设置
 │   │   │   ├── settings_service.py  # 键值设置
-│   │   │   ├── provider_service.py  # API 提供商
 │   │   │   ├── cli_settings_service.py
 │   │   │   └── router_config_service.py
 │   │   ├── mcp/                     # MCP 服务
@@ -169,7 +168,6 @@ main() → _setup_logging() → ft.run(_main, assets_dir=assets)
 - `permission_service` → 无依赖
 - `settings_service` → db
 - `session_service` / `message_service` → db
-- `provider_service` → db
 - `claude_service` → db, permission_service
 - `router_config_service` → db, cli_settings_service
 
@@ -200,21 +198,22 @@ main() → _setup_logging() → ft.run(_main, assets_dir=assets)
 - 消息：get_messages（游标分页）, add_message, add_messages_batch, clear_session_messages
 - 设置：get_setting, set_setting, get_all_settings
 - 任务：get_tasks_by_session, create_task, update_task, delete_task
-- 提供商：get_all_providers, get_provider, activate_provider, create_provider 等
-- 路由配置：get_all_router_configs, get_active_router_config 等
+- 路由配置：get_all_router_configs, get_active_router_config, create_router_config, update_router_config, activate_router_config 等
 
 **SQLiteBackend：**
 
 - WAL 模式、外键约束
 - `row_factory = sqlite3.Row`
-- 表：chat_sessions, messages, settings, tasks, api_providers, router_configs
+- 表：chat_sessions, messages, settings, tasks, router_configs
 
 **迁移：**
 
 - `_schema_version` 表记录版本
-- 当前 SCHEMA_VERSION = 2
+- 当前 SCHEMA_VERSION = 4
 - v1：会话、消息字段扩展
 - v2：router_configs 表
+- v3：会话 mode 从 `code` 迁移到 `agent`
+- v4：删除遗留 `api_providers` 表
 
 ### 4.4 Claude 集成（claude_service.py）
 
@@ -291,7 +290,6 @@ main.py
   │   ├── SettingsService
   │   ├── SessionService
   │   ├── MessageService
-  │   ├── ProviderService
   │   ├── TaskService
   │   ├── FileService
   │   ├── MCPService
@@ -329,7 +327,6 @@ main.py
 | Message | content 为 JSON（MessageContentBlock 列表） |
 | MessageContentBlock | type: text/tool_use/tool_result/code |
 | TaskItem | 任务 id、session_id、title、status、description |
-| ApiProvider | API 提供商配置 |
 | RouterConfig | Claude Code Router 配置 |
 | TokenUsage | input_tokens、output_tokens、cache_*、cost_usd |
 

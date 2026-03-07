@@ -17,9 +17,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from misaka.db.models import ApiProvider
-from misaka.services.chat.claude_service import ClaudeService, _sanitize_env, _sanitize_env_value
+from misaka.services.chat.claude_service import ClaudeService
 from misaka.services.chat.permission_service import PermissionService
+from misaka.services.common.claude_env_builder import _sanitize_env, _sanitize_env_value
 
 
 # ---------------------------------------------------------------------------
@@ -42,6 +42,10 @@ def mock_sdk():
     mock_module = MagicMock()
     mock_module.ClaudeSDKClient = MagicMock
     mock_module.ClaudeAgentOptions = MagicMock
+    mock_module.AssistantMessage = type("AssistantMessage", (), {})
+    mock_module.ResultMessage = type("ResultMessage", (), {})
+    mock_module.SystemMessage = type("SystemMessage", (), {})
+    mock_module.UserMessage = type("UserMessage", (), {})
     mock_module.ClaudeSDKError = type("ClaudeSDKError", (Exception,), {})
     mock_module.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
     mock_module.CLIConnectionError = type("CLIConnectionError", (Exception,), {})
@@ -117,11 +121,9 @@ class TestClaudeServiceDispatch:
         text_block = MagicMock()
         text_block.type = "text"
         text_block.text = "Hello from Claude"
-        inner_msg = MagicMock()
-        inner_msg.content = [text_block]
         message = MagicMock()
         message.type = "assistant"
-        message.message = inner_msg
+        message.content = [text_block]
 
         collected: list[str] = []
         claude_service._dispatch_message(message, on_text=collected.append)
@@ -133,11 +135,9 @@ class TestClaudeServiceDispatch:
         tool_block.id = "tool-1"
         tool_block.name = "Read"
         tool_block.input = {"path": "a.py"}
-        inner_msg = MagicMock()
-        inner_msg.content = [tool_block]
         message = MagicMock()
         message.type = "assistant"
-        message.message = inner_msg
+        message.content = [tool_block]
 
         collected: list[dict[str, Any]] = []
         claude_service._dispatch_message(message, on_tool_use=collected.append)
@@ -151,11 +151,9 @@ class TestClaudeServiceDispatch:
         result_block.tool_use_id = "tool-1"
         result_block.content = "file contents here"
         result_block.is_error = False
-        inner_msg = MagicMock()
-        inner_msg.content = [result_block]
         message = MagicMock()
         message.type = "user"
-        message.message = inner_msg
+        message.content = [result_block]
 
         collected: list[dict[str, Any]] = []
         claude_service._dispatch_message(message, on_tool_result=collected.append)
@@ -175,13 +173,14 @@ class TestClaudeServiceDispatch:
         result_block = MagicMock()
         result_block.type = "tool_result"
         result_block.tool_use_id = "tool-2"
-        result_block.content = [text_part, text_part2]
+        result_block.content = [
+            {"type": "text", "text": "part1"},
+            {"type": "text", "text": "part2"},
+        ]
         result_block.is_error = False
-        inner_msg = MagicMock()
-        inner_msg.content = [result_block]
         message = MagicMock()
         message.type = "user"
-        message.message = inner_msg
+        message.content = [result_block]
 
         collected: list[dict[str, Any]] = []
         claude_service._dispatch_message(message, on_tool_result=collected.append)
@@ -219,6 +218,7 @@ class TestClaudeServiceDispatch:
         message.session_id = "sdk-abc"
         message.model = "claude-sonnet-4-5"
         message.tools = ["Read", "Write"]
+        message.data = {}
 
         collected: list[dict[str, Any]] = []
         claude_service._dispatch_message(message, on_status=collected.append)
@@ -228,6 +228,7 @@ class TestClaudeServiceDispatch:
 
     def test_dispatch_stream_event(self, claude_service: ClaudeService) -> None:
         delta = MagicMock()
+        delta.type = "text_delta"
         delta.text = "streaming chunk"
         event = MagicMock()
         event.type = "content_block_delta"
@@ -256,7 +257,7 @@ class TestClaudeServiceDispatch:
         """Dispatch with no callbacks should not raise."""
         message = MagicMock()
         message.type = "assistant"
-        message.message = MagicMock(content=[])
+        message.content = []
         claude_service._dispatch_message(message)
 
     def test_dispatch_unknown_type(self, claude_service: ClaudeService) -> None:
@@ -282,9 +283,9 @@ class TestClaudeServiceSendMessage:
         inner_msg.content = [text_block]
         sdk_message = MagicMock()
         sdk_message.type = "assistant"
-        sdk_message.message = inner_msg
+        sdk_message.content = [text_block]
 
-        mock_client = AsyncMock()
+        mock_client = MagicMock(spec=["send_message", "__aenter__", "__aexit__"])
         mock_client.send_message = MagicMock(return_value=MockAsyncIterator([sdk_message]))
 
         mock_sdk.ClaudeSDKClient = MagicMock(return_value=mock_client)
@@ -293,7 +294,7 @@ class TestClaudeServiceSendMessage:
 
         collected: list[str] = []
 
-        with patch("misaka.services.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
             await claude_service.send_message(
                 "session-1", "Say hello",
                 on_text=collected.append,
@@ -313,7 +314,7 @@ class TestClaudeServiceSendMessage:
         mock_sdk.ClaudeSDKClient = MagicMock(return_value=mock_client)
 
         errors: list[str] = []
-        with patch("misaka.services.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
             await claude_service.send_message(
                 "session-1", "hi",
                 on_error=errors.append,
@@ -331,7 +332,7 @@ class TestClaudeServiceSendMessage:
         mock_sdk.ClaudeSDKClient = MagicMock(return_value=mock_client)
 
         errors: list[str] = []
-        with patch("misaka.services.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
             await claude_service.send_message(
                 "session-1", "hi",
                 on_error=errors.append,
@@ -351,7 +352,7 @@ class TestClaudeServiceSendMessage:
         mock_sdk.ClaudeSDKClient = MagicMock(return_value=mock_client)
 
         errors: list[str] = []
-        with patch("misaka.services.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
             await claude_service.send_message(
                 "session-1", "hi",
                 on_error=errors.append,
@@ -361,41 +362,38 @@ class TestClaudeServiceSendMessage:
         assert "sdk" in errors[0].lower()
 
     @pytest.mark.asyncio
-    async def test_abort_sets_flags(self, claude_service: ClaudeService) -> None:
-        """abort() sets _is_streaming to False and fires the event."""
-        claude_service._is_streaming = True
-        await claude_service.abort()
-        assert claude_service.is_streaming is False
-        assert claude_service._abort_event.is_set()
-
-    @pytest.mark.asyncio
-    async def test_abort_with_client(self, claude_service: ClaudeService) -> None:
-        """abort() calls client.abort() if a client exists."""
+    async def test_abort_with_explicit_session(self, claude_service: ClaudeService) -> None:
+        """abort() clears session state and calls client.abort() when present."""
         mock_client = AsyncMock()
-        claude_service._client = mock_client
-        claude_service._is_streaming = True
+        session_id = "session-1"
+        claude_service._active_streams[session_id] = True
+        claude_service._abort_events[session_id] = asyncio.Event()
+        claude_service._clients[session_id] = mock_client
 
-        await claude_service.abort()
+        await claude_service.abort(session_id)
+
+        assert claude_service.is_streaming is False
+        assert claude_service._abort_events[session_id].is_set()
         mock_client.abort.assert_awaited_once()
-        assert claude_service._client is None
+        assert session_id not in claude_service._clients
 
     @pytest.mark.asyncio
     async def test_send_message_aborted_mid_stream(self, claude_service: ClaudeService, mock_sdk: Any) -> None:
         """Abort during streaming stops iteration."""
-        msg1 = MagicMock(type="assistant", message=MagicMock(content=[]))
+        msg1 = MagicMock(type="assistant", content=[])
 
         async def abort_during_iter():
             yield msg1
-            claude_service._abort_event.set()
+            claude_service._abort_events["session-1"].set()
             yield msg1  # Should not process this
 
-        mock_client = AsyncMock()
+        mock_client = MagicMock(spec=["send_message", "__aenter__", "__aexit__"])
         mock_client.send_message = MagicMock(return_value=abort_during_iter())
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_sdk.ClaudeSDKClient = MagicMock(return_value=mock_client)
 
-        with patch("misaka.services.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
             await claude_service.send_message("session-1", "hi")
 
         assert claude_service.is_streaming is False
@@ -409,21 +407,21 @@ class TestBuildOptions:
 
     def test_build_options_default(self, claude_service: ClaudeService, mock_sdk: Any) -> None:
         mock_sdk.ClaudeAgentOptions = MagicMock(return_value=MagicMock())
-        with patch("misaka.services.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
             options = claude_service._build_options()
             mock_sdk.ClaudeAgentOptions.assert_called_once()
 
     def test_build_options_with_resume(self, claude_service: ClaudeService, mock_sdk: Any) -> None:
         mock_opts_instance = MagicMock()
         mock_sdk.ClaudeAgentOptions = MagicMock(return_value=mock_opts_instance)
-        with patch("misaka.services.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
             claude_service._build_options(sdk_session_id="sdk-resume-123")
             assert mock_opts_instance.resume == "sdk-resume-123"
 
     def test_build_options_with_model(self, claude_service: ClaudeService, mock_sdk: Any) -> None:
         mock_opts_instance = MagicMock()
         mock_sdk.ClaudeAgentOptions = MagicMock(return_value=mock_opts_instance)
-        with patch("misaka.services.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
             claude_service._build_options(model="claude-opus-4")
             assert mock_opts_instance.model == "claude-opus-4"
 
@@ -431,7 +429,7 @@ class TestBuildOptions:
         db.set_setting("dangerously_skip_permissions", "true")
         mock_opts_instance = MagicMock()
         mock_sdk.ClaudeAgentOptions = MagicMock(return_value=mock_opts_instance)
-        with patch("misaka.services.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
             claude_service._build_options()
             call_kwargs = mock_sdk.ClaudeAgentOptions.call_args
             assert call_kwargs.kwargs.get("permission_mode") == "bypassPermissions"
@@ -440,7 +438,7 @@ class TestBuildOptions:
         mock_opts_instance = MagicMock()
         mock_sdk.ClaudeAgentOptions = MagicMock(return_value=mock_opts_instance)
         mcp = {"fs": {"command": "npx", "args": ["-y", "@anthropic/fs-mcp"]}}
-        with patch("misaka.services.claude_service.find_claude_binary", return_value=None):
+        with patch("misaka.services.chat.claude_service.find_claude_binary", return_value=None):
             claude_service._build_options(mcp_servers=mcp)
             assert mock_opts_instance.mcp_servers == mcp
 

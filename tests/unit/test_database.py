@@ -4,7 +4,10 @@ Tests for the database backend.
 
 from __future__ import annotations
 
+import sqlite3
+
 from misaka.db.database import DatabaseBackend
+from misaka.db.migrations import run_migrations
 
 
 class TestSQLiteBackend:
@@ -65,7 +68,6 @@ class TestSQLiteBackend:
         db.clear_session_messages(session.id)
         messages, _ = db.get_messages(session.id)
         assert len(messages) == 0
-        # SDK session ID should be reset
         updated = db.get_session(session.id)
         assert updated is not None
         assert updated.sdk_session_id == ""
@@ -108,27 +110,40 @@ class TestSQLiteBackend:
         assert db.delete_task(task.id) is True
         assert db.get_task(task.id) is None
 
-    def test_provider_crud(self, db: DatabaseBackend) -> None:
-        provider = db.create_provider("Test Provider", api_key="sk-test")
-        assert provider.name == "Test Provider"
-        assert provider.api_key == "sk-test"
-        assert provider.is_active == 0
+    def test_router_config_crud(self, db: DatabaseBackend) -> None:
+        config = db.create_router_config("Router A", api_key="sk-test", base_url="https://router")
+        assert config.name == "Router A"
+        assert config.api_key == "sk-test"
+        assert config.is_active == 0
 
-        # Update
-        updated = db.update_provider(provider.id, name="Updated Provider")
+        updated = db.update_router_config(config.id, name="Router B")
         assert updated is not None
-        assert updated.name == "Updated Provider"
+        assert updated.name == "Router B"
 
-        # Activate
-        assert db.activate_provider(provider.id) is True
-        active = db.get_active_provider()
+        assert db.activate_router_config(config.id) is True
+        active = db.get_active_router_config()
         assert active is not None
-        assert active.id == provider.id
+        assert active.id == config.id
 
-        # Deactivate all
-        db.deactivate_all_providers()
-        assert db.get_active_provider() is None
+        assert db.delete_router_config(config.id) is True
+        assert db.get_router_config(config.id) is None
 
-        # Delete
-        assert db.delete_provider(provider.id) is True
-        assert db.get_provider(provider.id) is None
+    def test_migration_drops_api_providers_table(self, tmp_path) -> None:
+        db_path = tmp_path / "migrate.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE _schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO _schema_version (version) VALUES (3)")
+        conn.execute("CREATE TABLE api_providers (id TEXT PRIMARY KEY, name TEXT NOT NULL)")
+        conn.commit()
+
+        run_migrations(conn)
+
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='api_providers'"
+        ).fetchone()
+        version = conn.execute("SELECT version FROM _schema_version").fetchone()
+        conn.close()
+
+        assert row is None
+        assert version is not None
+        assert version[0] == 4

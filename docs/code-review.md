@@ -106,7 +106,7 @@ The codebase is well-structured and follows the architecture design document clo
 **Rating**: Good
 
 - All models are plain dataclasses, correctly modeling the database entities.
-- `Message.parse_content()` and `ApiProvider.parse_extra_env()` gracefully handle malformed JSON.
+- `Message.parse_content()` gracefully handles malformed JSON.
 - `FileTreeNode` uses self-referential typing correctly.
 - `MCPServerConfig` covers stdio, SSE, and HTTP transports.
 
@@ -187,7 +187,7 @@ The codebase is well-structured and follows the architecture design document clo
 - Correctly handles both string and list content formats.
 - JSON serialization for structured content and token usage.
 
-### `misaka/services/session_service.py`, `provider_service.py`, `task_service.py`
+### `misaka/services/session_service.py`, `task_service.py`
 
 **Rating**: Good
 
@@ -234,7 +234,7 @@ The codebase is well-structured and follows the architecture design document clo
 **Rating**: Good
 
 - **chat_page.py**: Comprehensive orchestration of chat flow with session, message, task, and permission operations. Panel resize with min/max constraints.
-- **settings_page.py**: Complete settings UI with provider CRUD, theme selection, permission mode radio group, and CLI configuration.
+- **settings_page.py**: Complete settings UI with router config management, theme selection, permission mode radio group, and CLI configuration.
 - **plugins_page.py**: MCP server management with config file reading/writing.
 - **extensions_page.py**: Placeholder page with planned feature list.
 

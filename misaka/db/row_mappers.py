@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from misaka.db.models import ApiProvider, ChatSession, Message, RouterConfig, TaskItem
+from misaka.db.models import ChatSession, Message, RouterConfig, TaskItem
 
 
 def row_to_session(row: sqlite3.Row) -> ChatSession:
@@ -46,22 +46,6 @@ def row_to_task(row: sqlite3.Row) -> TaskItem:
         title=row["title"],
         status=row["status"],
         description=row["description"],
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-    )
-
-
-def row_to_provider(row: sqlite3.Row) -> ApiProvider:
-    return ApiProvider(
-        id=row["id"],
-        name=row["name"],
-        provider_type=row["provider_type"],
-        base_url=row["base_url"],
-        api_key=row["api_key"],
-        is_active=row["is_active"],
-        sort_order=row["sort_order"],
-        extra_env=row["extra_env"],
-        notes=row["notes"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

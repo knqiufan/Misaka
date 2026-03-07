@@ -9,13 +9,13 @@ import json
 import pytest
 
 from misaka.db.models import (
-    ApiProvider,
     ChatSession,
     FilePreview,
     FileTreeNode,
     MCPServerConfig,
     Message,
     MessageContentBlock,
+    RouterConfig,
     TaskItem,
     TokenUsage,
 )
@@ -88,31 +88,14 @@ class TestMessage:
         assert msg.parse_token_usage() is None
 
 
-class TestApiProvider:
+class TestRouterConfig:
 
-    def test_parse_extra_env(self) -> None:
-        provider = ApiProvider(
-            id="1", name="Test",
-            extra_env='{"KEY1": "val1", "KEY2": "val2"}',
-        )
-        env = provider.parse_extra_env()
-        assert env == {"KEY1": "val1", "KEY2": "val2"}
-
-    def test_parse_extra_env_empty(self) -> None:
-        provider = ApiProvider(id="1", name="Test", extra_env="{}")
-        assert provider.parse_extra_env() == {}
-
-    def test_parse_extra_env_invalid_json(self) -> None:
-        provider = ApiProvider(id="1", name="Test", extra_env="not json")
-        assert provider.parse_extra_env() == {}
-
-    def test_parse_extra_env_filters_non_string(self) -> None:
-        provider = ApiProvider(
-            id="1", name="Test",
-            extra_env='{"KEY1": "val", "KEY2": 123}',
-        )
-        env = provider.parse_extra_env()
-        assert env == {"KEY1": "val"}  # KEY2 (int) should be filtered
+    def test_router_config_defaults(self) -> None:
+        config = RouterConfig(id="1", name="Default")
+        assert config.api_key == ""
+        assert config.base_url == ""
+        assert config.config_json == "{}"
+        assert config.agent_team is False
 
 
 class TestFileTreeNode:

@@ -185,7 +185,6 @@ class TestServiceImports:
             MCPService,
             MessageService,
             PermissionService,
-            ProviderService,
             SessionService,
             SettingsService,
             TaskService,
@@ -200,7 +199,6 @@ class TestServiceImports:
 
     def test_import_models(self) -> None:
         from misaka.db.models import (
-            ApiProvider,
             ChatSession,
             FilePreview,
             FileTreeNode,

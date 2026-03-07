@@ -34,7 +34,6 @@ misaka/
 │   │   └── permission_service.py  # Permission requests
 │   ├── settings/              # Settings management
 │   │   ├── settings_service.py    # Key-value settings
-│   │   ├── provider_service.py    # API provider config
 │   │   ├── cli_settings_service.py # CLI settings
 │   │   └── router_config_service.py # Router config
 │   ├── mcp/                   # MCP server management
@@ -73,7 +72,7 @@ misaka/
 │   │   └── pages/
 │   │       ├── settings_page.py
 │   │       ├── appearance_section.py
-│   │       └── provider_section.py
+│   │       └── router_config_section.py
 │   ├── skills/                # Skills UI
 │   │   └── pages/
 │   │       ├── skill_editor_panel.py

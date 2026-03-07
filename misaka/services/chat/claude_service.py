@@ -19,12 +19,9 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 from misaka.config import SettingKeys
-
-if TYPE_CHECKING:
-    from misaka.db.models import ApiProvider
 from misaka.db.database import DatabaseBackend
 from misaka.services.common.claude_env_builder import build_claude_env
 from misaka.services.chat.permission_service import PermissionService
@@ -89,9 +86,9 @@ class ClaudeService:
         if self._debug_log_enabled:
             logger.info("[ClaudeSDK] " + message, *args)
 
-    def _build_env(self, provider: Any = None) -> dict[str, str]:
+    def _build_env(self) -> dict[str, str]:
         """Build the subprocess environment for the Claude CLI."""
-        return build_claude_env(self._db, provider)
+        return build_claude_env(self._db)
 
     def _build_options(
         self,
@@ -103,7 +100,6 @@ class ClaudeService:
         mcp_servers: dict[str, Any] | None = None,
         session_mode: str = "agent",
         permission_mode: str = "default",
-        provider: ApiProvider | None = None,
         can_use_tool: Any = None,
     ) -> Any:
         """Build ClaudeAgentOptions from parameters.
@@ -119,7 +115,7 @@ class ClaudeService:
         from claude_agent_sdk import ClaudeAgentOptions
 
         cwd = working_directory or str(Path.home())
-        env = self._build_env(provider)
+        env = self._build_env()
 
         # Check for bypass permissions setting
         skip_permissions = self._db.get_setting(SettingKeys.DANGEROUSLY_SKIP_PERMISSIONS) == "true"
@@ -224,9 +220,6 @@ class ClaudeService:
         self._abort_events[session_id] = abort_event
         self._debug_log_enabled = self._is_debug_log_enabled()
         self._saw_text_delta_in_turn = False
-
-        # Get active provider
-        provider = self._db.get_active_provider()
         message_counts: dict[str, int] = {
             "assistant": 0,
             "user": 0,
@@ -248,7 +241,6 @@ class ClaudeService:
             mcp_servers=mcp_servers,
             session_mode=session_mode,
             permission_mode=permission_mode,
-            provider=provider,
             can_use_tool=can_use_tool,
         )
         self._debug_log(

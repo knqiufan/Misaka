@@ -155,37 +155,6 @@ class TaskItem:
 
 
 # ---------------------------------------------------------------------------
-# API provider
-# ---------------------------------------------------------------------------
-
-@dataclass
-class ApiProvider:
-    """An API provider configuration."""
-
-    id: str
-    name: str
-    provider_type: str = "anthropic"
-    base_url: str = ""
-    api_key: str = ""
-    is_active: int = 0  # SQLite boolean: 0 or 1
-    sort_order: int = 0
-    extra_env: str = "{}"  # JSON string of dict[str, str]
-    notes: str = ""
-    created_at: str = ""
-    updated_at: str = ""
-
-    def parse_extra_env(self) -> dict[str, str]:
-        """Parse the extra_env JSON string into a dict."""
-        try:
-            data = json.loads(self.extra_env)
-            if isinstance(data, dict):
-                return {k: v for k, v in data.items() if isinstance(v, str)}
-        except (json.JSONDecodeError, TypeError):
-            pass
-        return {}
-
-
-# ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
 

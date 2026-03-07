@@ -16,10 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from misaka.db.database import DatabaseBackend
-from misaka.db.models import ApiProvider, ChatSession, Message, RouterConfig, TaskItem
+from misaka.db.models import ChatSession, Message, RouterConfig, TaskItem
 from misaka.db.row_mappers import (
     row_to_message,
-    row_to_provider,
     row_to_router_config,
     row_to_session,
     row_to_task,
@@ -96,20 +95,6 @@ class SQLiteBackend(DatabaseBackend):
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS api_providers (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                provider_type TEXT NOT NULL DEFAULT 'anthropic',
-                base_url TEXT NOT NULL DEFAULT '',
-                api_key TEXT NOT NULL DEFAULT '',
-                is_active INTEGER NOT NULL DEFAULT 0,
-                sort_order INTEGER NOT NULL DEFAULT 0,
-                extra_env TEXT NOT NULL DEFAULT '{}',
-                notes TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
             CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
@@ -427,109 +412,6 @@ class SQLiteBackend(DatabaseBackend):
         cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         conn.commit()
         return cursor.rowcount > 0
-
-    # ----- API Providers -----
-
-    def get_all_providers(self) -> list[ApiProvider]:
-        conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT * FROM api_providers ORDER BY sort_order ASC, created_at ASC"
-        ).fetchall()
-        return [row_to_provider(r) for r in rows]
-
-    def get_provider(self, provider_id: str) -> ApiProvider | None:
-        conn = self._get_conn()
-        row = conn.execute(
-            "SELECT * FROM api_providers WHERE id = ?", (provider_id,)
-        ).fetchone()
-        return row_to_provider(row) if row else None
-
-    def get_active_provider(self) -> ApiProvider | None:
-        conn = self._get_conn()
-        row = conn.execute(
-            "SELECT * FROM api_providers WHERE is_active = 1 LIMIT 1"
-        ).fetchone()
-        return row_to_provider(row) if row else None
-
-    def create_provider(self, name: str, **kwargs: Any) -> ApiProvider:
-        conn = self._get_conn()
-        pid = _generate_id()
-        now = _now()
-        max_row = conn.execute(
-            "SELECT MAX(sort_order) as max_order FROM api_providers"
-        ).fetchone()
-        sort_order = (max_row["max_order"] or -1) + 1 if max_row else 0
-        provider_type = kwargs.get("provider_type", "anthropic")
-        base_url = kwargs.get("base_url", "")
-        api_key = kwargs.get("api_key", "")
-        extra_env = kwargs.get("extra_env", "{}")
-        notes = kwargs.get("notes", "")
-        conn.execute(
-            """INSERT INTO api_providers
-               (id, name, provider_type, base_url, api_key, is_active,
-                sort_order, extra_env, notes, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
-            (pid, name, provider_type, base_url, api_key,
-             sort_order, extra_env, notes, now, now),
-        )
-        conn.commit()
-        return ApiProvider(
-            id=pid, name=name, provider_type=provider_type,
-            base_url=base_url, api_key=api_key, is_active=0,
-            sort_order=sort_order, extra_env=extra_env, notes=notes,
-            created_at=now, updated_at=now,
-        )
-
-    def update_provider(self, provider_id: str, **kwargs: Any) -> ApiProvider | None:
-        existing = self.get_provider(provider_id)
-        if not existing:
-            return None
-        conn = self._get_conn()
-        now = _now()
-        conn.execute(
-            """UPDATE api_providers
-               SET name = ?, provider_type = ?, base_url = ?, api_key = ?,
-                   extra_env = ?, notes = ?, sort_order = ?, updated_at = ?
-               WHERE id = ?""",
-            (
-                kwargs.get("name", existing.name),
-                kwargs.get("provider_type", existing.provider_type),
-                kwargs.get("base_url", existing.base_url),
-                kwargs.get("api_key", existing.api_key),
-                kwargs.get("extra_env", existing.extra_env),
-                kwargs.get("notes", existing.notes),
-                kwargs.get("sort_order", existing.sort_order),
-                now,
-                provider_id,
-            ),
-        )
-        conn.commit()
-        return self.get_provider(provider_id)
-
-    def delete_provider(self, provider_id: str) -> bool:
-        conn = self._get_conn()
-        cursor = conn.execute("DELETE FROM api_providers WHERE id = ?", (provider_id,))
-        conn.commit()
-        return cursor.rowcount > 0
-
-    def activate_provider(self, provider_id: str) -> bool:
-        conn = self._get_conn()
-        row = conn.execute(
-            "SELECT 1 FROM api_providers WHERE id = ?", (provider_id,)
-        ).fetchone()
-        if not row:
-            return False
-        conn.execute("UPDATE api_providers SET is_active = 0")
-        conn.execute(
-            "UPDATE api_providers SET is_active = 1 WHERE id = ?", (provider_id,)
-        )
-        conn.commit()
-        return True
-
-    def deactivate_all_providers(self) -> None:
-        conn = self._get_conn()
-        conn.execute("UPDATE api_providers SET is_active = 0")
-        conn.commit()
 
     # ----- Router Configs -----
 

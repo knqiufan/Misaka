@@ -12,7 +12,6 @@ from misaka.services.chat.permission_service import PermissionService
 from misaka.services.chat.session_service import SessionService
 from misaka.services.file.update_check_service import UpdateCheckService
 from misaka.services.mcp.mcp_service import MCPService
-from misaka.services.settings.provider_service import ProviderService
 from misaka.services.settings.settings_service import SettingsService
 from misaka.services.skills.env_check_service import EnvCheckService
 from misaka.services.task.task_service import TaskService
@@ -23,7 +22,6 @@ __all__ = [
     "MCPService",
     "MessageService",
     "PermissionService",
-    "ProviderService",
     "SessionService",
     "SettingsService",
     "TaskService",

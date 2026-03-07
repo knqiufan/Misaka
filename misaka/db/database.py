@@ -12,7 +12,6 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from misaka.db.models import (
-    ApiProvider,
     ChatSession,
     Message,
     RouterConfig,
@@ -172,40 +171,6 @@ class DatabaseBackend(ABC):
     @abstractmethod
     def delete_task(self, task_id: str) -> bool:
         """Delete a task. Return True if deleted."""
-
-    # ----- API Providers -----
-
-    @abstractmethod
-    def get_all_providers(self) -> list[ApiProvider]:
-        """Return all providers ordered by sort_order."""
-
-    @abstractmethod
-    def get_provider(self, provider_id: str) -> ApiProvider | None:
-        """Return a provider by ID, or None."""
-
-    @abstractmethod
-    def get_active_provider(self) -> ApiProvider | None:
-        """Return the currently active provider, or None."""
-
-    @abstractmethod
-    def create_provider(self, name: str, **kwargs: Any) -> ApiProvider:
-        """Create and return a new API provider."""
-
-    @abstractmethod
-    def update_provider(self, provider_id: str, **kwargs: Any) -> ApiProvider | None:
-        """Update provider fields. Return updated provider."""
-
-    @abstractmethod
-    def delete_provider(self, provider_id: str) -> bool:
-        """Delete a provider. Return True if deleted."""
-
-    @abstractmethod
-    def activate_provider(self, provider_id: str) -> bool:
-        """Set a provider as active (deactivating all others). Return True if found."""
-
-    @abstractmethod
-    def deactivate_all_providers(self) -> None:
-        """Deactivate all providers."""
 
     # ----- Router Configs -----
 

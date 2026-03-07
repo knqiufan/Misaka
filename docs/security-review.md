@@ -35,19 +35,19 @@
 
 **Status: ACCEPTABLE (with caveats)**
 
-- API keys are stored in the `api_providers` table as plaintext in the `api_key` column.
+- API keys may be stored in the active `router_configs` row, either in the structured `api_key` column or inside `config_json.env`, depending on how the router configuration was saved.
 - The database file is stored in `~/.misaka/misaka.db` with standard filesystem permissions.
 - SQLite WAL mode is used, which creates `-wal` and `-shm` companion files that may contain key material.
 
 **Positive findings**:
-- No API keys are logged by the service layer. `ProviderService` and `ClaudeService` only log provider IDs and names, never keys.
+- No API keys are logged by the service layer. `RouterConfigService` and `ClaudeService` do not log secret values.
 - No API keys are hardcoded anywhere in the codebase.
-- The `_sanitize_env()` function in `claude_service.py` filters out non-string values and control characters, but does not log the sanitized values.
+- The Claude runtime environment builder sanitizes environment variables before passing them to subprocesses and does not log sanitized secret values.
 
 **Recommendations**:
-- Consider encrypting the `api_key` column at rest (e.g., using `cryptography.fernet` with a key derived from a machine-specific secret).
+- Consider encrypting stored router credentials at rest (for both structured router fields and `config_json.env` payloads).
 - Ensure the database file has restrictive permissions (0600) on Unix systems.
-- Add a `__repr__` override to `ApiProvider` that redacts the `api_key` field to prevent accidental logging.
+- Keep secret-bearing router objects out of debug representations or logs.
 
 ---
 
@@ -94,9 +94,9 @@
 
 **Status: PASS**
 
-- `_sanitize_env()` and `_sanitize_env_value()` strip null bytes and control characters from environment variables before passing to subprocess.
+- Claude subprocess environment values are sanitized before launch.
 - The `_resolve_script_from_cmd()` function reads `.cmd` files and extracts `.js` paths via regex. The result is validated with `os.path.isfile()` before use.
-- Environment variables from `ApiProvider.extra_env` are parsed from JSON and only string values are accepted.
+- Environment variables from the active router configuration are parsed from `router_configs.config_json["env"]`, and only string values are accepted into the runtime environment.
 
 ---
 

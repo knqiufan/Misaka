@@ -38,7 +38,6 @@ from misaka.services.images.image_service import ImageService
 from misaka.services.mcp.mcp_service import MCPService
 from misaka.services.session.session_import_service import SessionImportService
 from misaka.services.settings.cli_settings_service import CliSettingsService
-from misaka.services.settings.provider_service import ProviderService
 from misaka.services.settings.router_config_service import RouterConfigService
 from misaka.services.settings.settings_service import SettingsService
 from misaka.services.skills.env_check_service import EnvCheckService
@@ -146,7 +145,6 @@ class ServiceContainer:
         self.settings_service = SettingsService(db)
         self.session_service = SessionService(db)
         self.message_service = MessageService(db)
-        self.provider_service = ProviderService(db)
         self.task_service = TaskService(db)
         self.file_service = FileService()
         self.image_service = ImageService()

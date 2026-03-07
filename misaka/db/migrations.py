@@ -12,7 +12,7 @@ import sqlite3
 logger = logging.getLogger(__name__)
 
 # Current schema version. Increment when adding new migrations.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def run_migrations(conn: sqlite3.Connection) -> None:
@@ -33,6 +33,9 @@ def run_migrations(conn: sqlite3.Connection) -> None:
 
     if current < 3:
         _migrate_v3(conn)
+
+    if current < 4:
+        _migrate_v4(conn)
 
     _set_version(conn, SCHEMA_VERSION)
     conn.commit()
@@ -126,3 +129,9 @@ def _migrate_v3(conn: sqlite3.Connection) -> None:
     """Migration v3: Rename 'code' mode to 'agent'."""
     logger.info("Running migration v3")
     conn.execute("UPDATE chat_sessions SET mode = 'agent' WHERE mode = 'code'")
+
+
+def _migrate_v4(conn: sqlite3.Connection) -> None:
+    """Migration v4: Remove the legacy api_providers table."""
+    logger.info("Running migration v4")
+    conn.execute("DROP TABLE IF EXISTS api_providers")
