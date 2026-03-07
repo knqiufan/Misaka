@@ -333,6 +333,12 @@ class SQLiteBackend(DatabaseBackend):
         )
         conn.commit()
 
+    def delete_message(self, message_id: str) -> bool:
+        conn = self._get_conn()
+        cursor = conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
     # ----- Settings -----
 
     def get_setting(self, key: str) -> str | None:

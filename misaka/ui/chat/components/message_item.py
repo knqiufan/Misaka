@@ -42,10 +42,12 @@ class MessageItem(ft.Container):
         message: Message,
         *,
         assistant_label: str = "Claude",
+        on_regenerate: object = None,
     ) -> None:
         super().__init__()
         self._message = message
         self._assistant_label = assistant_label
+        self._on_regenerate = on_regenerate
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -134,6 +136,8 @@ class MessageItem(ft.Container):
             ft.Column(controls=controls, spacing=8),
         ]
 
+        action_btns: list[ft.Control] = []
+
         markdown_text = self._extract_markdown_from_blocks(blocks)
         if markdown_text:
             copy_btn = make_icon_button(
@@ -143,8 +147,20 @@ class MessageItem(ft.Container):
                 icon_size=14,
             )
             copy_btn.data = markdown_text
+            action_btns.append(copy_btn)
+
+        if self._on_regenerate:
+            regen_btn = make_icon_button(
+                ft.Icons.REFRESH_ROUNDED,
+                tooltip=t("chat.regenerate"),
+                on_click=self._handle_regenerate,
+                icon_size=14,
+            )
+            action_btns.append(regen_btn)
+
+        if action_btns:
             action_row = ft.Row(
-                controls=[copy_btn],
+                controls=action_btns,
                 alignment=ft.MainAxisAlignment.START,
                 spacing=4,
             )
@@ -180,6 +196,11 @@ class MessageItem(ft.Container):
             e.control.icon_color = None
             with contextlib.suppress(Exception):
                 e.control.update()
+
+    def _handle_regenerate(self, e: ft.ControlEvent) -> None:
+        """Trigger regeneration of this assistant response."""
+        if self._on_regenerate:
+            self._on_regenerate(self._message.id)
 
     # ------------------------------------------------------------------
     # Assistant message rendering

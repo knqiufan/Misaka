@@ -133,6 +133,10 @@ class DatabaseBackend(ABC):
     def clear_session_messages(self, session_id: str) -> None:
         """Delete all messages for a session and reset its SDK session ID."""
 
+    @abstractmethod
+    def delete_message(self, message_id: str) -> bool:
+        """Delete a message by ID. Return True if deleted."""
+
     # ----- Settings -----
 
     @abstractmethod

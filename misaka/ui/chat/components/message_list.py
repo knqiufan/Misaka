@@ -29,6 +29,7 @@ class MessageList(ft.Column):
         self,
         state: AppState,
         on_load_more: Callable[[], None] | None = None,
+        on_regenerate: Callable[[str], None] | None = None,
         on_permission_allow: Callable[[], None] | None = None,
         on_permission_allow_always: Callable[[], None] | None = None,
         on_permission_deny: Callable[[], None] | None = None,
@@ -36,6 +37,7 @@ class MessageList(ft.Column):
         super().__init__(spacing=0, expand=True)
         self.state = state
         self._on_load_more = on_load_more
+        self._on_regenerate = on_regenerate
         self._on_permission_allow = on_permission_allow
         self._on_permission_allow_always = on_permission_allow_always
         self._on_permission_deny = on_permission_deny
@@ -134,7 +136,11 @@ class MessageList(ft.Column):
         for msg in self.state.messages:
             cached = self._item_cache.get(msg.id)
             if cached is None:
-                cached = MessageItem(msg, assistant_label=self._model_display_name)
+                cached = MessageItem(
+                    msg,
+                    assistant_label=self._model_display_name,
+                    on_regenerate=self._on_regenerate,
+                )
                 self._item_cache[msg.id] = cached
             items.append(cached)
 
@@ -210,7 +216,11 @@ class MessageList(ft.Column):
         self._resolve_model_display_name_once()
         cached = self._item_cache.get(new_message.id)
         if cached is None:
-            cached = MessageItem(new_message, assistant_label=self._model_display_name)
+            cached = MessageItem(
+                new_message,
+                assistant_label=self._model_display_name,
+                on_regenerate=self._on_regenerate,
+            )
             self._item_cache[new_message.id] = cached
 
         controls = self._list_view.controls

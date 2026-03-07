@@ -47,3 +47,6 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Local worktrees
+.worktrees/

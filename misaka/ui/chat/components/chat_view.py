@@ -34,6 +34,7 @@ class ChatView(ft.Column):
         self,
         state: AppState,
         on_send: Callable[[str, list | None], None] | None = None,
+        on_regenerate: Callable[[str], None] | None = None,
         on_abort: Callable[[], None] | None = None,
         on_model_change: Callable[[str], None] | None = None,
         on_mode_change: Callable[[str], None] | None = None,
@@ -49,6 +50,7 @@ class ChatView(ft.Column):
         super().__init__(spacing=0, expand=True)
         self.state = state
         self._on_send = on_send
+        self._on_regenerate = on_regenerate
         self._on_abort = on_abort
         self._on_model_change = on_model_change
         self._on_mode_change = on_mode_change
@@ -181,6 +183,7 @@ class ChatView(ft.Column):
         self._message_list = MessageList(
             self.state,
             on_load_more=self._on_load_more,
+            on_regenerate=self._on_regenerate,
             on_permission_allow=self._on_permission_allow,
             on_permission_allow_always=self._on_permission_allow_always,
             on_permission_deny=self._on_permission_deny,

@@ -44,7 +44,8 @@
     "commands_title": "Commands",
     "command_menu": "Command Menu",
     "select_model": "Select Model",
-    "copy_reply": "Copy reply"
+    "copy_reply": "Copy reply",
+    "regenerate": "Regenerate"
   },
   "settings": {
     "title": "Settings",

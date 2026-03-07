@@ -104,6 +104,7 @@ class ChatPage(ft.Stack):
         self._chat_view = ChatView(
             state=self.state,
             on_send=self._on_send_message,
+            on_regenerate=self._on_regenerate,
             on_abort=self._on_abort,
             on_model_change=self._on_model_change,
             on_mode_change=self._on_mode_change,
@@ -466,6 +467,54 @@ class ChatPage(ft.Stack):
             self.state.update()
 
         self.state.page.run_task(_deferred_full_refresh)
+
+    def _on_regenerate(self, assistant_message_id: str) -> None:
+        """Regenerate the assistant response for the given message."""
+        if not self.state.current_session_id:
+            return
+        self._abort_if_streaming()
+
+        messages = self.state.messages
+        idx = next((i for i, m in enumerate(messages) if m.id == assistant_message_id), None)
+        if idx is None or messages[idx].role != "assistant":
+            return
+
+        # Find the preceding user message
+        user_msg = None
+        for i in range(idx - 1, -1, -1):
+            if messages[i].role == "user":
+                user_msg = messages[i]
+                break
+        if not user_msg:
+            return
+
+        # Extract text from user message (text-only for now)
+        prompt = ""
+        for block in user_msg.parse_content():
+            if block.type == "text" and block.text:
+                prompt = (prompt + "\n\n" + block.text.strip()).strip() if prompt else block.text.strip()
+        if not prompt:
+            return
+
+        # Remove assistant message from state and DB
+        self.state.messages.pop(idx)
+        self.db.delete_message(assistant_message_id)
+
+        # Clear SDK session so model gets fresh context
+        session = self.state.current_session
+        if session:
+            session.sdk_session_id = ""
+        self.state.sdk_session_id = None
+        self.db.update_sdk_session_id(self.state.current_session_id, "")
+
+        self._stream_handler.reset_stream_state()
+        self._stream_handler.start_streaming()
+        self.state.page.run_task(
+            *self._stream_handler.get_send_coroutine(prompt, None),
+        )
+        if self._chat_view:
+            self._chat_view.refresh_messages()
+        self.state.update()
 
     def _on_abort(self) -> None:
         """Abort the current streaming operation."""
