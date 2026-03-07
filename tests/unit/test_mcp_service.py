@@ -33,20 +33,43 @@ class TestMCPServerProcess:
         assert process.is_healthy is False
 
     @pytest.mark.asyncio
-    async def test_start_stdio_server(self) -> None:
-        config = MCPServerConfig(command="echo", args=["hello"])
+    async def test_start_stdio_server_uses_hidden_subprocess_helpers(self) -> None:
+        config = MCPServerConfig(command="C:/npm/server.cmd", args=["--stdio"])
         process = MCPServerProcess("echo-server", config)
 
         mock_proc = MagicMock()
         mock_proc.returncode = None
         mock_proc.pid = 12345
 
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc):
+        with patch(
+            "misaka.services.mcp.mcp_service.wrap_windows_script_command",
+            return_value=["cmd.exe", "/d", "/s", "/c", '""C:/npm/server.cmd" --stdio"'],
+        ) as mock_wrap, patch(
+            "misaka.services.mcp.mcp_service.build_background_subprocess_kwargs",
+            return_value={"creationflags": 1, "startupinfo": "hidden"},
+        ) as mock_kwargs, patch(
+            "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc
+        ) as mock_exec:
             result = await process.start()
 
         assert result is True
         assert process.is_running is True
         assert process.is_healthy is True
+        mock_wrap.assert_called_once_with("C:/npm/server.cmd", ["--stdio"])
+        mock_kwargs.assert_called_once_with()
+        mock_exec.assert_called_once_with(
+            "cmd.exe",
+            "/d",
+            "/s",
+            "/c",
+            '""C:/npm/server.cmd" --stdio"',
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=None,
+            creationflags=1,
+            startupinfo="hidden",
+        )
 
     @pytest.mark.asyncio
     async def test_start_already_running(self) -> None:
@@ -115,23 +138,39 @@ class TestMCPServerProcess:
         assert process.is_healthy is False
 
     @pytest.mark.asyncio
-    async def test_stop_running_unix(self) -> None:
+    async def test_stop_running_windows_uses_hidden_taskkill(self) -> None:
         config = MCPServerConfig(command="echo")
         process = MCPServerProcess("test", config)
 
         mock_proc = MagicMock()
         mock_proc.returncode = None
         mock_proc.pid = 999
-        mock_proc.send_signal = MagicMock()
-        mock_proc.wait = AsyncMock()
-        mock_proc.kill = MagicMock()
         process._process = mock_proc
         process._healthy = True
 
-        with patch("misaka.services.mcp.mcp_service.IS_WINDOWS", False):
+        mock_kill_proc = MagicMock()
+        mock_kill_proc.wait = AsyncMock()
+
+        with patch("misaka.services.mcp.mcp_service.IS_WINDOWS", True), patch(
+            "misaka.services.mcp.mcp_service.build_background_subprocess_kwargs",
+            return_value={"creationflags": 1, "startupinfo": "hidden"},
+        ) as mock_kwargs, patch(
+            "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_kill_proc
+        ) as mock_exec:
             await process.stop()
 
-        mock_proc.send_signal.assert_called_once()
+        mock_kwargs.assert_called_once_with()
+        mock_exec.assert_called_once_with(
+            "taskkill",
+            "/T",
+            "/F",
+            "/PID",
+            "999",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            creationflags=1,
+            startupinfo="hidden",
+        )
         assert process._process is None
         assert process.is_healthy is False
 

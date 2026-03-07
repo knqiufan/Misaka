@@ -206,19 +206,38 @@ class TestEnvCheckService:
             assert version == "3.12.1"
 
     async def test_install_tool_success(self, service: EnvCheckService) -> None:
-        """install_tool should return True on successful installation."""
+        """install_tool should use shared hidden subprocess helpers."""
         mock_proc = AsyncMock()
         mock_proc.communicate.return_value = (b"installed\n", b"")
         mock_proc.returncode = 0
 
         progress_messages: list[str] = []
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        with patch(
+            "misaka.services.skills.env_check_service.wrap_windows_script_command",
+            return_value=["winget", "install", "OpenJS.NodeJS.LTS"],
+        ) as mock_wrap, patch(
+            "misaka.services.skills.env_check_service.build_background_subprocess_kwargs",
+            return_value={"creationflags": 1, "startupinfo": "hidden"},
+        ) as mock_kwargs, patch(
+            "asyncio.create_subprocess_exec", return_value=mock_proc
+        ) as mock_exec:
             result = await service.install_tool(
                 "Node.js", on_progress=progress_messages.append
             )
             assert result is True
             assert any("successfully" in m for m in progress_messages)
+            mock_wrap.assert_called_once_with("winget", ["install", "OpenJS.NodeJS.LTS"])
+            mock_kwargs.assert_called_once_with()
+            mock_exec.assert_called_once_with(
+                "winget",
+                "install",
+                "OpenJS.NodeJS.LTS",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                creationflags=1,
+                startupinfo="hidden",
+            )
 
     async def test_install_tool_failure(self, service: EnvCheckService) -> None:
         """install_tool should return False on installation failure."""

@@ -18,7 +18,10 @@ from typing import Any
 
 from misaka.config import IS_WINDOWS
 from misaka.db.models import MCPServerConfig
-from misaka.utils.platform import subprocess_creation_flags
+from misaka.utils.platform import (
+    build_background_subprocess_kwargs,
+    wrap_windows_script_command,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,14 +67,17 @@ class MCPServerProcess:
         env = {**os.environ, **self.config.env} if self.config.env else None
 
         try:
-            self._process = await asyncio.create_subprocess_exec(
+            command = wrap_windows_script_command(
                 self.config.command,
-                *self.config.args,
+                list(self.config.args),
+            )
+            self._process = await asyncio.create_subprocess_exec(
+                *command,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
-                **subprocess_creation_flags(),
+                **build_background_subprocess_kwargs(),
             )
             self._healthy = True
             logger.info(
@@ -113,7 +119,7 @@ class MCPServerProcess:
                     "taskkill", "/T", "/F", "/PID", str(pid),
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
-                    **subprocess_creation_flags(),
+                    **build_background_subprocess_kwargs(),
                 )
                 await asyncio.wait_for(kill_proc.wait(), timeout=5)
             else:

@@ -287,12 +287,13 @@ class EnvCheckService:
         try:
             # Split command into args list for safe subprocess execution
             args = install_cmd.split()
+            cmd = wrap_windows_script_command(args[0], args[1:])
 
             proc = await asyncio.create_subprocess_exec(
-                *args,
+                *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                **subprocess_creation_flags(),
+                **build_background_subprocess_kwargs(),
             )
 
             stdout, stderr = await asyncio.wait_for(
