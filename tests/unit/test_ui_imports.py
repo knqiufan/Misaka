@@ -128,6 +128,26 @@ class TestUIImports:
         assert initial_width is not None
         assert overlay._image_container.width > initial_width
 
+    def test_image_overlay_close_button_renders_above_fullscreen_controls(self) -> None:
+        from misaka.ui.components.image_overlay import ImageOverlay
+
+        overlay = ImageOverlay(image_src="test.png")
+
+        close_button = overlay.controls[-1]
+
+        assert overlay.controls[-1] is close_button
+
+    def test_image_overlay_close_button_invokes_on_close(self) -> None:
+        from misaka.ui.components.image_overlay import ImageOverlay
+
+        closed: list[bool] = []
+        overlay = ImageOverlay(image_src="test.png", on_close=lambda: closed.append(True))
+
+        close_button = overlay.controls[-1]
+        close_button.content.on_click(None)
+
+        assert closed == [True]
+
     def test_message_input_pending_image_click_opens_image_overlay(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from types import SimpleNamespace
 
@@ -135,22 +155,43 @@ class TestUIImports:
 
         opened: list[tuple[object, str]] = []
 
-        def fake_show_image_overlay(page: object, image_src: str) -> None:
-            opened.append((page, image_src))
-
-        monkeypatch.setattr(
-            "misaka.ui.components.image_overlay.show_image_overlay",
-            fake_show_image_overlay,
-        )
-        monkeypatch.setattr(MessageInput, "page", property(lambda self: "fake-page"))
+        def fake_on_view_image(pending) -> None:
+            opened.append((pending.id, pending.temp_path))
 
         state = SimpleNamespace(is_streaming=False, selected_model="default")
-        input_box = MessageInput(state=state)
+        input_box = MessageInput(state=state, on_view_image=fake_on_view_image)
         pending = SimpleNamespace(id="1", temp_path="test.png")
 
         input_box._handle_view_image(pending)
 
-        assert opened == [("fake-page", "test.png")]
+        assert opened == [("1", "test.png")]
+
+    def test_chat_view_has_image_overlay_host_container(self) -> None:
+        from types import SimpleNamespace
+
+        from misaka.ui.chat.components.chat_view import ChatView
+
+        state = SimpleNamespace(
+            is_streaming=False,
+            current_session_id="test-session",
+            current_session=SimpleNamespace(title="Test", model="default", mode="agent"),
+            messages=[],
+            has_more_messages=False,
+            pending_permission=None,
+            error_message=None,
+            update_check_result=None,
+            update_dismissed=False,
+            update_in_progress=False,
+            selected_model="default",
+            page=SimpleNamespace(run_task=lambda fn: None),
+        )
+        state.get_service = lambda name: None
+
+        chat_view = ChatView(state=state)
+
+        assert hasattr(chat_view, "_image_overlay_host")
+        assert chat_view._image_overlay_host is not None
+        assert chat_view._image_overlay_host.visible is False
 
 
 class TestServiceImports:

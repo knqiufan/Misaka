@@ -517,9 +517,19 @@ class MessageItem(ft.Container):
 
     def _handle_image_click(self, image_src: str) -> None:
         """Handle click on an image to view full-size."""
-        from misaka.ui.components.image_overlay import show_image_overlay
-        if self.page:
-            show_image_overlay(self.page, image_src)
+        chat_view = self._find_chat_view()
+        if chat_view and hasattr(chat_view, "_show_image_overlay"):
+            chat_view._show_image_overlay(image_src)
+
+    def _find_chat_view(self):
+        """Walk up the control tree to find the ChatView parent."""
+        current = self
+        while current:
+            parent = getattr(current, "parent", None)
+            if parent and parent.__class__.__name__ == "ChatView":
+                return parent
+            current = parent
+        return None
 
     def _render_text_block(self, text: str) -> ft.Control:
         """Render a text block with markdown support and enhanced styling."""

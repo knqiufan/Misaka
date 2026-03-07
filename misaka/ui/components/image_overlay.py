@@ -7,6 +7,7 @@ Supports zoom controls.
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable
 
 import flet as ft
 
@@ -25,7 +26,7 @@ class ImageOverlay(ft.Stack):
     def __init__(
         self,
         image_src: str,
-        on_close: callable | None = None,
+        on_close: Callable[[], None] | None = None,
     ) -> None:
         super().__init__()
         self._image_src = image_src
@@ -123,8 +124,8 @@ class ImageOverlay(ft.Stack):
         self.controls = [
             backdrop,
             image_stage,
-            close_btn,
             zoom_controls,
+            close_btn,
         ]
         self.expand = True
         self._apply_zoom()
@@ -133,7 +134,6 @@ class ImageOverlay(ft.Stack):
         """Close the overlay."""
         if self._on_close:
             self._on_close()
-
 
     def _handle_zoom_in(self, e: ft.ControlEvent | None) -> None:
         """Zoom in on the image."""
@@ -166,25 +166,9 @@ class ImageOverlay(ft.Stack):
                 self._image_container.update()
 
 
-def show_image_overlay(page: ft.Page, image_src: str) -> None:
-    """Show an image overlay on the page.
-
-    Args:
-        page: The Flet page.
-        image_src: The image source (path, URL, or base64 data URL).
-    """
-    overlay = ImageOverlay(
-        image_src=image_src,
-        on_close=lambda: _close_overlay(page, overlay),
-    )
-
-    # Add overlay to page
-    page.overlay.append(overlay)
-    page.update()
-
-
-def _close_overlay(page: ft.Page, overlay: ft.Control) -> None:
-    """Close and remove the overlay from the page."""
-    if overlay in page.overlay:
-        page.overlay.remove(overlay)
-        page.update()
+def build_image_overlay(
+    image_src: str,
+    on_close: Callable[[], None],
+) -> ImageOverlay:
+    """Build a standalone image overlay control for embedding in a local host."""
+    return ImageOverlay(image_src=image_src, on_close=on_close)

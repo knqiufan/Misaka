@@ -18,12 +18,13 @@ from misaka.ui.chat.components.message_input import MessageInput
 from misaka.ui.chat.components.message_list import MessageList
 from misaka.ui.common.theme import ACCENT_BLUE, SUCCESS_GREEN, WARNING_AMBER
 from misaka.ui.common.theme import make_icon_button
+from misaka.ui.components.image_overlay import build_image_overlay
 from misaka.ui.panels.offset_menu import OffsetMenu, OffsetMenuOption
 from misaka.ui.status.connection_status import ConnectionStatus
 from misaka.ui.status.update_banner import UpdateBanner
 
 if TYPE_CHECKING:
-    from misaka.db.models import Message
+    from misaka.db.models import Message, PendingImage
     from misaka.state import AppState
 
 
@@ -71,6 +72,7 @@ class ChatView(ft.Column):
         self._update_banner: UpdateBanner | None = None
         self._header: ft.Container | None = None
         self._title_text: ft.Text | None = None
+        self._image_overlay_host: ft.Container | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -135,7 +137,6 @@ class ChatView(ft.Column):
             visible=has_session,
         )
 
-        # Session title
         title_text = session.title if session else "Misaka"
         self._title_text = ft.Text(
             title_text,
@@ -168,18 +169,15 @@ class ChatView(ft.Column):
             ),
         )
 
-        # --- Update banner ---
         self._update_banner = UpdateBanner(
             state=self.state,
             on_update=self._handle_update,
             on_dismiss=self._dismiss_update,
         )
 
-        # --- Error banner ---
         self._error_banner = ft.Container(visible=False)
         self._refresh_error_banner()
 
-        # --- Message list ---
         self._message_list = MessageList(
             self.state,
             on_load_more=self._on_load_more,
@@ -189,24 +187,33 @@ class ChatView(ft.Column):
             on_permission_deny=self._on_permission_deny,
         )
 
-        # --- Message input ---
         self._message_input = MessageInput(
             state=self.state,
             on_send=self._on_send,
             on_abort=self._on_abort,
             on_command=self._on_command,
             on_model_change=self._handle_model_change_from_input,
+            on_view_image=self._handle_pending_image_preview,
         )
 
-        # --- Welcome view (when no session selected) ---
+        self._image_overlay_host = ft.Container(
+            visible=False,
+            expand=True,
+        )
+
         welcome_view = self._build_welcome_view(visible=not has_session)
 
-        # --- Assemble ---
+        content_body = self._message_list if has_session else welcome_view
+        content_stack = ft.Stack(
+            controls=[content_body, self._image_overlay_host],
+            expand=True,
+        )
+
         self.controls = [
             self._header,
             self._update_banner,
             self._error_banner,
-            self._message_list if has_session else welcome_view,
+            content_stack,
             ft.Container(
                 content=self._message_input,
                 visible=has_session,
@@ -307,6 +314,33 @@ class ChatView(ft.Column):
     def _handle_mode_change(self, mode: str) -> None:
         if self._on_mode_change:
             self._on_mode_change(mode)
+
+    def _handle_pending_image_preview(self, pending: PendingImage) -> None:
+        """Open the pending image preview inside the local overlay host."""
+        image_src = pending.temp_path
+        if image_src:
+            self._show_image_overlay(image_src)
+
+    def _show_image_overlay(self, image_src: str) -> None:
+        """Render image overlay inside the chat-local host."""
+        if not self._image_overlay_host:
+            return
+        self._image_overlay_host.content = build_image_overlay(
+            image_src=image_src,
+            on_close=self._close_image_overlay,
+        )
+        self._image_overlay_host.visible = True
+        with contextlib.suppress(Exception):
+            self._image_overlay_host.update()
+
+    def _close_image_overlay(self) -> None:
+        """Hide the chat-local image overlay host."""
+        if not self._image_overlay_host:
+            return
+        self._image_overlay_host.content = None
+        self._image_overlay_host.visible = False
+        with contextlib.suppress(Exception):
+            self._image_overlay_host.update()
 
     def _handle_update(self) -> None:
         """Handle 'Update Now' click from the update banner."""

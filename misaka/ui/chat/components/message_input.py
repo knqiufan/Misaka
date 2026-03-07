@@ -928,13 +928,6 @@ class MessageInput(ft.Container):
 
     def _handle_view_image(self, pending: PendingImage) -> None:
         """Handle click to view full-size image."""
-        from misaka.ui.components.image_overlay import show_image_overlay
-
-        image_src = pending.temp_path
-        if self.page and image_src:
-            show_image_overlay(self.page, image_src)
-            return
-
         if self._on_view_image:
             self._on_view_image(pending)
 
