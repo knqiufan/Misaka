@@ -22,7 +22,7 @@ from misaka.i18n import t
 from misaka.ui.chat.components.code_block import CodeBlock
 from misaka.ui.chat.components.image_block import ImageBlock
 from misaka.ui.chat.components.tool_call_block import ToolCallBlock
-from misaka.ui.common.theme import MONO_FONT_FAMILY, make_icon_button
+from misaka.ui.common.theme import MONO_FONT_FAMILY, RADIUS_LG, make_icon_button
 
 
 @dataclass
@@ -74,46 +74,94 @@ class MessageItem(ft.Container):
             self.content = ft.Container(height=0)
             return
 
-        header = self._build_header(is_user)
-
         if is_user:
-            body = ft.Column(controls=content_controls, spacing=8)
+            self.content = self._build_user_layout(content_controls)
         else:
+            header = self._build_header()
             body = self._wrap_assistant_content(content_controls, blocks)
+            self.content = ft.Column(
+                controls=[header, body],
+                spacing=8,
+            )
 
-        self.content = ft.Column(
-            controls=[header, body],
-            spacing=8,
-        )
         self.padding = ft.Padding.symmetric(horizontal=20, vertical=12)
         self.margin = ft.Margin.only(bottom=2)
         self.border_radius = 12
         if is_user:
-            self.bgcolor = ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE)
-            self.border = ft.Border.all(
-                1, ft.Colors.with_opacity(0.05, ft.Colors.ON_SURFACE),
-            )
+            self.bgcolor = None
+            self.border = None
 
-    def _build_header(self, is_user: bool) -> ft.Control:
-        if is_user:
-            role_icon = ft.Icon(
+    def _build_user_layout(self, content_controls: list[ft.Control]) -> ft.Control:
+        """Build right-aligned user message: content bubble + avatar on the right."""
+        avatar = ft.Container(
+            content=ft.Icon(
                 ft.Icons.PERSON_OUTLINE,
-                size=14,
+                size=20,
                 color=ft.Colors.ON_SURFACE_VARIANT,
-            )
-        else:
-            claude_icon_path = str(get_assets_path() / "claude.png")
-            role_icon = ft.Image(
-                src=claude_icon_path,
-                width=14,
-                height=14,
-                fit=ft.BoxFit.CONTAIN,
-            )
+            ),
+            width=32,
+            height=32,
+            border_radius=16,
+            bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
+            alignment=ft.Alignment.CENTER,
+        )
+
+        time_label = ft.Text(
+            self._format_time(self._message.created_at),
+            size=10,
+            opacity=0.4,
+        )
+
+        bubble = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[time_label],
+                        alignment=ft.MainAxisAlignment.START,
+                    ),
+                    ft.Column(controls=content_controls, spacing=8),
+                ],
+                spacing=6,
+            ),
+            expand=True,
+            padding=ft.Padding.symmetric(horizontal=16, vertical=12),
+            bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.PRIMARY),
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
+            ),
+            border_radius=ft.BorderRadius.only(
+                top_left=RADIUS_LG,
+                top_right=4,
+                bottom_left=RADIUS_LG,
+                bottom_right=RADIUS_LG,
+            ),
+        )
+
+        # Spacer: 1 part, bubble: 9 parts — bubble adapts to ~90% of available width
+        return ft.Row(
+            controls=[
+                ft.Container(expand=1),
+                ft.Container(content=bubble, expand=9),
+                ft.Container(content=avatar, margin=ft.Margin.only(left=10)),
+            ],
+            alignment=ft.MainAxisAlignment.END,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+        )
+
+    def _build_header(self) -> ft.Control:
+        """Build header row for assistant messages (icon + label + time)."""
+        claude_icon_path = str(get_assets_path() / "claude.png")
+        role_icon = ft.Image(
+            src=claude_icon_path,
+            width=14,
+            height=14,
+            fit=ft.BoxFit.CONTAIN,
+        )
         role_label = ft.Text(
-            "You" if is_user else self._assistant_label,
+            self._assistant_label,
             size=12,
             weight=ft.FontWeight.W_600,
-            color=ft.Colors.PRIMARY if not is_user else ft.Colors.ON_SURFACE_VARIANT,
+            color=ft.Colors.PRIMARY,
         )
         time_label = ft.Text(
             self._format_time(self._message.created_at),
