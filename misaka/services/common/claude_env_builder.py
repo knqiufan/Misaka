@@ -57,6 +57,13 @@ def build_claude_env(db: DatabaseBackend) -> dict[str, str]:
     env.setdefault("USERPROFILE", home)
     env["PATH"] = get_expanded_path()
 
+    # Skip SDK version check to avoid spawning an extra subprocess
+    # (which flashes a console window on Windows when packaged as GUI exe).
+    # Must also set in os.environ because the SDK checks os.environ directly,
+    # not the env dict passed via options.
+    os.environ.setdefault("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", "1")
+    env.setdefault("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", "1")
+
     if IS_WINDOWS and "CLAUDE_CODE_GIT_BASH_PATH" not in env:
         git_bash = find_git_bash()
         if git_bash:

@@ -46,6 +46,11 @@ class ClaudeService:
     Uses ``ClaudeSDKClient`` for stateful, multi-turn conversations.
     """
 
+    # Max seconds to wait for a single message from the CLI before
+    # considering the subprocess stuck.  Agent turns can be long (tool
+    # use), so this is intentionally generous.
+    _STREAM_IDLE_TIMEOUT: int = 600  # 10 minutes
+
     def __init__(
         self,
         db: DatabaseBackend,
@@ -149,6 +154,7 @@ class ClaudeService:
             include_partial_messages=True,
             can_use_tool=final_can_use_tool,
             disallowed_tools=final_disallowed_tools,
+            stderr=lambda line: logger.warning("[Claude CLI stderr] %s", line),
         )
 
         if skip_permissions:
@@ -279,7 +285,31 @@ class ClaudeService:
                 else:
                     response_stream = client.send_message(prompt, can_use_tool=can_use_tool)
 
-                async for message in response_stream:
+                # Read responses with per-message idle timeout.
+                # Agent conversations can run for many minutes (tool use),
+                # but if no message arrives within this window, the subprocess
+                # is likely stuck.
+                response_iter = response_stream.__aiter__()
+                while True:
+                    try:
+                        message = await asyncio.wait_for(
+                            response_iter.__anext__(),
+                            timeout=self._STREAM_IDLE_TIMEOUT,
+                        )
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError:
+                        error_msg = (
+                            f"No response from Claude CLI for "
+                            f"{self._STREAM_IDLE_TIMEOUT}s — "
+                            f"the subprocess may be stuck. "
+                            f"Check logs for [Claude CLI stderr] entries."
+                        )
+                        logger.error(error_msg)
+                        if on_error:
+                            on_error(error_msg)
+                        break
+
                     if session_id not in self._active_streams or abort_event.is_set():
                         break
                     kind = self._classify_message_kind(message)
