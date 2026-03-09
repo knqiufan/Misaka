@@ -11,3 +11,4 @@
 - [ ] 加入 CI/CD 流程，自动打包 release 版本和  GitHub Release 文档
 - [ ] Windows/macOS 支持的安装包
 - [ ] Skills 技能模块新增支持添加内置 Skills 包
+- [ ] 程序打包之后进行对话会自动打开终端问题
