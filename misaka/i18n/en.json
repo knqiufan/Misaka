@@ -44,7 +44,8 @@
     "command_menu": "Command Menu",
     "select_model": "Select Model",
     "copy_reply": "Copy reply",
-    "regenerate": "Regenerate"
+    "regenerate": "Regenerate",
+    "command_interrupted": "Command was interrupted"
   },
   "settings": {
     "title": "Settings",

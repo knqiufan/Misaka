@@ -341,11 +341,12 @@ class StreamHandler:
             )
 
     async def abort_claude(self) -> None:
-        """Abort the current streaming operation."""
+        """Abort the current streaming operation and persist partial content with interrupted marker."""
         claude = self._state.get_service("claude_service")
         sid = self._state.streaming_session_id
         if claude and sid:
             await claude.abort(sid)
+        self._persist_interrupted_message()
         self.reset_stream_state()
         self._ui_refresh()
 
@@ -634,6 +635,37 @@ class StreamHandler:
         self._state.messages.append(msg)
         if result_usage:
             self._state.last_token_usage = TokenUsageInfo(**result_usage)
+
+    def _persist_interrupted_message(self) -> None:
+        """Persist partial streaming content with interrupted marker when user aborts."""
+        session = self._state.current_session
+        if not session or session.id != self._state.streaming_session_id:
+            return
+        content, fmt = self._serialize_stream_blocks()
+        blocks = self._content_to_blocks_with_interrupted(content, fmt)
+        if not blocks:
+            return
+        content_json = json.dumps(blocks, ensure_ascii=False)
+        msg = self._db.add_message(
+            session_id=session.id,
+            role="assistant",
+            content=content_json,
+            token_usage=None,
+        )
+        self._state.messages.append(msg)
+
+    @staticmethod
+    def _content_to_blocks_with_interrupted(content: str, fmt: str) -> list[dict]:
+        """Prepend interrupted marker to content blocks."""
+        interrupted_block = {"type": "interrupted"}
+        if fmt == "json":
+            try:
+                blocks = json.loads(content)
+                if isinstance(blocks, list):
+                    return [interrupted_block] + blocks
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return [interrupted_block, {"type": "text", "text": content or ""}]
 
     def _persist_assistant_message_from_blocks(
         self,

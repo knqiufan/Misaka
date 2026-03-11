@@ -216,12 +216,42 @@ class MessageItem(ft.Container):
 
         return ft.Column(controls=body_controls, spacing=6)
 
+    def _build_interrupted_banner(self) -> ft.Control:
+        """Build error banner indicating the command was interrupted by user."""
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(
+                        ft.Icons.CANCEL_OUTLINED,
+                        color=ft.Colors.ERROR,
+                        size=16,
+                    ),
+                    ft.Text(
+                        t("chat.command_interrupted"),
+                        size=12,
+                        color=ft.Colors.ERROR,
+                        weight=ft.FontWeight.W_500,
+                    ),
+                ],
+                spacing=8,
+            ),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+            bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.ERROR),
+            border=ft.Border.all(
+                1,
+                ft.Colors.with_opacity(0.25, ft.Colors.ERROR),
+            ),
+            border_radius=8,
+        )
+
     def _extract_markdown_from_blocks(
         self, blocks: list[MessageContentBlock]
     ) -> str:
         """Extract markdown representation from content blocks for copying."""
         parts: list[str] = []
         for block in blocks:
+            if block.type == "interrupted":
+                continue
             if block.type == "text" and block.text:
                 parts.append(block.text.strip())
             elif block.type == "code" and block.code:
@@ -266,6 +296,10 @@ class MessageItem(ft.Container):
         consumed_results: set[str] = set()
 
         for block in blocks:
+            if block.type == "interrupted":
+                controls.append(self._build_interrupted_banner())
+                continue
+
             if block.type == "text":
                 text = block.text or ""
                 if not text.strip():
