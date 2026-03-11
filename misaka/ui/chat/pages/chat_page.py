@@ -75,6 +75,7 @@ class ChatPage(ft.Stack):
         )
 
         self._file_tree_cache: dict[str, tuple] = {}
+        self._preview_request_token = 0
 
         self._build_ui()
 
@@ -195,6 +196,16 @@ class ChatPage(ft.Stack):
 
     # ---- Session operations ----
 
+    def _invalidate_preview_requests(self) -> None:
+        """Invalidate any in-flight preview loads tied to an older session."""
+        self._preview_request_token += 1
+
+    def _clear_right_panel_preview(self) -> None:
+        """Clear preview UI and invalidate stale async preview responses."""
+        self._invalidate_preview_requests()
+        if self._right_panel:
+            self._right_panel.clear_preview()
+
     def _on_session_select(self, session_id: str) -> None:
         """Handle session selection from the chat list."""
         # If clicking the same session that's already selected, do nothing
@@ -227,12 +238,15 @@ class ChatPage(ft.Stack):
         # Refresh UI — targeted refreshes instead of _rebuild_all()
         # Use refresh_selection() for efficient highlight update without rebuilding list
         if self._chat_list:
-            self._chat_list.refresh_selection()
+            if bg_status is None:
+                self._chat_list.refresh_selection()
+            else:
+                self._chat_list.refresh(clear_cache=False)
         if self._chat_view:
-            self._chat_view.refresh()
+            self._chat_view.refresh_for_session_change()
         if self._right_panel:
+            self._clear_right_panel_preview()
             self._right_panel.refresh()
-        self.state.update()
 
     def _on_new_chat(self) -> None:
         """Open folder picker, then create a new chat session."""
@@ -258,8 +272,9 @@ class ChatPage(ft.Stack):
         if self._chat_list:
             self._chat_list.refresh()
         if self._chat_view:
-            self._chat_view.refresh()
-        self.state.update()
+            self._chat_view.refresh_for_session_change()
+        if self._right_panel:
+            self._clear_right_panel_preview()
 
     def _on_delete_session(self, session_id: str) -> None:
         """Delete a session."""
@@ -273,14 +288,17 @@ class ChatPage(ft.Stack):
         if self.state.current_session_id == session_id:
             self.state.current_session_id = None
             self.state.messages = []
+            self.state.has_more_messages = False
             self.state.tasks = []
             self.state.file_tree_root = None
             self.state.file_tree_nodes = []
         if self._chat_list:
             self._chat_list.refresh()
         if self._chat_view:
-            self._chat_view.refresh()
-        self.state.update()
+            self._chat_view.refresh_for_session_change()
+        if self._right_panel:
+            self._clear_right_panel_preview()
+            self._right_panel.refresh()
 
     def _on_rename_session(self, session_id: str, new_title: str) -> None:
         """Rename a session."""
@@ -291,7 +309,8 @@ class ChatPage(ft.Stack):
                 break
         if self._chat_list:
             self._chat_list.refresh()
-        self.state.update()
+        if self.state.current_session_id == session_id and self._chat_view:
+            self._chat_view.refresh_header_only()
 
     def _on_remove_from_list(self, session_id: str) -> None:
         """Remove a session from the list (mark as hidden)."""
@@ -301,13 +320,16 @@ class ChatPage(ft.Stack):
         if self.state.current_session_id == session_id:
             self.state.current_session_id = None
             self.state.messages = []
+            self.state.has_more_messages = False
             self.state.file_tree_root = None
             self.state.file_tree_nodes = []
         if self._chat_list:
             self._chat_list.refresh()
         if self._chat_view:
-            self._chat_view.refresh()
-        self.state.update()
+            self._chat_view.refresh_for_session_change()
+        if self._right_panel:
+            self._clear_right_panel_preview()
+            self._right_panel.refresh()
 
     def _on_import_session(self) -> None:
         """Open the import session dialog."""
@@ -339,8 +361,7 @@ class ChatPage(ft.Stack):
         self.state.has_more_messages = has_more
         self.state.messages = older + self.state.messages
         if self._chat_view:
-            self._chat_view.refresh_messages()
-        self.state.update()
+            self._chat_view.prepend_older_messages(older)
 
     def _on_command(self, command: str) -> None:
         """Handle an immediate slash command."""
@@ -429,8 +450,7 @@ class ChatPage(ft.Stack):
         )
         self.state.messages.append(msg)
         if self._chat_view:
-            self._chat_view.refresh_messages()
-        self.state.update()
+            self._chat_view.append_message(msg)
 
     # ---- Message operations ----
 
@@ -442,20 +462,12 @@ class ChatPage(ft.Stack):
         self.state.page.run_task(*self._stream_handler.get_send_coroutine(text, images))
         if msg and self._chat_view:
             self._chat_view.refresh_messages_minimal(msg)
-        self.state.update()
-
-        async def _deferred_full_refresh() -> None:
-            if self._chat_view:
-                self._chat_view.refresh_messages()
-            self.state.update()
-
-        self.state.page.run_task(_deferred_full_refresh)
 
     def _on_regenerate(self, assistant_message_id: str) -> None:
         """Regenerate the assistant response for the given message."""
-        if not self.state.current_session_id:
+        session_id = self.state.current_session_id
+        if not session_id:
             return
-        self._abort_if_streaming()
 
         messages = self.state.messages
         idx = next((i for i, m in enumerate(messages) if m.id == assistant_message_id), None)
@@ -479,6 +491,47 @@ class ChatPage(ft.Stack):
         if not prompt:
             return
 
+        if self.state.is_streaming:
+            self.state.page.run_task(
+                self._regenerate_after_abort,
+                session_id,
+                assistant_message_id,
+                prompt,
+            )
+            return
+        self._start_regenerate(session_id, assistant_message_id, prompt)
+
+    async def _regenerate_after_abort(
+        self,
+        session_id: str,
+        assistant_message_id: str,
+        prompt: str,
+    ) -> None:
+        """Abort the current stream, then restart generation for one reply."""
+        await self._stream_handler.abort_claude_with_options(
+            persist_interrupted=False,
+            refresh_ui=False,
+        )
+        if self.state.current_session_id != session_id:
+            return
+        self._start_regenerate(session_id, assistant_message_id, prompt)
+
+    def _start_regenerate(
+        self,
+        session_id: str,
+        assistant_message_id: str,
+        prompt: str,
+    ) -> None:
+        """Remove the target reply and restart streaming for the same prompt."""
+        if self.state.current_session_id != session_id:
+            return
+        idx = next(
+            (i for i, m in enumerate(self.state.messages) if m.id == assistant_message_id),
+            None,
+        )
+        if idx is None:
+            return
+
         # Remove assistant message from state and DB
         self.state.messages.pop(idx)
         self.db.delete_message(assistant_message_id)
@@ -488,7 +541,7 @@ class ChatPage(ft.Stack):
         if session:
             session.sdk_session_id = ""
         self.state.sdk_session_id = None
-        self.db.update_sdk_session_id(self.state.current_session_id, "")
+        self.db.update_sdk_session_id(session_id, "")
 
         self._stream_handler.reset_stream_state()
         self._stream_handler.start_streaming()
@@ -496,8 +549,8 @@ class ChatPage(ft.Stack):
             *self._stream_handler.get_send_coroutine(prompt, None),
         )
         if self._chat_view:
-            self._chat_view.refresh_messages()
-        self.state.update()
+            self._chat_view.remove_message(assistant_message_id)
+            self._chat_view.refresh_streaming()
 
     def _on_abort(self) -> None:
         """Abort the current streaming operation."""
@@ -505,19 +558,38 @@ class ChatPage(ft.Stack):
 
     def _on_clear_messages(self) -> None:
         """Clear all messages for the current session."""
-        if not self.state.current_session_id:
+        session_id = self.state.current_session_id
+        if not session_id:
             return
-        self._abort_if_streaming()
-        self.db.clear_session_messages(self.state.current_session_id)
+        if self.state.is_streaming:
+            self.state.page.run_task(self._clear_messages_after_abort, session_id)
+            return
+        self._clear_messages_now(session_id)
+
+    async def _clear_messages_after_abort(self, session_id: str) -> None:
+        """Abort the foreground stream before clearing the session."""
+        await self._stream_handler.abort_claude_with_options(
+            persist_interrupted=False,
+            refresh_ui=False,
+        )
+        if self.state.current_session_id != session_id:
+            return
+        self._clear_messages_now(session_id)
+
+    def _clear_messages_now(self, session_id: str) -> None:
+        """Clear persisted and rendered messages for the current session."""
+        if self.state.current_session_id != session_id:
+            return
+        self.db.clear_session_messages(session_id)
         self.state.messages = []
+        self.state.has_more_messages = False
         self.state.sdk_session_id = None
         session = self.state.current_session
         if session:
             session.sdk_session_id = ""
         self._stream_handler.reset_stream_state()
         if self._chat_view:
-            self._chat_view.refresh_messages()
-        self.state.update()
+            self._chat_view.clear_messages_local()
 
     def _on_model_change(self, model: str) -> None:
         """Handle model selection change."""
@@ -527,7 +599,8 @@ class ChatPage(ft.Stack):
         if session:
             session.model = model
         self.db.update_session_model(self.state.current_session_id, model)
-        self.state.update()
+        if self._chat_view:
+            self._chat_view.refresh_header_only()
 
     def _on_mode_change(self, mode: str) -> None:
         """Handle mode change."""
@@ -537,9 +610,10 @@ class ChatPage(ft.Stack):
         session = self.state.current_session
         if session:
             session.mode = mode
+        if self._chat_list:
+            self._chat_list.refresh(clear_cache=False)
         if self._chat_view:
-            self._chat_view.refresh()
-        self.state.update()
+            self._chat_view.refresh_header_only()
 
     # ---- Panel operations ----
 
@@ -641,14 +715,25 @@ class ChatPage(ft.Stack):
         file_svc = self.state.get_service("file_service")
         if not file_svc or not self._right_panel:
             return
+        session_id = self.state.current_session_id
+        file_tree_root = self.state.file_tree_root
+        self._preview_request_token += 1
+        request_token = self._preview_request_token
 
         async def _do_preview() -> None:
             try:
                 preview = await file_svc.read_file_preview(
                     file_path=path,
                     max_lines=200,
-                    base_dir=self.state.file_tree_root,
+                    base_dir=file_tree_root,
                 )
+                if (
+                    self.state.current_session_id != session_id
+                    or self.state.file_tree_root != file_tree_root
+                    or request_token != self._preview_request_token
+                    or not self._right_panel
+                ):
+                    return
                 self._right_panel.show_file_preview(preview)
                 self._right_panel.update()
             except Exception as exc:
@@ -716,6 +801,7 @@ class ChatPage(ft.Stack):
             return
         # If it's a background stream
         if session_id in self.state.background_streams:
+            self._stream_handler.cancel_background_stream(session_id)
             self.state.background_streams.pop(session_id, None)
             claude = self.state.get_service("claude_service")
             if claude and claude.is_session_streaming(session_id):
@@ -727,13 +813,11 @@ class ChatPage(ft.Stack):
         """Called when a background stream changes status (started/completed)."""
         if self._chat_list:
             self._chat_list.refresh()
-        self.state.update()
 
     def _refresh_stream_ui(self) -> None:
         """Refresh message list, send/stop button, and connection status after stream events."""
         if self._chat_view:
             self._chat_view.refresh_streaming()
-        self.state.update()
 
     def _load_file_tree(self, session: ChatSession) -> None:
         wd = (session.working_directory or "").strip()
@@ -771,7 +855,8 @@ class ChatPage(ft.Stack):
             try:
                 self.state.file_tree_loading = True
                 self.state.file_tree_expanded_paths.clear()
-                self.state.update()
+                if self._right_panel:
+                    self._right_panel.refresh()
                 nodes = await file_svc.scan_directory(working_dir, depth=1)
                 self.state.file_tree_root = working_dir
                 self.state.file_tree_nodes = nodes
@@ -784,7 +869,6 @@ class ChatPage(ft.Stack):
                 self.state.file_tree_loading = False
             if self._right_panel:
                 self._right_panel.refresh()
-            self.state.update()
 
         self.state.page.run_task(_do_scan)
 
@@ -812,7 +896,6 @@ class ChatPage(ft.Stack):
         self.state.file_tree_loading_paths.add(path)
         if self._right_panel:
             self._right_panel.refresh()
-        self.state.update()
 
         async def _do_load() -> None:
             try:
@@ -830,7 +913,6 @@ class ChatPage(ft.Stack):
                 self.state.file_tree_loading_paths.discard(path)
                 if self._right_panel:
                     self._right_panel.refresh()
-                self.state.update()
 
         self.state.page.run_task(_do_load)
 

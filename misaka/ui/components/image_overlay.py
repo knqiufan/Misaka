@@ -10,6 +10,8 @@ import contextlib
 
 import flet as ft
 
+_IMAGE_OVERLAY_KEY = "__misaka_image_overlay__"
+
 
 class ImageOverlay(ft.Stack):
     """Full-screen modal image viewer.
@@ -173,10 +175,18 @@ def show_image_overlay(page: ft.Page, image_src: str) -> None:
         page: The Flet page.
         image_src: The image source (path, URL, or base64 data URL).
     """
+    existing = next(
+        (item for item in page.overlay if getattr(item, "key", None) == _IMAGE_OVERLAY_KEY),
+        None,
+    )
+    if existing is not None:
+        page.overlay.remove(existing)
+
     overlay = ImageOverlay(
         image_src=image_src,
         on_close=lambda: _close_overlay(page, overlay),
     )
+    overlay.key = _IMAGE_OVERLAY_KEY
 
     # Add overlay to page
     page.overlay.append(overlay)

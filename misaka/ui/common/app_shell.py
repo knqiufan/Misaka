@@ -139,7 +139,8 @@ class AppShell(ft.Row):
         current_page = self._get_current_page()
 
         # Refresh the target page
-        if hasattr(current_page, 'refresh'):
+        should_refresh = page_name != "chat"
+        if should_refresh and hasattr(current_page, 'refresh'):
             current_page.refresh()
 
         if self._content_area:

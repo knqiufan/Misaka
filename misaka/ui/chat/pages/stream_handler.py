@@ -44,7 +44,9 @@ class _StreamContext:
     writes between the foreground UI and the background accumulator.
     """
     session_id: str
+    generation: int
     is_foreground: bool = True
+    cancelled: bool = False
     blocks: list[StreamingBlock] = field(default_factory=list)
 
 
@@ -89,6 +91,7 @@ class StreamHandler:
         self._last_refresh_time: float = 0.0
         self._refresh_pending: bool = False
         self._refresh_timer: asyncio.TimerHandle | None = None
+        self._stream_generation: int = 0
 
     # ------------------------------------------------------------------
     # Public API
@@ -127,6 +130,15 @@ class StreamHandler:
         self._refresh_timer = None
         self._last_refresh_time = time.monotonic()
         self._ui_refresh()
+
+    def _is_current_foreground_ctx(self, ctx: _StreamContext) -> bool:
+        """Return whether the context still owns the current foreground stream."""
+        return (
+            ctx.is_foreground
+            and ctx.generation == self._stream_generation
+            and self._state.is_streaming
+            and self._state.streaming_session_id == ctx.session_id
+        )
 
     def persist_user_message(
         self,
@@ -189,7 +201,10 @@ class StreamHandler:
             self._ui_refresh()
             return
 
-        ctx = _StreamContext(session_id=session.id)
+        ctx = _StreamContext(
+            session_id=session.id,
+            generation=self._stream_generation,
+        )
         self._active_ctx = ctx
 
         result_usage: dict[str, Any] | None = None
@@ -224,19 +239,19 @@ class StreamHandler:
                     return
 
         def on_text(text: str) -> None:
-            if ctx.is_foreground:
+            if self._is_current_foreground_ctx(ctx):
                 self._append_stream_text(text)
                 self._throttled_ui_refresh()
             _append_text_to_ctx(text)
 
         def on_tool_use(payload: dict) -> None:
-            if ctx.is_foreground:
+            if self._is_current_foreground_ctx(ctx):
                 self._append_tool_use(payload)
                 self._ui_refresh()
             _append_tool_use_to_ctx(payload)
 
         def on_tool_result(payload: dict) -> None:
-            if ctx.is_foreground:
+            if self._is_current_foreground_ctx(ctx):
                 self._append_tool_result(payload)
                 self._ui_refresh()
             _append_tool_result_to_ctx(payload)
@@ -258,7 +273,7 @@ class StreamHandler:
             stream_error = message
 
         def on_permission_request(payload: dict) -> None:
-            if not ctx.is_foreground:
+            if not self._is_current_foreground_ctx(ctx):
                 # Auto-deny permissions when running in background
                 perm_svc = self._state.get_service("permission_service")
                 perm_id = payload.get("permission_id", "")
@@ -329,26 +344,44 @@ class StreamHandler:
         if self._active_ctx is ctx:
             self._active_ctx = None
 
-        if ctx.is_foreground:
+        if self._is_current_foreground_ctx(ctx):
             self._finalize_stream(
                 session, result_usage, result_sdk_session_id, stream_error,
             )
-        else:
+        elif not ctx.is_foreground and not ctx.cancelled:
             # Stream finished in background — finalize without touching foreground UI
             self._detached_contexts.pop(ctx.session_id, None)
             self._finalize_background(
                 ctx, session, result_usage, result_sdk_session_id, stream_error,
             )
+        else:
+            self._detached_contexts.pop(ctx.session_id, None)
 
     async def abort_claude(self) -> None:
-        """Abort the current streaming operation and persist partial content with interrupted marker."""
+        await self.abort_claude_with_options()
+
+    async def abort_claude_with_options(
+        self,
+        *,
+        persist_interrupted: bool = True,
+        refresh_ui: bool = True,
+    ) -> None:
+        """Abort the current streaming operation with optional persistence."""
         claude = self._state.get_service("claude_service")
         sid = self._state.streaming_session_id
+        generation = self._stream_generation
         if claude and sid:
             await claude.abort(sid)
-        self._persist_interrupted_message()
+        if (
+            sid != self._state.streaming_session_id
+            or generation != self._stream_generation
+        ):
+            return
+        if persist_interrupted:
+            self._persist_interrupted_message()
         self.reset_stream_state()
-        self._ui_refresh()
+        if refresh_ui:
+            self._ui_refresh()
 
     def set_callbacks(
         self,
@@ -456,12 +489,19 @@ class StreamHandler:
         if self._on_background_status_change:
             self._on_background_status_change()
 
+    def cancel_background_stream(self, session_id: str) -> None:
+        """Mark a detached background stream as cancelled before aborting it."""
+        ctx = self._detached_contexts.get(session_id)
+        if ctx is not None:
+            ctx.cancelled = True
+
     # ------------------------------------------------------------------
     # Stream state helpers
     # ------------------------------------------------------------------
 
     def start_streaming(self) -> None:
         """Mark the beginning of a new streaming turn."""
+        self._stream_generation += 1
         self._state.is_streaming = True
         self._state.streaming_blocks = []
         self._state.streaming_session_id = self._state.current_session_id

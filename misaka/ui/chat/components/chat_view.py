@@ -71,6 +71,9 @@ class ChatView(ft.Column):
         self._update_banner: UpdateBanner | None = None
         self._header: ft.Container | None = None
         self._title_text: ft.Text | None = None
+        self._welcome_view: ft.Container | None = None
+        self._input_container: ft.Container | None = None
+        self._clear_btn: ft.Control | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -127,7 +130,7 @@ class ChatView(ft.Column):
             icon_size=20,
         )
 
-        clear_btn = make_icon_button(
+        self._clear_btn = make_icon_button(
             ft.Icons.DELETE_SWEEP_ROUNDED,
             tooltip=t("chat.clear_messages"),
             on_click=lambda e: self._on_clear_messages() if self._on_clear_messages else None,
@@ -156,7 +159,7 @@ class ChatView(ft.Column):
                     ),
                     self._mode_dropdown,
                     self._connection_status,
-                    clear_btn,
+                    self._clear_btn,
                     right_toggle,
                 ],
                 spacing=6,
@@ -199,23 +202,26 @@ class ChatView(ft.Column):
         )
 
         # --- Welcome view (when no session selected) ---
-        welcome_view = self._build_welcome_view(visible=not has_session)
+        self._welcome_view = self._build_welcome_view(visible=not has_session)
+        self._message_list.visible = has_session
+        self._input_container = ft.Container(
+            content=self._message_input,
+            visible=has_session,
+            border=ft.Border(
+                top=ft.BorderSide(
+                    1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+                ),
+            ),
+        )
 
         # --- Assemble ---
         self.controls = [
             self._header,
             self._update_banner,
             self._error_banner,
-            self._message_list if has_session else welcome_view,
-            ft.Container(
-                content=self._message_input,
-                visible=has_session,
-                border=ft.Border(
-                    top=ft.BorderSide(
-                        1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
-                    ),
-                ),
-            ),
+            self._welcome_view,
+            self._message_list,
+            self._input_container,
         ]
 
     def _build_welcome_view(self, *, visible: bool = True) -> ft.Container:
@@ -345,13 +351,74 @@ class ChatView(ft.Column):
         """Rebuild the chat view from current state."""
         self._build_ui()
 
+    def _sync_mode_dropdown(self) -> None:
+        if not self._mode_dropdown:
+            return
+        session = self.state.current_session
+        new_mode = session.mode if session else "agent"
+        if self._mode_dropdown._value == new_mode:
+            return
+        self._mode_dropdown._value = new_mode
+        self._mode_dropdown.content = self._mode_dropdown._build_trigger()
+        self._mode_dropdown.items = self._mode_dropdown._build_items()
+
+    def refresh_for_session_change(self) -> None:
+        """Refresh session-scoped UI without rebuilding the whole view."""
+        session = self.state.current_session
+        has_session = session is not None
+        if self._title_text:
+            self._title_text.value = session.title if session else "Misaka"
+        self._sync_mode_dropdown()
+        if self._clear_btn:
+            self._clear_btn.visible = has_session
+        if self._welcome_view:
+            self._welcome_view.visible = not has_session
+        if self._message_list:
+            self._message_list.visible = has_session
+            if has_session:
+                self._message_list.refresh_for_session_change()
+            else:
+                self._message_list.clear_messages()
+            with contextlib.suppress(Exception):
+                self._message_list.update()
+        if self._input_container:
+            self._input_container.visible = has_session
+        if self._message_input:
+            self._message_input.refresh()
+        if self._connection_status:
+            self._connection_status.set_status(
+                connected=has_session,
+                model=session.model if session else None,
+                is_streaming=self.state.is_streaming,
+            )
+        self._refresh_error_banner()
+        if self._header:
+            with contextlib.suppress(Exception):
+                self._header.update()
+        if self._welcome_view:
+            with contextlib.suppress(Exception):
+                self._welcome_view.update()
+        if self._input_container:
+            with contextlib.suppress(Exception):
+                self._input_container.update()
+        if self._error_banner:
+            with contextlib.suppress(Exception):
+                self._error_banner.update()
+
     def refresh_header_only(self) -> None:
         """Update only the header title without full rebuild."""
         session = self.state.current_session
         if self._title_text:
             self._title_text.value = session.title if session else "Misaka"
+        self._sync_mode_dropdown()
+        if self._clear_btn:
+            self._clear_btn.visible = session is not None
         if self._connection_status:
-            self._connection_status.set_status(is_streaming=self.state.is_streaming)
+            self._connection_status.set_status(
+                connected=session is not None,
+                model=session.model if session else None,
+                is_streaming=self.state.is_streaming,
+            )
         if self._header:
             with contextlib.suppress(Exception):
                 self._header.update()
@@ -369,12 +436,36 @@ class ChatView(ft.Column):
     def refresh_messages_minimal(self, new_message: Message) -> None:
         """Lightweight update on send: append only the new user message."""
         if self._message_list:
-            self._message_list.append_new_user_message(new_message)
+            self._message_list.append_message(new_message)
         if self._message_input:
             self._message_input.refresh()
         if self._connection_status:
             self._connection_status.set_status(is_streaming=self.state.is_streaming)
         self._refresh_error_banner()
+
+    def prepend_older_messages(self, older_messages: list[Message]) -> None:
+        """Insert older history at the top without rebuilding the list."""
+        if self._message_list:
+            self._message_list.prepend_older_messages(older_messages)
+
+    def append_message(self, new_message: Message) -> None:
+        """Append a message to the list without rebuilding history."""
+        if self._message_list:
+            self._message_list.append_message(new_message)
+
+    def remove_message(self, message_id: str) -> None:
+        """Remove a single rendered message item."""
+        if self._message_list:
+            self._message_list.remove_message(message_id)
+
+    def clear_messages_local(self) -> None:
+        """Clear rendered messages and show the empty state."""
+        if self._message_list:
+            self._message_list.clear_messages()
+        if self._message_input:
+            self._message_input.refresh()
+        if self._connection_status:
+            self._connection_status.set_status(is_streaming=self.state.is_streaming)
 
     def refresh_streaming(self) -> None:
         """Refresh streaming-related UI: message list, send/stop button, connection status.

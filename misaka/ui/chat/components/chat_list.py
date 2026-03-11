@@ -494,6 +494,9 @@ class ChatList(ft.Column):
         self._refresh_list()
         if self.state.background_streams and not self._pulse_timer_running:
             self._start_pulse_timer()
+        if self._session_list:
+            with contextlib.suppress(Exception):
+                self._session_list.update()
 
     def refresh_selection(self) -> None:
         """Update only the selection highlight without rebuilding the list.

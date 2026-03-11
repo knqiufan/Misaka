@@ -211,6 +211,13 @@ class RightPanel(ft.Column):
         self._current_preview = preview
         self._build_ui()
 
+    def clear_preview(self) -> None:
+        """Clear the active file preview when session context changes."""
+        self._current_preview = None
+        self._build_ui()
+        self.update()
+
     def refresh(self) -> None:
         """Rebuild panel content from current state."""
         self._build_ui()
+        self.update()

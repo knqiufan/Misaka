@@ -7,10 +7,14 @@ Badge-style pill indicator with semantic colors.
 
 from __future__ import annotations
 
+import contextlib
+
 import flet as ft
 
 from misaka.i18n import t
 from misaka.ui.common.theme import ERROR_RED, SUCCESS_GREEN, WARNING_AMBER
+
+_MODEL_UNSET = object()
 
 
 class ConnectionStatus(ft.Row):
@@ -67,18 +71,39 @@ class ConnectionStatus(ft.Row):
         )
         self.controls = [badge]
 
+    def _resolve_label(self) -> str:
+        return self._model or (
+            t("chat.connected") if self._connected else t("chat.disconnected")
+        )
+
+    def _resolve_dot_color(self) -> str:
+        if self._is_streaming:
+            return WARNING_AMBER
+        if self._connected:
+            return SUCCESS_GREEN
+        return ERROR_RED
+
     def set_status(
         self,
         *,
         connected: bool | None = None,
-        model: str | None = None,
+        model: str | None | object = _MODEL_UNSET,
         is_streaming: bool | None = None,
     ) -> None:
         """Update the connection status display."""
         if connected is not None:
             self._connected = connected
-        if model is not None:
+        if model is not _MODEL_UNSET:
             self._model = model
         if is_streaming is not None:
             self._is_streaming = is_streaming
-        self._build_ui()
+        dot_color = self._resolve_dot_color()
+        self._dot.bgcolor = dot_color
+        self._dot.shadow = ft.BoxShadow(
+            blur_radius=4,
+            spread_radius=0,
+            color=ft.Colors.with_opacity(0.4, dot_color),
+        )
+        self._label.value = self._resolve_label()
+        with contextlib.suppress(Exception):
+            self.update()
