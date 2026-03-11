@@ -367,6 +367,12 @@ class MessageInput(ft.Container):
                 self._text_field.update()
             if self._on_command:
                 self._on_command(f"/{cmd.name}")
+        elif cmd.prompt and self._on_send:
+            # 有 prompt 的命令（如 /init）直接发送，不显示 badge
+            if self._text_field:
+                self._text_field.value = ""
+                self._text_field.update()
+            self._on_send(cmd.prompt, [])
         else:
             self._set_badge(cmd)
             if self._text_field:
