@@ -91,6 +91,8 @@
     "about": "關於",
     "about_app": "Misaka - Claude Code 桌面 GUI 用戶端",
     "about_desc": "基於 Flet + Python 建構",
+    "about_author": "作者 knqiufan",
+    "about_github": "前往 GitHub",
     "cli_settings": "Claude CLI 設定",
     "cli_settings_desc": "編輯 Claude Code CLI 使用的 ~/.claude/settings.json。",
     "cli_settings_visual": "視覺編輯器",

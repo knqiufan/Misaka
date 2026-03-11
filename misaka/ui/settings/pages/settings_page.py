@@ -29,11 +29,13 @@ from misaka.ui.common.theme import (
     ERROR_RED,
     RADIUS_LG,
     RADIUS_XL,
+    RADIUS_MD,
     SUCCESS_GREEN,
     WARNING_AMBER,
     make_badge,
     make_button,
     make_divider,
+    make_icon_button,
     make_outlined_button,
     make_section_card,
 )
@@ -62,7 +64,6 @@ class SettingsPage(ft.Column):
         super().__init__(
             spacing=0,
             expand=True,
-            scroll=ft.ScrollMode.AUTO,
         )
         self.state = state
         self.db = db
@@ -106,19 +107,30 @@ class SettingsPage(ft.Column):
             ft.Container(height=16),
         ]
 
-        inner = ft.Column(
-            controls=[header, make_divider(), *sections],
+        sections_list = ft.Column(
+            controls=sections,
             spacing=0,
             scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
+        sections_container = ft.Container(
+            content=sections_list,
+            expand=True,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+        )
+
+        inner = ft.Column(
+            controls=[header, sections_container],
+            spacing=0,
             expand=True,
         )
 
         main_card = ft.Container(
             content=inner,
-            margin=ft.Margin.symmetric(horizontal=20, vertical=16),
-            padding=ft.Padding.all(28),
+            margin=ft.Margin.symmetric(horizontal=10, vertical=10),
+            padding=ft.Padding.all(10),
             expand=True,
-            border_radius=RADIUS_XL,
+            border_radius=RADIUS_MD,
             bgcolor=ft.Colors.SURFACE_CONTAINER,
             border=ft.Border.all(
                 1,
@@ -631,17 +643,43 @@ class SettingsPage(ft.Column):
     # ------------------------------------------------------------------
 
     def _build_about_section(self) -> ft.Control:
+        github_btn = make_icon_button(
+            ft.Icons.CODE,
+            tooltip=t("settings.about_github"),
+            on_click=self._open_github,
+        )
         return ft.Container(
-            content=ft.Column(
+            content=ft.Row(
                 controls=[
-                    ft.Text(t("settings.about"), size=16, weight=ft.FontWeight.W_600),
-                    ft.Text(t("settings.about_app"), size=13),
-                    ft.Text(t("settings.about_desc"), size=12, opacity=0.6),
+                    ft.Column(
+                        controls=[
+                            ft.Text(t("settings.about"), size=16, weight=ft.FontWeight.W_600),
+                            ft.Text(t("settings.about_app"), size=13),
+                            ft.Text(t("settings.about_desc"), size=12, opacity=0.6),
+                            ft.Text(t("settings.about_author"), size=12, opacity=0.7),
+                            ft.Row(
+                                controls=[github_btn],
+                                spacing=8,
+                            ),
+                        ],
+                        spacing=8,
+                        expand=True,
+                    ),
                 ],
-                spacing=8,
+                expand=True,
             ),
             padding=ft.Padding.symmetric(horizontal=24, vertical=16),
         )
+
+    def _open_github(self, e: ft.ControlEvent) -> None:
+        page = e.page
+        if not page:
+            return
+
+        async def _launch() -> None:
+            await page.launch_url("https://github.com/knqiufan/Misaka")
+
+        page.run_task(_launch)
 
     def refresh(self) -> None:
         """Rebuild the settings page."""

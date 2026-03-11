@@ -16,7 +16,7 @@ from misaka.i18n import t
 from misaka.ui.skills.pages.skill_editor_panel import SkillEditorPanel
 from misaka.ui.common.theme import (
     RADIUS_LG,
-    RADIUS_XL,
+    RADIUS_MD,
     make_button,
     make_dialog,
     make_divider,
@@ -131,17 +131,17 @@ class ExtensionsPage(ft.Column):
         )
 
         inner = ft.Column(
-            controls=[header, make_divider(), main_content],
+            controls=[header, main_content],
             spacing=0,
             expand=True,
         )
 
         main_card = ft.Container(
             content=inner,
-            margin=ft.Margin.symmetric(horizontal=20, vertical=16),
-            padding=ft.Padding.all(28),
+            margin=ft.Margin.symmetric(horizontal=10, vertical=10),
+            padding=ft.Padding.all(10),
             expand=True,
-            border_radius=RADIUS_XL,
+            border_radius=RADIUS_MD,
             bgcolor=ft.Colors.SURFACE_CONTAINER,
             border=ft.Border.all(
                 1,
@@ -224,7 +224,11 @@ class ExtensionsPage(ft.Column):
                     content=search_field,
                     padding=ft.Padding.symmetric(horizontal=12, vertical=12),
                 ),
-                self._skill_list,
+                ft.Container(
+                    content=self._skill_list,
+                    expand=True,
+                    clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                ),
             ],
             spacing=0,
             expand=True,
@@ -240,6 +244,7 @@ class ExtensionsPage(ft.Column):
             ),
             padding=ft.Padding.only(right=0),
             margin=ft.Margin.only(right=20),
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
         )
 
     # ------------------------------------------------------------------

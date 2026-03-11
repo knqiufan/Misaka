@@ -91,6 +91,8 @@
     "about": "About",
     "about_app": "Misaka - Claude Code Desktop GUI Client",
     "about_desc": "Built with Flet + Python",
+    "about_author": "Author: knqiufan",
+    "about_github": "Open on GitHub",
     "cli_settings": "Claude CLI Settings",
     "cli_settings_desc": "Edit ~/.claude/settings.json used by the Claude Code CLI.",
     "cli_settings_visual": "Visual Editor",
