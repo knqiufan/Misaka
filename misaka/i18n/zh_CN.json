@@ -16,7 +16,6 @@
     "delete": "删除",
     "rename": "重命名",
     "rename_session": "重命名会话",
-    "archive": "归档",
     "remove_from_list": "移出列表",
     "clear_messages": "清空消息",
     "confirm_delete": "确定要删除此会话吗？此操作无法撤消。",

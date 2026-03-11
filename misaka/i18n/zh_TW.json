@@ -16,7 +16,6 @@
     "delete": "刪除",
     "rename": "重新命名",
     "rename_session": "重新命名工作階段",
-    "archive": "封存",
     "remove_from_list": "移出列表",
     "clear_messages": "清空訊息",
     "confirm_delete": "確定要刪除此會話嗎？此操作無法撤銷。",

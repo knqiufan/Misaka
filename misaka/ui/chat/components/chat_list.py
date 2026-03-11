@@ -37,7 +37,6 @@ class ChatList(ft.Column):
         on_new_chat: Callable[[], None] | None = None,
         on_delete: Callable[[str], None] | None = None,
         on_rename: Callable[[str, str], None] | None = None,
-        on_archive: Callable[[str], None] | None = None,
         on_remove_from_list: Callable[[str], None] | None = None,
         on_import: Callable[[], None] | None = None,
     ) -> None:
@@ -47,7 +46,6 @@ class ChatList(ft.Column):
         self._on_new_chat = on_new_chat
         self._on_delete = on_delete
         self._on_rename = on_rename
-        self._on_archive = on_archive
         self._on_remove_from_list = on_remove_from_list
         self._on_import = on_import
         self._search_query = ""
@@ -400,13 +398,6 @@ class ChatList(ft.Column):
                 on_click=handle_action(self._start_rename, session_id, page),
             ),
         ]
-
-        if self._on_archive:
-            items.append(ContextMenuItem(
-                icon=ft.Icons.ARCHIVE,
-                label=t("chat.archive"),
-                on_click=handle_action(self._on_archive, session_id),
-            ))
 
         if self._on_remove_from_list:
             items.append(ContextMenuItem(

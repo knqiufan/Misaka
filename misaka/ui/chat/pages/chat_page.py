@@ -86,7 +86,6 @@ class ChatPage(ft.Stack):
             on_new_chat=self._on_new_chat,
             on_delete=self._on_delete_session,
             on_rename=self._on_rename_session,
-            on_archive=self._on_archive_session,
             on_remove_from_list=self._on_remove_from_list,
             on_import=self._on_import_session,
         )
@@ -292,22 +291,6 @@ class ChatPage(ft.Stack):
                 break
         if self._chat_list:
             self._chat_list.refresh()
-        self.state.update()
-
-    def _on_archive_session(self, session_id: str) -> None:
-        """Archive a session."""
-        self._abort_session_if_streaming(session_id)
-        self.db.update_session_status(session_id, "archived")
-        self.state.sessions = [s for s in self.state.sessions if s.id != session_id]
-        if self.state.current_session_id == session_id:
-            self.state.current_session_id = None
-            self.state.messages = []
-            self.state.file_tree_root = None
-            self.state.file_tree_nodes = []
-        if self._chat_list:
-            self._chat_list.refresh()
-        if self._chat_view:
-            self._chat_view.refresh()
         self.state.update()
 
     def _on_remove_from_list(self, session_id: str) -> None:
@@ -724,7 +707,7 @@ class ChatPage(ft.Stack):
     def _abort_session_if_streaming(self, session_id: str) -> None:
         """Abort streaming for a specific session (foreground or background).
 
-        Used for destructive operations (delete, archive, clear).
+        Used for destructive operations (delete, remove from list, clear).
         """
         # If it's the foreground stream
         if (self.state.is_streaming
