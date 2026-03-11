@@ -89,9 +89,8 @@ class ImportSessionDialog:
         self._update_status_text()
         if self._session_list:
             self._session_list.update()
-        if self._load_more_row:
-            self._load_more_row.visible = False
-            self._load_more_row.update()
+        self._update_load_more_visibility()
+        self._refresh_footer()
 
         try:
             sessions, total = self._service.list_cli_sessions_paginated(
@@ -118,8 +117,7 @@ class ImportSessionDialog:
             self._update_load_more_visibility()
             if self._session_list:
                 self._session_list.update()
-            if self._load_more_row:
-                self._load_more_row.update()
+            self._refresh_footer()
 
     def _set_loading_ui(self, loading: bool, is_search: bool = False) -> None:
         """Update loading indicator in status area."""
@@ -155,6 +153,13 @@ class ImportSessionDialog:
         has_more = len(self._loaded) < self._total_count
         self._load_more_row.visible = has_more and not self._loading
 
+    def _refresh_footer(self) -> None:
+        """Refresh footer controls after status/visibility changes."""
+        if self._status_text:
+            self._status_text.update()
+        if self._load_more_row:
+            self._load_more_row.update()
+
     def _build_dialog(self) -> None:
         """Build the dialog UI with search, list, load more, and status."""
         search_field = make_text_field(
@@ -164,13 +169,16 @@ class ImportSessionDialog:
             border_radius=12,
             content_padding=ft.Padding.symmetric(horizontal=10, vertical=6),
             on_change=self._on_search_changed,
+            expand=True,
+            margin=ft.Margin.only(left=4, right=4, top=4, bottom=10),
         )
+        search_bar = ft.Row(controls=[search_field])
 
         self._session_list = ft.ListView(
             expand=True,
-            spacing=6,
+            spacing=10,
             padding=ft.Padding.symmetric(horizontal=4, vertical=6),
-            height=360,
+            height=400,
         )
 
         self._status_text = ft.Text(
@@ -181,7 +189,7 @@ class ImportSessionDialog:
 
         load_more_btn = make_text_button(
             t("import_session.load_more"),
-            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
+            icon=ft.Icons.EXPAND_MORE_ROUNDED,
             on_click=self._on_load_more,
         )
         self._load_more_row = ft.Row(
@@ -196,8 +204,8 @@ class ImportSessionDialog:
         content = ft.Container(
             content=ft.Column(
                 controls=[
-                    search_field,
-                    ft.Divider(height=1),
+                    search_bar,
+                    # ft.Divider(height=1),
                     self._session_list,
                     ft.Container(
                         content=ft.Column(

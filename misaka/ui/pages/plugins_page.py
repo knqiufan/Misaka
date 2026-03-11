@@ -44,13 +44,12 @@ class PluginsPage(ft.Column):
         super().__init__(
             spacing=0,
             expand=True,
-            scroll=ft.ScrollMode.AUTO,
         )
         self.state = state
         self.db = db
         self._mcp_configs: dict[str, Any] = {}
         self._mcp_config_sources: dict[str, Path] = {}
-        self._server_list: ft.Column | None = None
+        self._server_list: ft.ListView | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -58,7 +57,11 @@ class PluginsPage(ft.Column):
         self._load_mcp_config()
 
         header = self._build_header()
-        self._server_list = ft.Column(spacing=10)
+        self._server_list = ft.ListView(
+            spacing=10,
+            expand=True,
+            padding=ft.Padding.only(top=16, bottom=16),
+        )
         self._refresh_server_list()
         server_container = self._build_server_container()
         config_info = self._build_config_info()
@@ -66,13 +69,12 @@ class PluginsPage(ft.Column):
         inner = ft.Column(
             controls=[header, make_divider(), server_container, config_info],
             spacing=0,
-            scroll=ft.ScrollMode.AUTO,
             expand=True,
         )
 
         main_card = ft.Container(
             content=inner,
-            margin=ft.Margin.symmetric(horizontal=20, vertical=16),
+            margin=ft.Margin.symmetric(horizontal=10, vertical=10),
             padding=ft.Padding.all(20),
             expand=True,
             border_radius=RADIUS_MD,
@@ -151,10 +153,11 @@ class PluginsPage(ft.Column):
         )
 
     def _build_server_container(self) -> ft.Container:
-        """Build server list container."""
+        """Build server list container. Expands to fill remaining space; list scrolls internally."""
         return ft.Container(
             content=self._server_list,
-            padding=ft.Padding.symmetric(vertical=16),
+            expand=True,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
         )
 
     def _build_config_info(self) -> ft.Container:
