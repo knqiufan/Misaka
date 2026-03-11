@@ -331,6 +331,19 @@ def _make_title(project_name: str, preview: str) -> str:
 # Service class
 # ---------------------------------------------------------------------------
 
+def _matches_query(info: ClaudeSessionInfo, query: str) -> bool:
+    """Check if session info matches the search query."""
+    q = query.lower()
+    fields = [
+        info.project_name or "",
+        info.preview or "",
+        info.cwd or "",
+        info.git_branch or "",
+        info.project_path or "",
+    ]
+    return any(q in (f or "").lower() for f in fields)
+
+
 class SessionImportService:
     """Discovers and imports Claude Code CLI sessions from disk."""
 
@@ -338,6 +351,85 @@ class SessionImportService:
         self._projects_dir = projects_dir or _CLAUDE_PROJECTS_DIR
 
     # ----- Public API -----
+
+    def list_cli_session_paths(self) -> list[tuple[Path, float]]:
+        """List all CLI session JSONL paths with mtime, sorted by mtime desc.
+
+        Returns:
+            List of (path, mtime) tuples. Does not parse file contents.
+        """
+        result: list[tuple[Path, float]] = []
+
+        if not self._projects_dir.is_dir():
+            return result
+
+        try:
+            project_dirs = [
+                p for p in self._projects_dir.iterdir() if p.is_dir()
+            ]
+        except OSError as exc:
+            logger.warning("Cannot list %s: %s", self._projects_dir, exc)
+            return result
+
+        for project_dir in project_dirs:
+            try:
+                for jsonl_file in project_dir.glob("*.jsonl"):
+                    if not _UUID_RE.match(jsonl_file.stem):
+                        continue
+                    try:
+                        mtime = jsonl_file.stat().st_mtime
+                        result.append((jsonl_file, mtime))
+                    except OSError:
+                        continue
+            except OSError as exc:
+                logger.warning("Cannot list %s: %s", project_dir, exc)
+
+        result.sort(key=lambda x: x[1], reverse=True)
+        return result
+
+    def parse_session_metadata(self, path: Path) -> ClaudeSessionInfo | None:
+        """Parse metadata from a single session JSONL file."""
+        return _parse_jsonl_metadata(path)
+
+    def list_cli_sessions_paginated(
+        self,
+        limit: int,
+        offset: int,
+        query: str | None = None,
+    ) -> tuple[list[ClaudeSessionInfo], int]:
+        """Return a page of CLI sessions with optional search filter.
+
+        Args:
+            limit: Max number of sessions to return.
+            offset: Number of sessions to skip.
+            query: Optional search string to filter by project_name, preview,
+                cwd, git_branch, project_path.
+
+        Returns:
+            (sessions, total_count). When query is set, total_count is the
+            count of matching sessions (requires parsing all files).
+        """
+        paths_with_mtime = self.list_cli_session_paths()
+
+        if query and query.strip():
+            q = query.strip()
+            all_infos: list[ClaudeSessionInfo] = []
+            for path, _ in paths_with_mtime:
+                info = self.parse_session_metadata(path)
+                if info is not None and _matches_query(info, q):
+                    all_infos.append(info)
+            total = len(all_infos)
+            page = all_infos[offset : offset + limit]
+            return (page, total)
+        else:
+            total = len(paths_with_mtime)
+            page_paths = paths_with_mtime[offset : offset + limit]
+            infos: list[ClaudeSessionInfo] = []
+            for path, _ in page_paths:
+                info = self.parse_session_metadata(path)
+                if info is not None:
+                    infos.append(info)
+            return (infos, total)
 
     def list_cli_sessions(self) -> list[ClaudeSessionInfo]:
         """Scan ``~/.claude/projects/`` for JSONL session files.

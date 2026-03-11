@@ -19,6 +19,7 @@ from misaka.ui.common.theme import (
     RADIUS_XL,
     make_badge,
     make_button,
+    make_danger_button,
     make_dialog,
     make_divider,
     make_empty_state,
@@ -131,6 +132,11 @@ class PluginsPage(ft.Column):
                         ],
                         spacing=2,
                         expand=True,
+                    ),
+                    make_icon_button(
+                        ft.Icons.REFRESH,
+                        tooltip=t("plugins.refresh_servers"),
+                        on_click=self._refresh_mcp_servers,
                     ),
                     make_button(
                         t("plugins.add_server"),
@@ -413,7 +419,7 @@ class PluginsPage(ft.Column):
                 make_icon_button(
                     ft.Icons.DELETE_OUTLINE,
                     tooltip=t("plugins.remove"),
-                    on_click=lambda e, n=name: self._remove_server(n),
+                    on_click=lambda e, n=name: self._confirm_remove_server(n, e.page),
                 ),
             ],
             spacing=14,
@@ -707,6 +713,27 @@ class PluginsPage(ft.Column):
             existing_config=config,
         )
 
+    def _confirm_remove_server(self, name: str, page: ft.Page | None) -> None:
+        """Show confirmation dialog before removing an MCP server."""
+        if not page:
+            return
+        if name not in self._mcp_configs:
+            return
+
+        def do_remove(ev):
+            page.pop_dialog()
+            self._remove_server(name)
+
+        dialog = make_dialog(
+            title=t("plugins.remove_server_title"),
+            content=ft.Text(t("plugins.confirm_remove", name=name)),
+            actions=[
+                make_text_button(t("common.cancel"), on_click=lambda ev: page.pop_dialog()),
+                make_danger_button(t("common.delete"), on_click=do_remove),
+            ],
+        )
+        page.show_dialog(dialog)
+
     def _remove_server(self, name: str) -> None:
         if name in self._mcp_configs:
             target_path = self._mcp_config_sources.get(name, Path.home() / ".claude.json")
@@ -730,13 +757,14 @@ class PluginsPage(ft.Column):
         else:
             config_path.parent.mkdir(parents=True, exist_ok=True)
 
-        current_data = data.get("mcpServers", {}) if isinstance(data.get("mcpServers", {}), dict) else {}
+        resolved_config = config_path.resolve()
+        default_path = Path.home() / ".claude.json"
         owned_servers = {
             name: config
             for name, config in self._mcp_configs.items()
-            if self._mcp_config_sources.get(name, Path.home() / ".claude.json") == config_path
+            if (self._mcp_config_sources.get(name) or default_path).resolve() == resolved_config
         }
-        data["mcpServers"] = {**current_data, **owned_servers}
+        data["mcpServers"] = owned_servers
         try:
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
@@ -756,16 +784,32 @@ class PluginsPage(ft.Column):
         reloaded_config = self._mcp_configs.get(server_name)
         if reloaded_config != expected_config:
             return False
-        if self._mcp_config_sources.get(server_name) != target_path:
+        reloaded_path = self._mcp_config_sources.get(server_name)
+        if reloaded_path is None or reloaded_path.resolve() != target_path.resolve():
             return False
 
         self._refresh_server_list()
         return True
 
     def _reload_config(self, e: ft.ControlEvent) -> None:
+        """Reload MCP config from files and refresh the server list UI."""
         self._load_mcp_config()
         self._refresh_server_list()
         self.state.update()
+
+    def _refresh_mcp_servers(self, e: ft.ControlEvent) -> None:
+        """Reload all MCP services from config files and update SDK state."""
+        page = e.page if e else self.state.page
+        mcp_service = self.state.get_service("mcp_service") if self.state else None
+        if mcp_service is not None:
+            mcp_servers = mcp_service.load_mcp_servers()
+            sdk_format = mcp_service.to_sdk_format(mcp_servers)
+            self.state.mcp_servers_sdk = sdk_format
+        self._load_mcp_config()
+        self._refresh_server_list()
+        self.state.update()
+        if page:
+            show_snackbar(page, t("plugins.servers_refreshed"), bgcolor=ft.Colors.GREEN)
 
     def refresh(self) -> None:
         """Rebuild the plugins page."""
