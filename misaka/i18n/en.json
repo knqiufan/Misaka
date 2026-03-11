@@ -214,14 +214,19 @@
   },
   "import_session": {
     "title": "Import CLI Session",
-    "search": "Search sessions...",
+    "search": "Search by project, preview, path...",
     "no_sessions": "No CLI sessions found in ~/.claude/projects/",
     "import_btn": "Import",
     "importing": "Importing...",
     "messages": "{count} messages",
     "import_success": "Session imported successfully.",
     "import_error": "Failed to import session: {error}",
-    "already_imported": "This session has already been imported."
+    "already_imported": "Imported",
+    "load_more": "Load more",
+    "loading": "Loading...",
+    "searching": "Searching...",
+    "result_count": "{count} sessions",
+    "showing_count": "Showing {shown} / {total}"
   },
   "folder_picker": {
     "title": "Select Project Folder",

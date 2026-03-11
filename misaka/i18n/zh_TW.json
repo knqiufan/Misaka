@@ -214,14 +214,19 @@
   },
   "import_session": {
     "title": "匯入 CLI 會話",
-    "search": "搜尋會話...",
+    "search": "搜尋專案名、預覽、路徑...",
     "no_sessions": "在 ~/.claude/projects/ 中未找到 CLI 會話",
     "import_btn": "匯入",
     "importing": "匯入中...",
     "messages": "{count} 則訊息",
     "import_success": "會話匯入成功。",
     "import_error": "匯入會話失敗：{error}",
-    "already_imported": "此會話已經匯入過。"
+    "already_imported": "已匯入",
+    "load_more": "載入更多",
+    "loading": "載入中...",
+    "searching": "搜尋中...",
+    "result_count": "共 {count} 個會話",
+    "showing_count": "已顯示 {shown} / {total}"
   },
   "folder_picker": {
     "title": "選擇專案資料夾",

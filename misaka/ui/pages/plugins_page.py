@@ -16,7 +16,7 @@ from misaka.i18n import t
 from misaka.ui.common.theme import (
     MONO_FONT_FAMILY,
     RADIUS_LG,
-    RADIUS_XL,
+    RADIUS_MD,
     make_badge,
     make_button,
     make_danger_button,
@@ -73,9 +73,9 @@ class PluginsPage(ft.Column):
         main_card = ft.Container(
             content=inner,
             margin=ft.Margin.symmetric(horizontal=20, vertical=16),
-            padding=ft.Padding.all(28),
+            padding=ft.Padding.all(20),
             expand=True,
-            border_radius=RADIUS_XL,
+            border_radius=RADIUS_MD,
             bgcolor=ft.Colors.SURFACE_CONTAINER,
             border=ft.Border.all(
                 1,
