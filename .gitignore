@@ -30,7 +30,9 @@ coverage.xml
 .mypy_cache/
 
 # Distribution
+# Keep misaka.spec tracked (needed for PyInstaller CI builds)
 *.spec
+!misaka.spec
 
 # PyInstaller
 release/
