@@ -170,7 +170,9 @@ def build_nav_rail(
         width=64,
         padding=ft.Padding.only(top=8, bottom=8, left=4, right=4),
         bgcolor=ft.Colors.SURFACE_CONTAINER,
-        border_radius=ft.BorderRadius.only(top_right=12, top_left=12, bottom_right=12, bottom_left=12),
+        border_radius=ft.BorderRadius.only(
+            top_right=12, top_left=12, bottom_right=12, bottom_left=12
+        ),
         shadow=ft.BoxShadow(
             blur_radius=8,
             spread_radius=2,

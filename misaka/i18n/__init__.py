@@ -7,6 +7,7 @@ Translation files are JSON dictionaries with dotted key paths.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from pathlib import Path
@@ -44,7 +45,7 @@ def init(locale: str = DEFAULT_LOCALE) -> None:
         file_path = i18n_dir / file_name
         if file_path.exists():
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     data = json.load(f)
                 _translations[loc] = _flatten_dict(data)
             except (json.JSONDecodeError, OSError) as exc:
@@ -94,10 +95,8 @@ def t(key: str, **kwargs: Any) -> str:
     text = translations.get(key) or _fallback_translations.get(key) or key
 
     if kwargs:
-        try:
+        with contextlib.suppress(KeyError, IndexError):
             text = text.format(**kwargs)
-        except (KeyError, IndexError):
-            pass
 
     return text
 

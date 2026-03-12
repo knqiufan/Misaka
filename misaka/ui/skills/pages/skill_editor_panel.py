@@ -8,7 +8,8 @@ Read-only skills (installed/plugin) show the content without edit controls.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import flet as ft
 

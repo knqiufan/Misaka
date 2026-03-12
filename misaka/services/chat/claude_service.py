@@ -18,13 +18,14 @@ import json
 import logging
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from misaka.config import SettingKeys
 from misaka.db.database import DatabaseBackend
-from misaka.services.common.claude_env_builder import build_claude_env
 from misaka.services.chat.permission_service import PermissionService
+from misaka.services.common.claude_env_builder import build_claude_env
 from misaka.utils.platform import find_claude_sdk_binary
 
 logger = logging.getLogger(__name__)
@@ -487,21 +488,17 @@ class ClaudeService:
         on_result: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """Dispatch a single SDK message to the appropriate callback."""
-        AssistantMessage = ResultMessage = SystemMessage = UserMessage = None
-        StreamEvent = None
-        try:
+        AssistantMessage = ResultMessage = SystemMessage = UserMessage = None  # noqa: N806
+        StreamEvent = None  # noqa: N806
+        with contextlib.suppress(ImportError, AttributeError):
             from claude_agent_sdk import (
                 AssistantMessage,
                 ResultMessage,
                 SystemMessage,
                 UserMessage,
             )
-        except (ImportError, AttributeError):
-            pass
-        try:
+        with contextlib.suppress(ImportError, AttributeError):
             from claude_agent_sdk.types import StreamEvent
-        except (ImportError, AttributeError):
-            pass
 
         if AssistantMessage and isinstance(message, AssistantMessage):
             self._handle_assistant_message(message, on_text=on_text, on_tool_use=on_tool_use)
@@ -554,10 +551,9 @@ class ClaudeService:
             msg_content = getattr(message, "message", None)
             content = getattr(msg_content, "content", []) if msg_content else []
 
-        try:
-            from claude_agent_sdk.types import TextBlock, ToolUseBlock, ThinkingBlock
-        except (ImportError, AttributeError):
-            TextBlock = ToolUseBlock = ThinkingBlock = None
+        TextBlock = ToolUseBlock = ThinkingBlock = None  # noqa: N806
+        with contextlib.suppress(ImportError, AttributeError):
+            from claude_agent_sdk.types import TextBlock, ThinkingBlock, ToolUseBlock
 
         for block in content:
             # Skip ThinkingBlock (extended thinking) - internal reasoning, not user output
@@ -611,10 +607,9 @@ class ClaudeService:
         if isinstance(content, str) or not isinstance(content, list):
             return
 
-        try:
+        ToolResultBlock = None  # noqa: N806
+        with contextlib.suppress(ImportError, AttributeError):
             from claude_agent_sdk.types import ToolResultBlock
-        except (ImportError, AttributeError):
-            ToolResultBlock = None
 
         for block in content:
             if ToolResultBlock and isinstance(block, ToolResultBlock):

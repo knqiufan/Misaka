@@ -13,18 +13,17 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
-from misaka.ui.skills.pages.skill_editor_panel import SkillEditorPanel
 from misaka.ui.common.theme import (
     RADIUS_LG,
     RADIUS_MD,
     make_button,
     make_dialog,
-    make_divider,
     make_empty_state,
     make_outlined_button,
     make_text_button,
     make_text_field,
 )
+from misaka.ui.skills.pages.skill_editor_panel import SkillEditorPanel
 
 if TYPE_CHECKING:
     from misaka.state import AppState

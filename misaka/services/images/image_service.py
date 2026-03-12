@@ -7,7 +7,7 @@ and managing the lifecycle of image attachments (cleanup when sessions are delet
 from __future__ import annotations
 
 import base64
-import hashlib
+import contextlib
 import logging
 import mimetypes
 import os
@@ -123,9 +123,7 @@ class ImageService:
                 # Convert to RGB if necessary (for PNG with transparency)
                 if img.mode in ("RGBA", "P"):
                     # Keep original mode for PNG/GIF to preserve transparency
-                    if mime_type == "image/png":
-                        pass
-                    elif mime_type == "image/gif":
+                    if mime_type == "image/png" or mime_type == "image/gif":
                         pass
                     else:
                         img = img.convert("RGB")
@@ -176,8 +174,9 @@ class ImageService:
             return None
 
         try:
-            from PIL import Image
             import io
+
+            from PIL import Image
         except ImportError:
             logger.error("Pillow not installed, cannot process images")
             return None
@@ -409,10 +408,8 @@ class ImageService:
                         logger.warning("Failed to delete %s: %s", file_path, exc)
 
             # Remove the directory itself
-            try:
-                session_dir.rmdir()
-            except Exception:
-                pass  # Directory not empty or other error
+            with contextlib.suppress(Exception):
+                session_dir.rmdir()  # Directory not empty or other error
 
         except Exception as exc:
             logger.error("Failed to cleanup session images for %s: %s", session_id, exc)
@@ -444,8 +441,9 @@ class ImageService:
             return None
 
         try:
-            from PIL import Image
             import io
+
+            from PIL import Image
         except ImportError:
             logger.error("Pillow not installed, cannot process images")
             return None
@@ -506,8 +504,9 @@ class ImageService:
             return None
 
         try:
-            from PIL import Image
             import io
+
+            from PIL import Image
         except ImportError:
             logger.error("Pillow not installed, cannot process images")
             return None

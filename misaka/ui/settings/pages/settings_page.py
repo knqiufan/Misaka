@@ -12,8 +12,20 @@ from typing import TYPE_CHECKING
 
 import flet as ft
 
-from misaka.i18n import t
 from misaka.config import SettingKeys
+from misaka.i18n import t
+from misaka.ui.common.theme import (
+    ERROR_RED,
+    RADIUS_LG,
+    RADIUS_MD,
+    SUCCESS_GREEN,
+    WARNING_AMBER,
+    make_badge,
+    make_button,
+    make_icon_button,
+    make_outlined_button,
+    make_section_card,
+)
 from misaka.ui.settings.pages.appearance_section import (
     build_appearance_section,
     build_language_section,
@@ -24,20 +36,6 @@ from misaka.ui.settings.pages.appearance_section import (
 from misaka.ui.settings.pages.provider_section import (
     build_router_section,
     show_router_form,
-)
-from misaka.ui.common.theme import (
-    ERROR_RED,
-    RADIUS_LG,
-    RADIUS_XL,
-    RADIUS_MD,
-    SUCCESS_GREEN,
-    WARNING_AMBER,
-    make_badge,
-    make_button,
-    make_divider,
-    make_icon_button,
-    make_outlined_button,
-    make_section_card,
 )
 
 if TYPE_CHECKING:

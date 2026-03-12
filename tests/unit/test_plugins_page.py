@@ -27,7 +27,7 @@ class DummyPage:
     def pop_dialog(self) -> None:
         self.dialog = None
 
-    def update(self) -> None:
+    def update(self, *controls) -> None:
         self.update_calls += 1
 
 

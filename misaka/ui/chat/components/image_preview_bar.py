@@ -8,6 +8,7 @@ the full-size image in an overlay.
 from __future__ import annotations
 
 import base64
+import contextlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -160,10 +161,8 @@ class ImagePreviewBar(ft.Container):
                 for img in self._pending_images
             ]
 
-        try:
-            self.update()
-        except Exception:
-            pass  # Control may not be mounted yet
+        with contextlib.suppress(Exception):
+            self.update()  # Control may not be mounted yet
 
     def _handle_delete(self, image_id: str) -> None:
         """Handle delete request for an image."""

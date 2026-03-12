@@ -55,7 +55,11 @@ class MCPServerProcess:
             return True
 
         if self.config.type != "stdio":
-            logger.info("MCP server '%s' uses %s transport, no subprocess needed", self.name, self.config.type)
+            logger.info(
+                "MCP server '%s' uses %s transport, no subprocess needed",
+                self.name,
+                self.config.type,
+            )
             self._healthy = True
             return True
 

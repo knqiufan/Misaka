@@ -21,7 +21,7 @@ class TestServiceContainer:
         assert container.settings_service is not None
         assert container.session_service is not None
         assert container.message_service is not None
-        assert container.provider_service is not None
+        assert container.router_config_service is not None
         assert container.task_service is not None
         assert container.mcp_service is not None
         assert container.claude_service is not None
@@ -62,7 +62,7 @@ class TestServiceContainer:
         assert container.session_service._db is db
         assert container.message_service._db is db
         assert container.settings_service._db is db
-        assert container.provider_service._db is db
+        assert container.router_config_service._db is db
         assert container.task_service._db is db
         assert container.claude_service._db is db
 

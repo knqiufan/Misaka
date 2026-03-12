@@ -9,17 +9,18 @@ based on navigation selection.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import TYPE_CHECKING
 
 import flet as ft
 
+from misaka.ui.chat.pages.chat_page import ChatPage
+from misaka.ui.common.theme import apply_theme
 from misaka.ui.dialogs.env_check_dialog import EnvCheckDialog
 from misaka.ui.navigation.nav_rail import build_nav_rail
-from misaka.ui.chat.pages.chat_page import ChatPage
-from misaka.ui.skills.pages.extensions_page import ExtensionsPage
 from misaka.ui.pages.plugins_page import PluginsPage
 from misaka.ui.settings.pages.settings_page import SettingsPage
-from misaka.ui.common.theme import apply_theme
+from misaka.ui.skills.pages.extensions_page import ExtensionsPage
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -248,10 +249,8 @@ class AppShell(ft.Row):
         self.state.show_env_check_dialog = False
         if self.state.page:
             # Close any open dialogs
-            try:
+            with contextlib.suppress(AttributeError, RuntimeError):
                 self.state.page.pop_dialog()
-            except (AttributeError, RuntimeError):
-                pass
         self.state.update()
 
     def _recheck_env(self) -> None:

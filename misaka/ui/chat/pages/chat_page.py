@@ -487,7 +487,10 @@ class ChatPage(ft.Stack):
         prompt = ""
         for block in user_msg.parse_content():
             if block.type == "text" and block.text:
-                prompt = (prompt + "\n\n" + block.text.strip()).strip() if prompt else block.text.strip()
+                if prompt:
+                    prompt = (prompt + "\n\n" + block.text.strip()).strip()
+                else:
+                    prompt = block.text.strip()
         if not prompt:
             return
 

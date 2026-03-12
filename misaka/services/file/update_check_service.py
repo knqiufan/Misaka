@@ -11,16 +11,15 @@ import asyncio
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from misaka.config import IS_WINDOWS, get_expanded_path
+from misaka.config import get_expanded_path
 from misaka.utils.platform import (
     build_background_subprocess_kwargs,
-    subprocess_creation_flags,
     wrap_windows_script_command,
 )
 

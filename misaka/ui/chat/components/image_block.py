@@ -6,7 +6,6 @@ Provides click-to-view-fullsize functionality.
 
 from __future__ import annotations
 
-import base64
 import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING

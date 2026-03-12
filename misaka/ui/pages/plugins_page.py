@@ -576,7 +576,11 @@ class PluginsPage(ft.Column):
                 controls=[
                     ft.Row(
                         controls=[
-                            ft.Text(t("plugins.request_headers"), size=13, weight=ft.FontWeight.W_600),
+                            ft.Text(
+                                t("plugins.request_headers"),
+                                size=13,
+                                weight=ft.FontWeight.W_600,
+                            ),
                             ft.Container(expand=True),
                             add_header_btn,
                         ],

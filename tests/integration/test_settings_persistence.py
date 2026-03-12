@@ -51,6 +51,6 @@ class TestSettingsPersistence:
         svc = SettingsService(db)
         # Defaults when no setting exists
         assert svc.get_theme() == "system"
-        assert svc.get_permission_mode() == "acceptEdits"
+        assert svc.get_permission_mode() == "default"
         assert svc.is_skip_permissions() is False
         assert svc.get_default_model() is None

@@ -971,7 +971,6 @@ class MessageInput(ft.Container):
         """
         try:
             from PIL import ImageGrab
-            import io
         except ImportError:
             logger.warning("PIL not available for clipboard access")
             return
@@ -1031,7 +1030,9 @@ class MessageInput(ft.Container):
         image_bytes = buffer.getvalue()
 
         # Create pending image
-        pending = image_service.create_pending_from_clipboard(image_bytes, format_hint=format_name.lower())
+        pending = image_service.create_pending_from_clipboard(
+            image_bytes, format_hint=format_name.lower()
+        )
         if pending:
             self._pending_images.append(pending)
             if self._image_preview_bar:

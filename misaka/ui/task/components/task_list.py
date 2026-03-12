@@ -6,7 +6,7 @@ indicators, click-to-toggle functionality, and inline creation.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import flet as ft
 

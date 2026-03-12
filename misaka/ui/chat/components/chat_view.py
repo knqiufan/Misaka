@@ -16,8 +16,7 @@ import flet as ft
 from misaka.i18n import t
 from misaka.ui.chat.components.message_input import MessageInput
 from misaka.ui.chat.components.message_list import MessageList
-from misaka.ui.common.theme import ACCENT_BLUE, SUCCESS_GREEN, WARNING_AMBER
-from misaka.ui.common.theme import make_icon_button
+from misaka.ui.common.theme import ACCENT_BLUE, SUCCESS_GREEN, WARNING_AMBER, make_icon_button
 from misaka.ui.panels.offset_menu import OffsetMenu, OffsetMenuOption
 from misaka.ui.status.connection_status import ConnectionStatus
 from misaka.ui.status.update_banner import UpdateBanner

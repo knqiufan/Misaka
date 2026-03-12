@@ -8,8 +8,8 @@ from __future__ import annotations
 import os
 import string
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import flet as ft
 
@@ -89,7 +89,8 @@ class FolderPicker:
                 if os.path.isdir(drive):
                     available_drives.append(ft.dropdown.Option(drive))
 
-            current_drive = str(self._current_path)[:3] if len(str(self._current_path)) >= 3 else "C:\\"
+            path_str = str(self._current_path)
+            current_drive = path_str[:3] if len(path_str) >= 3 else "C:\\"
             from misaka.ui.common.theme import make_dropdown as _mdd
             self._drive_dropdown = _mdd(
                 options=available_drives,

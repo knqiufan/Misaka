@@ -103,8 +103,8 @@ class Message:
     @staticmethod
     def _dict_to_block(raw: dict) -> MessageContentBlock:
         """Convert a dict to MessageContentBlock, tolerating extra keys."""
-        _KNOWN = frozenset(MessageContentBlock.__dataclass_fields__)
-        filtered = {k: v for k, v in raw.items() if k in _KNOWN}
+        known = frozenset(MessageContentBlock.__dataclass_fields__)
+        filtered = {k: v for k, v in raw.items() if k in known}
         if "type" not in filtered:
             filtered["type"] = "text"
             if "text" not in filtered:

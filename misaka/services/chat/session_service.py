@@ -7,6 +7,7 @@ Handles CRUD operations for chat sessions with state synchronization.
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from misaka.db.database import DatabaseBackend
 from misaka.db.models import ChatSession
