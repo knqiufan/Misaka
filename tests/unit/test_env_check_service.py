@@ -214,6 +214,8 @@ class TestEnvCheckService:
         progress_messages: list[str] = []
 
         with patch(
+            "misaka.services.skills.env_check_service.IS_WINDOWS", True
+        ), patch(
             "misaka.services.skills.env_check_service.wrap_windows_script_command",
             return_value=["winget", "install", "OpenJS.NodeJS.LTS"],
         ) as mock_wrap, patch(

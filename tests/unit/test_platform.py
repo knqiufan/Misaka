@@ -4,8 +4,11 @@ Tests for platform subprocess and Claude binary helpers.
 
 from __future__ import annotations
 
+import sys
 import subprocess
 from unittest.mock import patch
+
+import pytest
 
 from misaka.utils.platform import (
     build_background_subprocess_kwargs,
@@ -39,6 +42,7 @@ class TestBackgroundSubprocessHelpers:
             )
         assert command == ["C:/Users/test/AppData/Roaming/npm/claude.exe", "--version"]
 
+    @pytest.mark.skipif(sys.platform != "win32", reason="STARTUPINFO is Windows-only")
     def test_build_background_subprocess_kwargs_returns_windows_startupinfo(self) -> None:
         fake_startupinfo = subprocess.STARTUPINFO()
         with patch("misaka.utils.platform.IS_WINDOWS", True), \
