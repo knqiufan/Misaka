@@ -53,3 +53,6 @@ Thumbs.db
 # Local worktrees
 .worktrees/
 .claude/worktrees/
+
+# Documentation (local only, not committed to GitHub)
+docs/
