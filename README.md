@@ -6,6 +6,8 @@
 
 Misaka brings the power of Claude Code to a polished native desktop experience — multi-turn streaming conversations, session management, file tree browsing, MCP server integration, and more, all wrapped in a clean Material Design 3 interface.
 
+![image-20260313005835567](./image/image-20260313005835567.png)
+
 ---
 
 ## 🌟 Why Misaka?
@@ -19,7 +21,7 @@ Misaka stands out with these **unique features**:
 | **🔀 Claude Code Router** | Manage multiple API configurations (different providers, models, Agent Team mode). Switch instantly — writes to `~/.claude/settings.json`. No other GUI offers this. |
 | **🖥️ Native Desktop** | Python + Flet (Flutter-based). Not a web app — runs as a true native window. |
 | **🛡️ Permission Control** | Fine-grained tool permission modes with interactive approval dialogs before file edits or shell commands. |
-| **📚 Skills Management** | View, create, edit, and refresh Claude Code Skills (Extensions) directly in the app. |
+| **📚 Skills Management** | View, install from ZIP, and refresh Claude Code Skills (Extensions) in the app. |
 
 ---
 
@@ -28,14 +30,15 @@ Misaka stands out with these **unique features**:
 | Category | Details |
 |---|---|
 | **Multi-model chat** | Switch between Claude Sonnet, Opus, and Haiku via `/model` command |
-| **Streaming responses** | Real-time token-by-token rendering with abort support and thinking animation |
-| **Session management** | Create, rename, archive, delete, and search conversation sessions |
+| **Streaming responses** | Real-time token-by-token rendering with abort support, thinking animation, and interruption error banner |
+| **Session management** | Create, rename, delete, and search conversation sessions |
 | **Three conversation modes** | `Code` · `Plan` · `Ask` — dropdown selector for Claude Code's native modes |
+| **Quick command send** | Commands like `/init` can be sent directly without opening a badge first |
 | **File tree browser** | Browse your project directory in the right panel with live file preview |
-| **MCP server support** | Load and manage Model Context Protocol servers from your Claude config |
-| **Skill management** | View, create, edit, and refresh Claude Code skills (Extensions page) |
+| **MCP server support** | Load and manage Model Context Protocol servers with delete confirmation, refresh, and HTTP header support |
+| **Skill management** | View, install from ZIP, and refresh Claude Code skills (Extensions page) |
 | **Claude Code Router** | Multi-config system for managing different API providers and model presets |
-| **Import CLI sessions** | Import existing sessions from the Claude Code CLI |
+| **Import CLI sessions** | Import existing sessions from the Claude Code CLI with pagination and search |
 | **Multi-language UI** | English · 简体中文 · 繁體中文 |
 | **Theme switching** | Light / Dark / System — persisted across restarts, customizable accent color |
 | **API provider config** | Add and manage multiple Anthropic API providers with custom base URLs |
@@ -96,6 +99,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 The **Claude Code Router** lets you manage multiple API configurations and switch between them instantly.
 
+![image-20260313011018935](./image/image-20260313011018935.png)
+
 **1. Add a configuration**
 
 - Go to **Settings → Claude Code Router**
@@ -122,6 +127,8 @@ The **Claude Code Router** lets you manage multiple API configurations and switc
 ### Third-Party Plugins (MCP Servers) — Quick Guide
 
 MCP (Model Context Protocol) servers extend Claude Code with tools like databases, APIs, and file systems.
+
+![image-20260313010921495](./image/image-20260313010921495.png)
 
 **Option A: Configure via Misaka UI**
 
@@ -155,6 +162,35 @@ Edit `~/.claude.json` or `~/.claude/settings.json`:
 ```
 
 Then click **Reload Config** in the Plugins page. See [Claude Code MCP docs](https://code.claude.com/docs/en/mcp) for more examples.
+
+### Skills — Quick Guide
+
+Skills (Claude Code Extensions) are markdown files that provide reusable instructions and templates. Open **Skills** from the sidebar to view and manage them. *Create and edit are not yet supported in the UI — add skills manually by placing `.md` files in the paths below.*
+
+![image-20260313011413318](./image/image-20260313011413318.png)
+
+**Skill sources**
+
+| Source | Path |
+|--------|------|
+| **Global** | `~/.claude/commands/*.md` — available everywhere |
+| **Project** | `./.claude/commands/*.md` — per-project skills |
+| **Installed** | `~/.claude/skills/*/SKILL.md` and `~/.agents/skills/*/SKILL.md` |
+| **Plugin** | `~/.claude/plugins/marketplaces/*/plugins/*/commands/*.md` |
+
+**1. View skills**
+
+- Open **Skills** from the sidebar. Skills are grouped by source (Global, Project, Installed, Plugin).
+- Use the search box to filter by name or description.
+
+**2. Install from ZIP**
+
+- Click **Install from ZIP** and select a local `.zip` file
+- The archive must contain directories with `SKILL.md`. They are copied to `~/.claude/skills/<package>/`
+
+**3. Refresh**
+
+- Click **Refresh** to reload all skills from disk after manual file changes.
 
 ### Data Directory
 
@@ -194,6 +230,8 @@ pip install -e ".[build]"
 pyinstaller misaka.spec
 ```
 
+The built executable runs as a GUI app without opening a console window. On Windows, subprocess calls (e.g. Claude Code CLI) are hidden to avoid console flicker.
+
 ---
 
 ## 📦 Dependencies
@@ -206,6 +244,7 @@ pyinstaller misaka.spec
 | `watchdog >= 4.0` | File system event watching |
 | `aiofiles >= 24.0` | Async file I/O |
 | `anyio >= 4.0` | Async concurrency primitives |
+| `Pillow >= 10.0` | Image handling and preview |
 
 ---
 
