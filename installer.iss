@@ -3,7 +3,10 @@
 ; 编译: 用 Inno Setup 打开此文件，Build -> Compile
 
 #define MyAppName "Misaka"
-#define MyAppVersion "0.1.0"
+; Version can be overridden via command line: iscc /DMyAppVersion=x.x.x installer.iss
+#ifndef MyAppVersion
+  #define MyAppVersion "0.1.0"
+#endif
 #define MyAppExeName "Misaka.exe"
 #define MyAppPublisher "Misaka"
 #define MyAppURL "https://github.com/knqiufan/Misaka"

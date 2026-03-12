@@ -1,0 +1,190 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  # ── CI check ──────────────────────────────────────────────
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check misaka/
+
+      - name: MyPy type check
+        run: mypy misaka/
+
+      - name: Run tests
+        run: pytest --cov=misaka --cov-report=term-missing
+
+  # ── Windows build ─────────────────────────────────────────
+  build-windows:
+    needs: ci
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -e ".[build]"
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build with PyInstaller
+        run: pyinstaller misaka.spec
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build Windows installer
+        run: iscc /DMyAppVersion="${{ steps.version.outputs.VERSION }}" installer.iss
+
+      - name: Rename installer
+        shell: bash
+        run: mv "dist/Misaka-Setup-${{ steps.version.outputs.VERSION }}.exe" "dist/Misaka-Setup-Windows-${{ steps.version.outputs.VERSION }}.exe"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/Misaka-Setup-Windows-${{ steps.version.outputs.VERSION }}.exe
+
+  # ── macOS build ───────────────────────────────────────────
+  build-macos:
+    needs: ci
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -e ".[build]"
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Patch version in spec file
+        run: |
+          sed -i '' "s/\"CFBundleShortVersionString\": \".*\"/\"CFBundleShortVersionString\": \"${{ steps.version.outputs.VERSION }}\"/" misaka.spec
+          sed -i '' "s/\"CFBundleVersion\": \".*\"/\"CFBundleVersion\": \"${{ steps.version.outputs.VERSION }}\"/" misaka.spec
+
+      - name: Build with PyInstaller
+        run: pyinstaller misaka.spec
+
+      - name: Package macOS app
+        run: |
+          cd dist
+          ditto -c -k --keepParent Misaka.app Misaka-macOS-${{ steps.version.outputs.VERSION }}.zip
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: dist/Misaka-macOS-${{ steps.version.outputs.VERSION }}.zip
+
+  # ── Create GitHub Release ─────────────────────────────────
+  publish:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Find previous tag
+          PREV_TAG=$(git tag --sort=-v:refname | head -n 2 | tail -n 1)
+          if [ "$PREV_TAG" = "${{ github.ref_name }}" ] || [ -z "$PREV_TAG" ]; then
+            # First release — use all commits
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..${{ github.ref_name }}"
+          fi
+
+          {
+            echo "CHANGELOG<<CHANGELOG_EOF"
+
+            # Features
+            FEATS=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -i "^feat" | sed 's/^/- /' || true)
+            if [ -n "$FEATS" ]; then
+              echo "### Features"
+              echo "$FEATS"
+              echo ""
+            fi
+
+            # Fixes
+            FIXES=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -i "^fix" | sed 's/^/- /' || true)
+            if [ -n "$FIXES" ]; then
+              echo "### Bug Fixes"
+              echo "$FIXES"
+              echo ""
+            fi
+
+            # Other changes
+            OTHERS=$(git log "$RANGE" --pretty=format:"%s" --no-merges | grep -iv "^feat\|^fix\|^merge" | sed 's/^/- /' || true)
+            if [ -n "$OTHERS" ]; then
+              echo "### Other Changes"
+              echo "$OTHERS"
+              echo ""
+            fi
+
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Misaka v${{ steps.version.outputs.VERSION }}
+          body: |
+            ## What's Changed
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ## Downloads
+
+            | Platform | File |
+            |----------|------|
+            | Windows | `Misaka-Setup-Windows-${{ steps.version.outputs.VERSION }}.exe` |
+            | macOS | `Misaka-macOS-${{ steps.version.outputs.VERSION }}.zip` |
+          files: release-assets/**/*
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, 'alpha') || contains(steps.version.outputs.VERSION, 'beta') || contains(steps.version.outputs.VERSION, 'rc') }}
