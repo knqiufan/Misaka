@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 import flet as ft
 
-from misaka.config import SettingKeys
+from misaka.config import SettingKeys, get_assets_path
 from misaka.i18n import t
 from misaka.ui.common.theme import (
     ERROR_RED,
@@ -22,7 +22,6 @@ from misaka.ui.common.theme import (
     WARNING_AMBER,
     make_badge,
     make_button,
-    make_icon_button,
     make_outlined_button,
     make_section_card,
 )
@@ -576,7 +575,11 @@ class SettingsPage(ft.Column):
         self._env_installing_tool = tool_name
         self._build_ui()
         self.state.update()
-        page.run_task(lambda: self._do_env_install(tool_name))
+
+        async def _install_task() -> None:
+            await self._do_env_install(tool_name)
+
+        page.run_task(_install_task)
 
     async def _do_env_install(self, tool_name: str) -> None:
         svc = self._get_env_service()
@@ -641,10 +644,17 @@ class SettingsPage(ft.Column):
     # ------------------------------------------------------------------
 
     def _build_about_section(self) -> ft.Control:
-        github_btn = make_icon_button(
-            ft.Icons.CODE,
+        github_icon_path = str(get_assets_path() / "GitHub.png")
+        github_btn = ft.IconButton(
+            icon=ft.Image(
+                src=github_icon_path,
+                width=18,
+                height=18,
+                fit=ft.BoxFit.CONTAIN,
+            ),
             tooltip=t("settings.about_github"),
             on_click=self._open_github,
+            style=ft.ButtonStyle(padding=6, shape=ft.CircleBorder()),
         )
         return ft.Container(
             content=ft.Row(
@@ -654,10 +664,13 @@ class SettingsPage(ft.Column):
                             ft.Text(t("settings.about"), size=16, weight=ft.FontWeight.W_600),
                             ft.Text(t("settings.about_app"), size=13),
                             ft.Text(t("settings.about_desc"), size=12, opacity=0.6),
-                            ft.Text(t("settings.about_author"), size=12, opacity=0.7),
                             ft.Row(
-                                controls=[github_btn],
+                                controls=[
+                                    ft.Text(t("settings.about_author"), size=12, opacity=0.7),
+                                    github_btn,
+                                ],
                                 spacing=8,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             ),
                         ],
                         spacing=8,
