@@ -43,7 +43,7 @@ class TestMCPServerProcess:
 
         with patch(
             "misaka.services.mcp.mcp_service.wrap_windows_script_command",
-            return_value=["cmd.exe", "/d", "/s", "/c", '""C:/npm/server.cmd" --stdio"'],
+            return_value=["cmd.exe", "/d", "/s", "/c", '"C:/npm/server.cmd" --stdio'],
         ) as mock_wrap, patch(
             "misaka.services.mcp.mcp_service.build_background_subprocess_kwargs",
             return_value={"creationflags": 1, "startupinfo": "hidden"},
@@ -62,7 +62,7 @@ class TestMCPServerProcess:
             "/d",
             "/s",
             "/c",
-            '""C:/npm/server.cmd" --stdio"',
+            '"C:/npm/server.cmd" --stdio',
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

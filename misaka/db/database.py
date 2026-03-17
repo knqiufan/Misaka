@@ -59,7 +59,7 @@ class DatabaseBackend(ABC):
         model: str = "",
         system_prompt: str = "",
         working_directory: str = "",
-        mode: str = "code",
+        mode: str = "agent",
     ) -> ChatSession:
         """Create and return a new chat session."""
 
@@ -81,7 +81,7 @@ class DatabaseBackend(ABC):
 
     @abstractmethod
     def update_session_mode(self, session_id: str, mode: str) -> None:
-        """Update the session's mode (code/plan/ask)."""
+        """Update the session's mode (agent/plan/ask)."""
 
     @abstractmethod
     def update_session_model(self, session_id: str, model: str) -> None:

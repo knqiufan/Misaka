@@ -31,7 +31,7 @@ class TestBackgroundSubprocessHelpers:
             "/d",
             "/s",
             "/c",
-            '""C:/Users/test/AppData/Roaming/npm/claude.cmd" --version"',
+            '"C:/Users/test/AppData/Roaming/npm/claude.cmd" --version',
         ]
 
     def test_wrap_windows_script_command_returns_direct_command_for_exe(self) -> None:

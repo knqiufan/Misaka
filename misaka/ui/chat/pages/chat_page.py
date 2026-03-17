@@ -344,6 +344,8 @@ class ChatPage(ft.Stack):
 
     def _on_import_complete(self, session_id: str) -> None:
         """Handle completion of session import — select the imported session."""
+        if self._chat_list:
+            self._chat_list.refresh()
         self._on_session_select(session_id)
 
     def _on_load_more(self) -> None:

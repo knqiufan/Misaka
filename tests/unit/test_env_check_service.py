@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -216,8 +216,15 @@ class TestEnvCheckService:
         with patch(
             "misaka.services.skills.env_check_service.IS_WINDOWS", True
         ), patch(
+            "shutil.which",
+            return_value="C:\\Windows\\System32\\winget.exe",
+        ) as mock_which, patch(
             "misaka.services.skills.env_check_service.wrap_windows_script_command",
-            return_value=["winget", "install", "OpenJS.NodeJS.LTS"],
+            return_value=[
+                "C:\\Windows\\System32\\winget.exe",
+                "install",
+                "OpenJS.NodeJS.LTS",
+            ],
         ) as mock_wrap, patch(
             "misaka.services.skills.env_check_service.build_background_subprocess_kwargs",
             return_value={"creationflags": 1, "startupinfo": "hidden"},
@@ -229,10 +236,14 @@ class TestEnvCheckService:
             )
             assert result is True
             assert any("successfully" in m for m in progress_messages)
-            mock_wrap.assert_called_once_with("winget", ["install", "OpenJS.NodeJS.LTS"])
+            mock_which.assert_called_once()
+            mock_wrap.assert_called_once_with(
+                "C:\\Windows\\System32\\winget.exe",
+                ["install", "OpenJS.NodeJS.LTS"],
+            )
             mock_kwargs.assert_called_once_with()
             mock_exec.assert_called_once_with(
-                "winget",
+                "C:\\Windows\\System32\\winget.exe",
                 "install",
                 "OpenJS.NodeJS.LTS",
                 stdout=asyncio.subprocess.PIPE,
@@ -241,13 +252,48 @@ class TestEnvCheckService:
                 startupinfo="hidden",
             )
 
+    async def test_install_tool_resolves_npm_cmd_for_claude_cli(
+        self, service: EnvCheckService
+    ) -> None:
+        """install_tool should resolve npm to npm.cmd before launching."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (b"installed\n", b"")
+        mock_proc.returncode = 0
+
+        with patch(
+            "shutil.which",
+            return_value="C:\\nvm4w\\nodejs\\npm.cmd",
+        ) as mock_which, patch(
+            "misaka.services.skills.env_check_service.wrap_windows_script_command",
+            return_value=[
+                "cmd.exe",
+                "/d",
+                "/s",
+                "/c",
+                '"C:\\nvm4w\\nodejs\\npm.cmd" install -g @anthropic-ai/claude-code',
+            ],
+        ) as mock_wrap, patch(
+            "asyncio.create_subprocess_exec", return_value=mock_proc
+        ) as mock_exec:
+            result = await service.install_tool("Claude Code CLI")
+            assert result is True
+            mock_which.assert_called_once_with("npm", path=ANY)
+            mock_wrap.assert_called_once_with(
+                "C:\\nvm4w\\nodejs\\npm.cmd",
+                ["install", "-g", "@anthropic-ai/claude-code"],
+            )
+            mock_exec.assert_called_once()
+
     async def test_install_tool_failure(self, service: EnvCheckService) -> None:
         """install_tool should return False on installation failure."""
         mock_proc = AsyncMock()
         mock_proc.communicate.return_value = (b"", b"permission denied\n")
         mock_proc.returncode = 1
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        with patch(
+            "shutil.which",
+            return_value="C:\\Windows\\System32\\winget.exe",
+        ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await service.install_tool("Node.js")
             assert result is False
 
@@ -256,6 +302,20 @@ class TestEnvCheckService:
         result = await service.install_tool("UnknownTool")
         assert result is False
 
+    async def test_install_tool_missing_launcher_returns_false(
+        self, service: EnvCheckService
+    ) -> None:
+        """install_tool should fail early when launcher cannot be resolved."""
+        progress_messages: list[str] = []
+
+        with patch("shutil.which", return_value=None):
+            result = await service.install_tool(
+                "Claude Code CLI",
+                on_progress=progress_messages.append,
+            )
+            assert result is False
+            assert any("required command not found: npm" in m for m in progress_messages)
+
     async def test_install_tool_timeout(self, service: EnvCheckService) -> None:
         """install_tool should return False on timeout."""
         mock_proc = AsyncMock()
@@ -263,7 +323,10 @@ class TestEnvCheckService:
 
         progress_messages: list[str] = []
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        with patch(
+            "shutil.which",
+            return_value="C:\\Windows\\System32\\winget.exe",
+        ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await service.install_tool(
                 "Node.js", on_progress=progress_messages.append
             )
@@ -274,7 +337,10 @@ class TestEnvCheckService:
         """install_tool should return False on OSError (e.g., command not found)."""
         progress_messages: list[str] = []
 
-        with patch("asyncio.create_subprocess_exec", side_effect=OSError("not found")):
+        with patch(
+            "shutil.which",
+            return_value="C:\\Program Files\\Git\\cmd\\git.exe",
+        ), patch("asyncio.create_subprocess_exec", side_effect=OSError("not found")):
             result = await service.install_tool(
                 "Git", on_progress=progress_messages.append
             )
@@ -305,7 +371,7 @@ class TestEnvCheckService:
 
         with patch(
             "misaka.services.skills.env_check_service.wrap_windows_script_command",
-            return_value=["cmd.exe", "/d", "/s", "/c", '""C:/npm/node.cmd" --version"'],
+            return_value=["cmd.exe", "/d", "/s", "/c", '"C:/npm/node.cmd" --version'],
         ) as mock_wrap, patch(
             "misaka.services.skills.env_check_service.build_background_subprocess_kwargs",
             return_value={"creationflags": 1, "startupinfo": "hidden"},
@@ -321,7 +387,7 @@ class TestEnvCheckService:
                 "/d",
                 "/s",
                 "/c",
-                '""C:/npm/node.cmd" --version"',
+                '"C:/npm/node.cmd" --version',
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=1,
@@ -363,6 +429,9 @@ class TestEnvCheckService:
         mock_proc.communicate.return_value = (b"ok\n", b"")
         mock_proc.returncode = 0
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        with patch(
+            "shutil.which",
+            return_value="C:\\Program Files\\Git\\cmd\\git.exe",
+        ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await service.install_tool("Git", on_progress=None)
             assert result is True

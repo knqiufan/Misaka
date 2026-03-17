@@ -65,7 +65,7 @@ def wrap_windows_script_command(binary_path: str, args: list[str]) -> list[str]:
         quoted_binary = f'"{binary_path}"'
         quoted_args = subprocess.list2cmdline(args)
         cmdline = quoted_binary if not quoted_args else f"{quoted_binary} {quoted_args}"
-        return ["cmd.exe", "/d", "/s", "/c", f'"{cmdline}"']
+        return ["cmd.exe", "/d", "/s", "/c", cmdline]
     return [binary_path, *args]
 
 

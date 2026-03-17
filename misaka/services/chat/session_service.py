@@ -35,7 +35,7 @@ class SessionService:
         model: str = "",
         system_prompt: str = "",
         working_directory: str = "",
-        mode: str = "code",
+        mode: str = "agent",
     ) -> ChatSession:
         """Create a new chat session."""
         session = self._db.create_session(
@@ -57,7 +57,7 @@ class SessionService:
         self._db.update_session_working_directory(session_id, working_directory)
 
     def update_mode(self, session_id: str, mode: str) -> None:
-        """Update a session's mode (code/plan/ask)."""
+        """Update a session's mode (agent/plan/ask)."""
         self._db.update_session_mode(session_id, mode)
 
     def update_model(self, session_id: str, model: str) -> None:
