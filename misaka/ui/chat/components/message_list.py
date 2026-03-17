@@ -298,6 +298,7 @@ class MessageList(ft.Column):
         controls.insert(self._get_message_insert_index(), cached)
         self._rendered_message_ids.append(new_message.id)
         if self.state.is_streaming and self._streaming_msg not in controls:
+            self._streaming_msg.refresh()
             controls.insert(self._get_message_insert_index(), self._streaming_msg)
         self._sync_permission_card()
         self._update_list_view(auto_scroll=scroll_to_bottom)
