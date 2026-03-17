@@ -138,6 +138,7 @@
     "misaka_update": "Misaka 更新",
     "misaka_update_desc": "检查 Misaka 应用更新",
     "misaka_version": "当前版本",
+    "misaka_open_releases": "前往 Release 下载",
     "update_not_configured": "更新服务器尚未配置",
     "claude_debug_log": "Claude 调试日志",
     "claude_debug_log_desc": "输出精简的 SDK 调试信息（开始/结束/消息统计/异常），便于排查对话问题。"

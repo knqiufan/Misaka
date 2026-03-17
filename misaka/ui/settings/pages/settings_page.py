@@ -597,9 +597,18 @@ class SettingsPage(ft.Column):
     # Misaka update section
     # ------------------------------------------------------------------
 
+    # GitHub releases URL: /releases/latest redirects to the latest release page
+    _MISAKA_RELEASES_URL = "https://github.com/knqiufan/Misaka/releases/latest"
+
     def _build_misaka_update_section(self) -> ft.Control:
         from misaka import __version__
 
+        # NOTE: 检查更新功能已注释，改为直接跳转 GitHub Release 页面供用户自行下载
+        # make_outlined_button(
+        #     t("settings.check_update"),
+        #     icon=ft.Icons.REFRESH,
+        #     on_click=self._handle_misaka_update_check,
+        # ),
         return ft.Container(
             content=ft.Column(
                 controls=[
@@ -611,9 +620,9 @@ class SettingsPage(ft.Column):
                             ),
                             ft.Container(expand=True),
                             make_outlined_button(
-                                t("settings.check_update"),
-                                icon=ft.Icons.REFRESH,
-                                on_click=self._handle_misaka_update_check,
+                                t("settings.misaka_open_releases"),
+                                icon=ft.Icons.OPEN_IN_NEW,
+                                on_click=self._handle_open_misaka_releases,
                             ),
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -629,15 +638,27 @@ class SettingsPage(ft.Column):
             padding=ft.Padding.symmetric(horizontal=24, vertical=16),
         )
 
-    def _handle_misaka_update_check(self, e: ft.ControlEvent) -> None:
-        if not e.page:
+    # def _handle_misaka_update_check(self, e: ft.ControlEvent) -> None:
+    #     """原检查更新逻辑：显示未配置提示。已弃用，改为跳转 Release 页面。"""
+    #     if not e.page:
+    #         return
+    #     e.page.show_dialog(
+    #         ft.SnackBar(
+    #             content=ft.Text(t("settings.update_not_configured")),
+    #             duration=3000,
+    #         )
+    #     )
+
+    def _handle_open_misaka_releases(self, e: ft.ControlEvent) -> None:
+        """打开 GitHub 最新 Release 页面，供用户自行下载更新。"""
+        page = e.page
+        if not page:
             return
-        e.page.show_dialog(
-            ft.SnackBar(
-                content=ft.Text(t("settings.update_not_configured")),
-                duration=3000,
-            )
-        )
+
+        async def _launch() -> None:
+            await page.launch_url(self._MISAKA_RELEASES_URL)
+
+        page.run_task(_launch)
 
     # ------------------------------------------------------------------
     # About section
