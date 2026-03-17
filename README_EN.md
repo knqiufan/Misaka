@@ -17,6 +17,12 @@ Misaka brings the power of Claude Code to a polished native desktop experience �
 
 ---
 
+## About the Name
+
+Misaka (御坂) — a tribute to *A Certain Scientific Railgun* (某科学的超电磁炮). The name evokes the Misaka Network's powerful computing and connectivity. I love it!
+
+---
+
 ## 🌟 Why Misaka?
 
 Misaka stands out with these **unique features**:
