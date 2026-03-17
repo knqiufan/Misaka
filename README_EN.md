@@ -7,6 +7,8 @@
 
 [中文](README.md) · English
 
+**This project is fully open source and for learning purposes only. It is still in early stages with many areas needing continuous improvement. Welcome to star and contribute!**
+
 > A desktop GUI client for Claude Code, built with Python and [Flet](https://flet.dev).
 
 Misaka brings the power of Claude Code to a polished native desktop experience — multi-turn streaming conversations, session management, file tree browsing, MCP server integration, and more, all wrapped in a clean Material Design 3 interface.
