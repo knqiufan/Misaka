@@ -1,150 +1,152 @@
 # Misaka
 
-[CN](README_CN.md) · [EN](README.md)
+中文 · [English](README_EN.md)
 
-> A desktop GUI client for Claude Code, built with Python and [Flet](https://flet.dev).
+> 当前项目完全开源，只用作为学习使用，项目还比较初级有很多地方需要持续优化，欢迎大家来 star 一同共建~
 
-Misaka brings the power of Claude Code to a polished native desktop experience — multi-turn streaming conversations, session management, file tree browsing, MCP server integration, and more, all wrapped in a clean Material Design 3 interface.
+> 基于 Python 和 [Flet](https://flet.dev) 构建的 Claude Code 桌面 GUI 客户端。
 
-![image-20260313005835567](./image/image-20260313005835567.png)
+Misaka 将 Claude Code 的强大能力带入精致的原生桌面体验——多轮流式对话、会话管理、文件树浏览、MCP 服务器集成等功能，全部融入简洁的 Material Design 3 界面。
 
----
-
-## 🌟 Why Misaka?
-
-Misaka stands out with these **unique features**:
-
-| Feature | Description |
-|---------|-------------|
-| **🔍 Environment Check** | On startup, automatically detects Claude Code CLI, Node.js, Python, and Git. Missing tools? One-click install with platform-specific commands (winget/brew/apt). |
-| **📦 Version Check** | Checks for Claude Code CLI updates on startup. One-click upgrade via `npm install -g @anthropic-ai/claude-code@latest`. |
-| **🔀 Claude Code Router** | Manage multiple API configurations (different providers, models, Agent Team mode). Switch instantly — writes to `~/.claude/settings.json`. No other GUI offers this. |
-| **🖥️ Native Desktop** | Python + Flet (Flutter-based). Not a web app — runs as a true native window. |
-| **🛡️ Permission Control** | Fine-grained tool permission modes with interactive approval dialogs before file edits or shell commands. |
-| **📚 Skills Management** | View, install from ZIP, and refresh Claude Code Skills (Extensions) in the app. |
+![image-20260313004154623](./image/image-20260313004154623.png)
 
 ---
 
-## ✨ Features
+## 🌟 为什么选择 Misaka？
 
-| Category | Details |
+Misaka 具有以下**独有特性**：
+
+| 特性 | 说明 |
+|------|------|
+| **🔍 环境检查** | 启动时自动检测 Claude Code CLI、Node.js、Python、Git 是否已安装。缺失时提供一键安装，使用平台专属命令（winget/brew/apt）。 |
+| **📦 版本检查** | 启动时自动检测 Claude Code CLI 是否有新版本，支持一键升级（`npm install -g @anthropic-ai/claude-code@latest`）。 |
+| **🔀 Claude Code Router** | 管理多套 API 配置（不同提供商、模型、Agent Team 模式），一键切换并写入 `~/.claude/settings.json`。目前其他 GUI 均无此功能。 |
+| **🖥️ 原生桌面** | 基于 Python + Flet（Flutter），非 Web 应用，以原生窗口运行。 |
+| **🛡️ 权限控制** | 细粒度工具权限模式，在文件编辑或执行 shell 命令前弹出交互式审批对话框。 |
+| **📚 技能管理** | 在应用内查看、从 ZIP 安装和刷新 Claude Code Skills（扩展）。 |
+
+---
+
+## ✨ 功能特性
+
+| 分类 | 详情 |
 |---|---|
-| **Multi-model chat** | Switch between Claude Sonnet, Opus, and Haiku via `/model` command |
-| **Streaming responses** | Real-time token-by-token rendering with abort support, thinking animation, and interruption error banner |
-| **Session management** | Create, rename, delete, and search conversation sessions |
-| **Three conversation modes** | `Code` · `Plan` · `Ask` — dropdown selector for Claude Code's native modes |
-| **Quick command send** | Commands like `/init` can be sent directly without opening a badge first |
-| **File tree browser** | Browse your project directory in the right panel with live file preview |
-| **MCP server support** | Load and manage Model Context Protocol servers with delete confirmation, refresh, and HTTP header support |
-| **Skill management** | View, install from ZIP, and refresh Claude Code skills (Extensions page) |
-| **Claude Code Router** | Multi-config system for managing different API providers and model presets |
-| **Import CLI sessions** | Import existing sessions from the Claude Code CLI with pagination and search |
-| **Multi-language UI** | English · 简体中文 · 繁體中文 |
-| **Theme switching** | Light / Dark / System — persisted across restarts, customizable accent color |
-| **API provider config** | Add and manage multiple Anthropic API providers with custom base URLs |
-| **Permission control** | Fine-grained tool permission modes with interactive approval dialogs |
-| **Update notifications** | Automatic check for Claude Code CLI updates on startup |
-| **Cross-platform** | Windows · macOS · Linux |
-| **Developer mode** | Hot reload and debug logging support for development |
+| **多模型对话** | 通过 `/model` 命令在 Claude Sonnet、Opus、Haiku 之间自由切换 |
+| **流式响应** | 实时逐 token 渲染，支持随时中止，内置 Thinking 动画，中断后显示错误提示 |
+| **会话管理** | 创建、重命名、删除、搜索对话会话 |
+| **三种对话模式** | `Code`（编码）· `Plan`（规划）· `Ask`（问答）——下拉选择器 |
+| **快捷命令发送** | `/init` 等命令可直接发送，无需先打开命令框 |
+| **文件树浏览器** | 在右侧面板浏览项目目录，支持文件实时预览 |
+| **MCP 服务器支持** | 从 Claude 配置文件加载并管理 Model Context Protocol 服务器，支持删除确认、刷新及 HTTP 请求头配置 |
+| **技能管理** | 在「技能」页面查看、从 ZIP 安装和刷新 Claude Code Skills |
+| **Claude Code Router** | 多配置系统，管理不同的 API 提供商和模型预设 |
+| **导入 CLI 会话** | 将 Claude Code CLI 的历史会话导入到 Misaka，支持分页加载与搜索 |
+| **多语言界面** | English · 简体中文 · 繁體中文 |
+| **主题切换** | 浅色 / 深色 / 跟随系统——重启后自动恢复，支持自定义强调色 |
+| **API 提供商配置** | 添加并管理多个 Anthropic API 提供商，支持自定义 Base URL |
+| **权限控制** | 细粒度工具权限模式，支持交互式审批对话框 |
+| **更新提醒** | 启动时自动检测 Claude Code CLI 是否有新版本 |
+| **跨平台** | Windows · macOS |
+| **开发者模式** | 支持热重载和调试日志，便于开发调试 |
 
 ---
 
-## 📋 Requirements
+## 📋 环境要求
 
-- **Python** 3.10 or later
-- **Node.js** (for Claude Code CLI)
-- **Claude Code CLI** — install via npm:
+- **Python** 3.10 及以上
+- **Node.js**（用于 Claude Code CLI）
+- **Claude Code CLI** — 通过 npm 安装：
   ```bash
   npm install -g @anthropic-ai/claude-code
   ```
-- **Anthropic API key** — set via environment variable or configured in the Settings page
+- **Anthropic API Key** — 通过环境变量设置，或在应用「设置」页面中配置
 
 ---
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
 ```bash
-# 1. Clone the repository
+# 1. 克隆仓库
 git clone https://github.com/knqiufan/Misaka.git
 cd Misaka
 
-# 2. Install dependencies
+# 2. 安装依赖
 pip install -e ".[dev]"
 
-# 3. Set your API key (or configure it in Settings)
-set ANTHROPIC_API_KEY=sk-ant-...   # Windows
+# 3. 设置 API Key（或在「设置」页面中配置）
+set ANTHROPIC_API_KEY=sk-ant-...    # Windows
 export ANTHROPIC_API_KEY=sk-ant-... # macOS / Linux
 
-# 4. Launch Misaka
+# 4. 启动 Misaka
 misaka
-# or
+# 或
 python -m misaka.main
 ```
 
-The application window opens at **1280 × 860** (minimum 800 × 600). All data — sessions, settings, and logs — is stored in `~/.misaka/`.
+应用窗口默认尺寸为 **1280 × 860**（最小 800 × 600）。所有数据——会话、设置、日志——均存储在 `~/.misaka/` 目录下。
 
 ---
 
-## ⚙️ Configuration
+## ⚙️ 配置说明
 
 ### API Key
 
-Set the environment variable before launching, or add a provider in **Settings → API Providers**:
+在启动前设置环境变量，或在应用内「设置 → API 提供商」中添加：
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### Claude Code Router — Quick Guide
+### Claude Code Router — 快速指南
 
-The **Claude Code Router** lets you manage multiple API configurations and switch between them instantly.
+**Claude Code Router** 用于管理多套 API 配置，并可一键切换。
 
-![image-20260313011018935](./image/image-20260313011018935.png)
+![image-20260313010421331](./image/image-20260313010421331.png)
 
-**1. Add a configuration**
+**1. 添加配置**
 
-- Go to **Settings → Claude Code Router**
-- Click **Add Configuration**
-- Fill in:
-  - **Provider Name** — e.g. "Anthropic Official", "Custom API"
-  - **API Key** — your Anthropic API key
-  - **Request URL** — leave empty for default, or use a custom base URL
-  - **Main / Haiku / Opus / Sonnet Model** — model IDs for each tier
-  - **Agent Team Mode** — toggle for Agent Teams feature
+- 进入 **设置 → Claude Code Router**
+- 点击 **添加配置**
+- 填写：
+  - **提供商名称** — 如「Anthropic 官方」「自定义 API」
+  - **API Key** — 你的 Anthropic API 密钥
+  - **请求 URL** — 默认留空，或填写自定义 Base URL
+  - **主模型 / Haiku / Opus / Sonnet 模型** — 各档位模型 ID
+  - **Agent Team 模式** — 是否启用 Agent Teams 功能
 
-**2. Enable a configuration**
+**2. 启用配置**
 
-- Click **Enable** on the config you want to use
-- Misaka writes the config to `~/.claude/settings.json`
-- Claude Code CLI will use this config for all sessions
+- 在目标配置上点击 **启用**
+- Misaka 会将配置写入 `~/.claude/settings.json`
+- Claude Code CLI 将使用该配置进行所有会话
 
-**3. Use cases**
+**3. 典型场景**
 
-- Switch between official Anthropic API and third-party compatible endpoints
-- Use different models per project (e.g. Haiku for quick tasks, Opus for complex coding)
-- Separate configs for work vs personal API keys
+- 在 Anthropic 官方 API 与第三方兼容端点之间切换
+- 不同项目使用不同模型（如 Haiku 快速任务、Opus 复杂编码）
+- 工作与个人 API Key 分开管理
 
-### Third-Party Plugins (MCP Servers) — Quick Guide
+### 第三方插件（MCP 服务器）— 快速指南
 
-MCP (Model Context Protocol) servers extend Claude Code with tools like databases, APIs, and file systems.
+MCP（Model Context Protocol）服务器可扩展 Claude Code 能力，例如连接数据库、API、文件系统等。
 
-![image-20260313010921495](./image/image-20260313010921495.png)
+![image-20260313010708342](./image/image-20260313010623331.png)
 
-**Option A: Configure via Misaka UI**
+**方式一：在 Misaka 界面中配置**
 
-1. Open **Plugins** (MCP Servers) from the sidebar
-2. Click **Add Server**
-3. Choose **Transport Type**:
-   - **stdio** — local process (e.g. `npx -y @modelcontextprotocol/server-filesystem ~/Documents`)
-   - **http** — remote HTTP endpoint (e.g. `https://mcp.notion.com/mcp`)
-   - **sse** — legacy SSE endpoint
-4. For **stdio**: enter **Command** and **Arguments** (space-separated)
-5. For **http/sse**: enter **URL**
-6. Click **Add** — config is saved to `~/.claude.json` or `~/.claude/settings.json`
+1. 从侧边栏打开 **插件**（MCP 服务器）
+2. 点击 **添加服务器**
+3. 选择 **传输类型**：
+   - **stdio** — 本地进程（如 `npx -y @modelcontextprotocol/server-filesystem ~/Documents`）
+   - **http** — 远程 HTTP 端点（如 `https://mcp.notion.com/mcp`）
+   - **sse** — 旧版 SSE 端点
+4. **stdio**：填写 **命令** 和 **参数**（空格分隔）
+5. **http/sse**：填写 **URL**
+6. 点击 **添加** — 配置会保存到 `~/.claude.json` 或 `~/.claude/settings.json`
 
-**Option B: Configure via config files**
+**方式二：通过配置文件编辑**
 
-Edit `~/.claude.json` or `~/.claude/settings.json`:
+编辑 `~/.claude.json` 或 `~/.claude/settings.json`：
 
 ```json
 {
@@ -161,40 +163,40 @@ Edit `~/.claude.json` or `~/.claude/settings.json`:
 }
 ```
 
-Then click **Reload Config** in the Plugins page. See [Claude Code MCP docs](https://code.claude.com/docs/en/mcp) for more examples.
+保存后，在插件页面点击 **重新加载配置**。更多示例见 [Claude Code MCP 文档](https://code.claude.com/docs/en/mcp)。
 
-### Skills — Quick Guide
+### Skills（技能）— 快速指南
 
-Skills (Claude Code Extensions) are markdown files that provide reusable instructions and templates. Open **Skills** from the sidebar to view and manage them. *Create and edit are not yet supported in the UI — add skills manually by placing `.md` files in the paths below.*
+Skills（Claude Code 扩展）是提供可复用指令与模板的 Markdown 文件。从侧边栏打开 **技能** 进行查看和管理。*当前不支持在界面内创建和编辑技能，需手动在以下路径中添加 `.md` 文件。*
 
-![image-20260313011413318](./image/image-20260313011413318.png)
+![image-20260313011308546](./image/image-20260313011308546.png)
 
-**Skill sources**
+**技能来源**
 
-| Source | Path |
-|--------|------|
-| **Global** | `~/.claude/commands/*.md` — available everywhere |
-| **Project** | `./.claude/commands/*.md` — per-project skills |
-| **Installed** | `~/.claude/skills/*/SKILL.md` and `~/.agents/skills/*/SKILL.md` |
-| **Plugin** | `~/.claude/plugins/marketplaces/*/plugins/*/commands/*.md` |
+| 来源 | 路径 |
+|------|------|
+| **全局** | `~/.claude/commands/*.md` — 全局可用 |
+| **项目** | `./.claude/commands/*.md` — 按项目生效 |
+| **已安装** | `~/.claude/skills/*/SKILL.md` 与 `~/.agents/skills/*/SKILL.md` |
+| **插件** | `~/.claude/plugins/marketplaces/*/plugins/*/commands/*.md` |
 
-**1. View skills**
+**1. 查看技能**
 
-- Open **Skills** from the sidebar. Skills are grouped by source (Global, Project, Installed, Plugin).
-- Use the search box to filter by name or description.
+- 从侧边栏打开 **技能**，技能按来源（全局、项目、已安装、插件）分组展示。
+- 使用搜索框按名称或描述筛选。
 
-**2. Install from ZIP**
+**2. 从 ZIP 安装**
 
-- Click **Install from ZIP** and select a local `.zip` file
-- The archive must contain directories with `SKILL.md`. They are copied to `~/.claude/skills/<package>/`
+- 点击 **从 ZIP 安装** 并选择本地 `.zip` 文件
+- 压缩包需包含带 `SKILL.md` 的目录，将解压到 `~/.claude/skills/<包名>/`
 
-**3. Refresh**
+**3. 刷新**
 
-- Click **Refresh** to reload all skills from disk after manual file changes.
+- 点击 **刷新** 可在手动修改文件后重新加载所有技能。
 
-### Data Directory
+### 数据目录
 
-Override the default `~/.misaka/` storage location:
+覆盖默认的 `~/.misaka/` 存储位置：
 
 ```bash
 export MISAKA_DATA_DIR=/path/to/custom/dir
@@ -202,52 +204,52 @@ export MISAKA_DATA_DIR=/path/to/custom/dir
 
 ---
 
-## 🛠 Development
+## 🛠 开发指南
 
 ```bash
-# Install with dev extras
+# 安装开发依赖
 pip install -e ".[dev]"
 
-# Run tests
+# 运行测试
 pytest
 
-# Lint (Ruff)
+# 代码检查（Ruff）
 ruff check misaka/
 
-# Type check (mypy)
+# 类型检查（mypy）
 mypy misaka/
 
-# Run with hot reload (dev mode)
+# 运行开发模式（热重载）
 python -m misaka.main
-# Or use flet run
+# 或使用 flet run
 flet run -m misaka.main -d -r
 ```
 
-### Building a standalone executable
+### 打包为独立可执行文件
 
 ```bash
 pip install -e ".[build]"
 pyinstaller misaka.spec
 ```
 
-The built executable runs as a GUI app without opening a console window. On Windows, subprocess calls (e.g. Claude Code CLI) are hidden to avoid console flicker.
+打包后的可执行文件以 GUI 应用运行，不会弹出控制台窗口。在 Windows 上，子进程调用（如 Claude Code CLI）会被隐藏，避免控制台闪烁。
 
 ---
 
-## 📦 Dependencies
+## 📦 主要依赖
 
-| Package | Purpose |
+| 包名 | 用途 |
 |---|---|
-| `flet >= 0.27` | Cross-platform Flutter-based UI framework |
-| `claude-agent-sdk >= 0.1.5` | Official Claude Code agent integration |
-| `Pygments >= 2.18` | Syntax highlighting in code blocks |
-| `watchdog >= 4.0` | File system event watching |
-| `aiofiles >= 24.0` | Async file I/O |
-| `anyio >= 4.0` | Async concurrency primitives |
-| `Pillow >= 10.0` | Image handling and preview |
+| `flet >= 0.27` | 基于 Flutter 的跨平台 UI 框架 |
+| `claude-agent-sdk >= 0.1.5` | 官方 Claude Code Agent 集成 SDK |
+| `Pygments >= 2.18` | 代码块语法高亮 |
+| `watchdog >= 4.0` | 文件系统事件监听 |
+| `aiofiles >= 24.0` | 异步文件 I/O |
+| `anyio >= 4.0` | 异步并发原语 |
+| `Pillow >= 10.0` | 图片处理与预览 |
 
 ---
 
-## 📄 License
+## 📄 许可证
 
 [Apache License 2.0](LICENSE)
