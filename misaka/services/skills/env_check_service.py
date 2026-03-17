@@ -91,11 +91,6 @@ def _get_install_info(tool_name: str) -> tuple[str, str]:
 
     Returns platform-specific install commands and download URLs.
     """
-    if tool_name == "Claude Code CLI":
-        return (
-            "npm install -g @anthropic-ai/claude-code",
-            "https://docs.anthropic.com/en/docs/claude-code/overview",
-        )
 
     if tool_name == "Node.js":
         url = "https://nodejs.org/en/download/"
@@ -123,6 +118,11 @@ def _get_install_info(tool_name: str) -> tuple[str, str]:
             return ("brew install git", url)
         else:
             return ("sudo apt install -y git", url)
+    if tool_name == "Claude Code CLI":
+        return (
+            "npm install -g @anthropic-ai/claude-code",
+            "https://docs.anthropic.com/en/docs/claude-code/overview",
+        )
 
     return ("", "")
 
@@ -284,9 +284,14 @@ class EnvCheckService:
             on_progress(f"Installing {tool_name}...")
 
         try:
-            # Split command into args list for safe subprocess execution
             args = install_cmd.split()
-            cmd = wrap_windows_script_command(args[0], args[1:])
+            executable = self._resolve_install_executable(args[0])
+            if not executable:
+                return self._report_install_launcher_missing(
+                    tool_name, args[0], on_progress
+                )
+
+            cmd = wrap_windows_script_command(executable, args[1:])
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -335,6 +340,27 @@ class EnvCheckService:
             if on_progress:
                 on_progress(f"Install failed: {exc}")
             return False
+
+    def _resolve_install_executable(self, executable: str) -> str | None:
+        """Resolve install launcher from the expanded PATH."""
+        expanded_path = get_expanded_path()
+        return shutil.which(executable, path=expanded_path)
+
+    def _report_install_launcher_missing(
+        self,
+        tool_name: str,
+        executable: str,
+        on_progress: Callable[[str], None] | None,
+    ) -> bool:
+        """Report a missing launcher with a user-friendly message."""
+        logger.warning(
+            "Install of %s cannot start because launcher was not found: %s",
+            tool_name,
+            executable,
+        )
+        if on_progress:
+            on_progress(f"Install failed: required command not found: {executable}")
+        return False
 
     async def _get_version(
         self, binary_path: str, version_flag: str

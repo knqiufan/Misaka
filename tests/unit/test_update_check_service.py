@@ -165,7 +165,7 @@ class TestUpdateCheckService:
                      "/d",
                      "/s",
                      "/c",
-                     '""C:/npm/npm.cmd" install -g @anthropic-ai/claude-code@latest"',
+                     '"C:/npm/npm.cmd" install -g @anthropic-ai/claude-code@latest',
                  ],
              ) as mock_wrap, \
              patch(
@@ -186,7 +186,7 @@ class TestUpdateCheckService:
                 "/d",
                 "/s",
                 "/c",
-                '""C:/npm/npm.cmd" install -g @anthropic-ai/claude-code@latest"',
+                '"C:/npm/npm.cmd" install -g @anthropic-ai/claude-code@latest',
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=1,
@@ -227,7 +227,7 @@ class TestUpdateCheckService:
                      "/d",
                      "/s",
                      "/c",
-                     '""C:/npm/npm.cmd" view @anthropic-ai/claude-code version"',
+                     '"C:/npm/npm.cmd" view @anthropic-ai/claude-code version',
                  ],
              ) as mock_wrap, \
              patch(
@@ -247,7 +247,7 @@ class TestUpdateCheckService:
                 "/d",
                 "/s",
                 "/c",
-                '""C:/npm/npm.cmd" view @anthropic-ai/claude-code version"',
+                '"C:/npm/npm.cmd" view @anthropic-ai/claude-code version',
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=1,

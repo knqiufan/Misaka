@@ -12,7 +12,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -46,12 +46,13 @@ class ClaudeSessionInfo:
     cwd: str
     git_branch: str
     version: str
-    preview: str  # first 200 chars of first user message
-    user_message_count: int
-    assistant_message_count: int
+    preview: str  # first 200 chars of first non-meta user message
+    user_message_count: int  # merged (displayed) count
+    assistant_message_count: int  # merged (displayed) count
     created_at: str  # ISO format
     updated_at: str  # ISO format
     file_size: int  # bytes
+    slug: str = ""  # session slug from JSONL, e.g. "drifting-frolicking-mccarthy"
 
 
 # ---------------------------------------------------------------------------
@@ -82,12 +83,11 @@ def _decode_project_path(encoded: str) -> str:
     return "/" + encoded.replace("-", "/")
 
 
-def _extract_text_from_content(content) -> str:  # noqa: ANN001
+def _extract_text_from_content(content: Any) -> str:
     """Extract plain text from a Claude message ``content`` field.
 
-    ``content`` can be:
-    * A plain string.
-    * A list of content blocks, each with ``type`` and ``text`` keys.
+    Per spec §5: only ``type: "text"`` blocks contribute to preview.
+    ``content`` can be a plain string or a list of content blocks.
     """
     if isinstance(content, str):
         return content
@@ -100,130 +100,79 @@ def _extract_text_from_content(content) -> str:  # noqa: ANN001
     return ""
 
 
-def _parse_jsonl_metadata(file_path: Path) -> ClaudeSessionInfo | None:
-    """Single-pass parse of a JSONL session file for metadata extraction.
+def _content_to_blocks(content: Any) -> list[dict]:
+    """Convert content to a list of content blocks for merging.
 
-    Returns ``None`` if the file cannot be read or is above the size limit.
+    Per spec §5.5: ``thinking`` blocks are converted to ``text`` for display.
     """
-    try:
-        file_size = file_path.stat().st_size
-    except OSError as exc:
-        logger.warning("Cannot stat %s: %s", file_path, exc)
-        return None
-
-    if file_size > _MAX_FILE_SIZE:
-        logger.info("Skipping %s: file size %d exceeds limit", file_path, file_size)
-        return None
-
-    session_id = file_path.stem  # UUID filename without .jsonl
-
-    cwd = ""
-    version = ""
-    git_branch = ""
-    preview = ""
-    user_count = 0
-    assistant_count = 0
-    first_timestamp = ""
-    last_timestamp = ""
-    first_user_text = ""
-
-    try:
-        with file_path.open("r", encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                if not isinstance(entry, dict):
-                    continue
-
-                # Extract metadata from non-typed lines (cwd, version, etc.)
-                if "cwd" in entry and not cwd:
-                    cwd = entry["cwd"]
-                if "version" in entry and not version:
-                    version = str(entry["version"])
-                if "gitBranch" in entry:
-                    git_branch = entry["gitBranch"]
-
-                entry_type = entry.get("type")
-                timestamp = entry.get("timestamp", "")
-
-                if timestamp:
-                    if not first_timestamp:
-                        first_timestamp = timestamp
-                    last_timestamp = timestamp
-
-                if entry_type == "user":
-                    user_count += 1
-                    msg = entry.get("message", {})
-                    if isinstance(msg, dict) and user_count == 1:
-                        first_user_text = _extract_text_from_content(
-                            msg.get("content", "")
-                        )
-                elif entry_type == "assistant":
-                    assistant_count += 1
-
-    except OSError as exc:
-        logger.warning("Error reading %s: %s", file_path, exc)
-        return None
-
-    preview = first_user_text[:200] if first_user_text else ""
-
-    # Derive project info from parent directory name.
-    encoded_project = file_path.parent.name
-    project_path = _decode_project_path(encoded_project)
-    project_name = Path(project_path).name if project_path else encoded_project
-
-    # Fall back to file modification times when timestamps are absent.
-    if not first_timestamp:
-        try:
-            stat = file_path.stat()
-            first_timestamp = _timestamp_from_epoch(stat.st_ctime)
-            last_timestamp = _timestamp_from_epoch(stat.st_mtime)
-        except OSError:
-            first_timestamp = ""
-            last_timestamp = first_timestamp
-
-    if not last_timestamp:
-        last_timestamp = first_timestamp
-
-    return ClaudeSessionInfo(
-        session_id=session_id,
-        project_path=project_path,
-        project_name=project_name,
-        cwd=cwd,
-        git_branch=git_branch,
-        version=version,
-        preview=preview,
-        user_message_count=user_count,
-        assistant_message_count=assistant_count,
-        created_at=first_timestamp,
-        updated_at=last_timestamp,
-        file_size=file_size,
-    )
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}] if content else []
+    if isinstance(content, list):
+        result: list[dict] = []
+        for b in content:
+            if not isinstance(b, dict) or not b.get("type"):
+                continue
+            block = dict(b)
+            # Convert thinking to text for display (spec §5.5)
+            if block.get("type") == "thinking":
+                thinking_text = block.get("thinking", "")
+                result.append({"type": "text", "text": str(thinking_text)})
+            else:
+                result.append(block)
+        return result
+    return [{"type": "text", "text": str(content)}] if content else []
 
 
-def _parse_jsonl_messages(file_path: Path) -> list[dict]:
-    """Parse all user/assistant messages from a JSONL session file.
+def _merge_content_blocks(blocks_list: list[list[dict]]) -> list[dict]:
+    """Concatenate content block lists in order."""
+    result: list[dict] = []
+    for blocks in blocks_list:
+        result.extend(blocks)
+    return result
 
-    Returns a list of dicts with keys: ``role``, ``content`` (JSON string),
-    ``timestamp``, and optionally ``token_usage`` (JSON string).
+
+@dataclass
+class _RawMessageEntry:
+    """Internal: a single user/assistant JSONL entry before merging."""
+
+    line_no: int
+    role: str
+    content: Any
+    timestamp: str
+    entry: dict
+    message: dict
+    is_meta: bool = False
+
+
+def _collect_user_assistant_entries(
+    file_path: Path,
+) -> tuple[list[_RawMessageEntry], dict[str, Any]]:
+    """Read JSONL and collect user/assistant entries plus metadata.
+
+    Returns:
+        (entries, meta) where meta has: cwd, version, git_branch, slug,
+        first_timestamp, last_timestamp, file_size.
     """
-    messages: list[tuple[int, dict]] = []
+    entries: list[_RawMessageEntry] = []
+    meta: dict[str, Any] = {
+        "cwd": "",
+        "version": "",
+        "git_branch": "",
+        "slug": "",
+        "first_timestamp": "",
+        "last_timestamp": "",
+        "file_size": 0,
+    }
 
     try:
         file_size = file_path.stat().st_size
     except OSError as exc:
         logger.warning("Cannot stat %s: %s", file_path, exc)
-        return messages
+        return (entries, meta)
 
+    meta["file_size"] = file_size
     if file_size > _MAX_FILE_SIZE:
-        logger.info("Skipping %s: file size %d exceeds limit", file_path, file_size)
-        return messages
+        return (entries, meta)
 
     try:
         with file_path.open("r", encoding="utf-8", errors="replace") as fh:
@@ -239,7 +188,23 @@ def _parse_jsonl_messages(file_path: Path) -> list[dict]:
                 if not isinstance(entry, dict):
                     continue
 
+                # Extract metadata from any line
+                if "cwd" in entry and not meta["cwd"]:
+                    meta["cwd"] = entry["cwd"]
+                if "version" in entry and not meta["version"]:
+                    meta["version"] = str(entry["version"])
+                if "gitBranch" in entry:
+                    meta["git_branch"] = entry["gitBranch"]
+                if "slug" in entry and not meta["slug"]:
+                    meta["slug"] = str(entry["slug"]).strip()
+
                 entry_type = entry.get("type")
+                timestamp = entry.get("timestamp", "")
+                if timestamp:
+                    if not meta["first_timestamp"]:
+                        meta["first_timestamp"] = timestamp
+                    meta["last_timestamp"] = timestamp
+
                 if entry_type not in ("user", "assistant"):
                     continue
 
@@ -249,36 +214,163 @@ def _parse_jsonl_messages(file_path: Path) -> list[dict]:
 
                 role = msg.get("role", entry_type)
                 content = msg.get("content", "")
-                timestamp = entry.get("timestamp", "")
+                is_meta = entry.get("isMeta", False) is True
 
-                content_str = _normalise_content(content)
-
-                result: dict = {
-                    "role": role,
-                    "content": content_str,
-                    "timestamp": timestamp,
-                }
-
-                token_usage = _extract_token_usage(entry, msg)
-                if token_usage is not None:
-                    result["token_usage"] = token_usage
-
-                messages.append((line_no, result))
-
+                entries.append(
+                    _RawMessageEntry(
+                        line_no=line_no,
+                        role=role,
+                        content=content,
+                        timestamp=timestamp,
+                        entry=entry,
+                        message=msg,
+                        is_meta=is_meta,
+                    )
+                )
     except OSError as exc:
         logger.warning("Error reading %s: %s", file_path, exc)
 
-    messages.sort(key=lambda m: (m[1].get("timestamp", ""), m[0]))
-    return [m[1] for m in messages]
+    # Sort by timestamp then line_no
+    entries.sort(key=lambda e: (e.timestamp, e.line_no))
+    return (entries, meta)
 
 
-def _normalise_content(content) -> str:  # noqa: ANN001
-    """Normalize message content to a JSON string of blocks."""
-    if isinstance(content, str):
-        return json.dumps([{"type": "text", "text": content}])
-    if isinstance(content, list):
-        return json.dumps(content)
-    return json.dumps([{"type": "text", "text": str(content)}])
+def _merge_consecutive_same_role(
+    entries: list[_RawMessageEntry],
+) -> list[dict]:
+    """Merge adjacent entries of the same role into single messages.
+
+    Returns list of dicts with: role, content (JSON str), timestamp,
+    token_usage (optional).
+    """
+    if not entries:
+        return []
+
+    merged: list[dict] = []
+    current_role: str | None = None
+    current_blocks: list[list[dict]] = []
+    msg_first_ts = ""
+    last_token_usage: str | None = None
+
+    def flush() -> None:
+        nonlocal current_blocks, last_token_usage, msg_first_ts
+        if not current_blocks or current_role is None:
+            return
+        all_blocks = _merge_content_blocks(current_blocks)
+        content_str = json.dumps(all_blocks) if all_blocks else "[]"
+        m: dict = {
+            "role": current_role,
+            "content": content_str,
+            "timestamp": msg_first_ts,
+        }
+        if last_token_usage is not None:
+            m["token_usage"] = last_token_usage
+        merged.append(m)
+        current_blocks = []
+        last_token_usage = None
+        msg_first_ts = ""
+
+    for e in entries:
+        if current_role is not None and e.role != current_role:
+            flush()
+            current_role = None
+
+        current_role = e.role
+        current_blocks.append(_content_to_blocks(e.content))
+        if not msg_first_ts and e.timestamp:
+            msg_first_ts = e.timestamp
+
+        if e.role == "assistant":
+            usage = _extract_token_usage(e.entry, e.message)
+            if usage is not None:
+                last_token_usage = usage
+
+    flush()
+    return merged
+
+
+def _parse_jsonl_metadata(file_path: Path) -> ClaudeSessionInfo | None:
+    """Single-pass parse of a JSONL session file for metadata extraction.
+
+    Uses merged message counts (consecutive same-role entries count as one).
+    Preview excludes isMeta user messages per spec §4.4.
+
+    Returns ``None`` if the file cannot be read or is above the size limit.
+    """
+    entries, meta = _collect_user_assistant_entries(file_path)
+    if meta["file_size"] > _MAX_FILE_SIZE:
+        logger.info(
+            "Skipping %s: file size %d exceeds limit",
+            file_path,
+            meta["file_size"],
+        )
+        return None
+
+    merged = _merge_consecutive_same_role(entries)
+    user_count = sum(1 for m in merged if m["role"] == "user")
+    assistant_count = sum(1 for m in merged if m["role"] == "assistant")
+
+    # Preview: first non-isMeta user message text (spec §4.4)
+    first_user_text = ""
+    for e in entries:
+        if e.role == "user" and not e.is_meta:
+            first_user_text = _extract_text_from_content(e.content)
+            break
+    preview = first_user_text[:200] if first_user_text else ""
+
+    # Derive project info from parent directory name
+    session_id = file_path.stem
+    encoded_project = file_path.parent.name
+    project_path = _decode_project_path(encoded_project)
+    project_name = Path(project_path).name if project_path else encoded_project
+
+    first_timestamp = meta["first_timestamp"]
+    last_timestamp = meta["last_timestamp"]
+    if not first_timestamp:
+        try:
+            stat = file_path.stat()
+            first_timestamp = _timestamp_from_epoch(stat.st_ctime)
+            last_timestamp = _timestamp_from_epoch(stat.st_mtime)
+        except OSError:
+            first_timestamp = ""
+            last_timestamp = first_timestamp
+    if not last_timestamp:
+        last_timestamp = first_timestamp
+
+    return ClaudeSessionInfo(
+        session_id=session_id,
+        project_path=project_path,
+        project_name=project_name,
+        cwd=meta["cwd"],
+        git_branch=meta["git_branch"],
+        version=meta["version"],
+        preview=preview,
+        user_message_count=user_count,
+        assistant_message_count=assistant_count,
+        created_at=first_timestamp,
+        updated_at=last_timestamp,
+        file_size=meta["file_size"],
+        slug=meta["slug"],
+    )
+
+
+def _parse_jsonl_messages(file_path: Path) -> list[dict]:
+    """Parse all user/assistant messages from a JSONL session file.
+
+    Consecutive same-role entries are merged into a single message.
+    Returns a list of dicts with keys: ``role``, ``content`` (JSON string),
+    ``timestamp``, and optionally ``token_usage`` (JSON string).
+    """
+    entries, meta = _collect_user_assistant_entries(file_path)
+    if meta["file_size"] > _MAX_FILE_SIZE:
+        logger.info(
+            "Skipping %s: file size %d exceeds limit",
+            file_path,
+            meta["file_size"],
+        )
+        return []
+
+    return _merge_consecutive_same_role(entries)
 
 
 def _extract_token_usage(entry: dict, message: dict) -> str | None:
@@ -311,11 +403,17 @@ def _timestamp_from_epoch(epoch: float) -> str:
     )
 
 
-def _make_title(project_name: str, preview: str) -> str:
-    """Build a human-readable session title from the project name and preview.
+def _make_title(
+    project_name: str,
+    preview: str,
+    slug: str = "",
+) -> str:
+    """Build a human-readable session title.
 
-    Takes the project name and the first few words of the first user message.
+    Per spec: prefers slug when available; otherwise project_name + preview.
     """
+    if slug and slug.strip():
+        return slug.strip()
     if not preview:
         return project_name or "Imported Session"
     words = preview.split()[:8]
@@ -487,7 +585,7 @@ class SessionImportService:
         info = _parse_jsonl_metadata(file_path)
         if info is None:
             return None
-        return _make_title(info.project_name, info.preview)
+        return _make_title(info.project_name, info.preview, info.slug)
 
     def import_session(self, session_id: str, db: DatabaseBackend) -> ChatSession:
         """Import a Claude Code CLI session into the Misaka database.
@@ -529,13 +627,13 @@ class SessionImportService:
         messages = _parse_jsonl_messages(file_path)
 
         # Build session title.
-        title = _make_title(info.project_name, info.preview)
+        title = _make_title(info.project_name, info.preview, info.slug)
 
         # Create the session in the database.
         session = db.create_session(
             title=title,
             working_directory=info.cwd or info.project_path,
-            mode="code",
+            mode="agent",
         )
 
         # Store the CLI session UUID so we can detect duplicates later.
