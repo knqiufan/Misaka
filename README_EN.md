@@ -1,5 +1,10 @@
 # Misaka
 
+[![License](https://img.shields.io/github/license/knqiufan/Misaka?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Flet](https://img.shields.io/badge/Flet-0.27+-blue?style=flat-square)](https://flet.dev)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-lightgrey?style=flat-square)](https://github.com/knqiufan/Misaka)
+
 [中文](README.md) · English
 
 > A desktop GUI client for Claude Code, built with Python and [Flet](https://flet.dev).
@@ -44,8 +49,23 @@ Misaka stands out with these **unique features**:
 | **API provider config** | Add and manage multiple Anthropic API providers with custom base URLs |
 | **Permission control** | Fine-grained tool permission modes with interactive approval dialogs |
 | **Update notifications** | Automatic check for Claude Code CLI updates on startup |
-| **Cross-platform** | Windows · macOS · Linux |
+| **Cross-platform** | Windows · macOS |
 | **Developer mode** | Hot reload and debug logging support for development |
+
+---
+
+## 🛠 Tech Stack
+
+| Category | Technology |
+|----------|------------|
+| **Language** | Python 3.10+ |
+| **UI Framework** | [Flet](https://flet.dev) (Flutter-based) |
+| **Claude Integration** | [claude-agent-sdk](https://pypi.org/project/claude-agent-sdk/) |
+| **Runtime** | Node.js (Claude Code CLI) |
+| **Syntax Highlighting** | Pygments |
+| **Image Handling** | Pillow |
+| **File Watching** | watchdog |
+| **Async I/O** | aiofiles · anyio |
 
 ---
 

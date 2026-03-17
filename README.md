@@ -1,5 +1,10 @@
 # Misaka
 
+[![License](https://img.shields.io/github/license/knqiufan/Misaka?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![Flet](https://img.shields.io/badge/Flet-0.27+-blue?style=flat-square)](https://flet.dev)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-lightgrey?style=flat-square)](https://github.com/knqiufan/Misaka)
+
 中文 · [English](README_EN.md)
 
 > 当前项目完全开源，只用作为学习使用，项目还比较初级有很多地方需要持续优化，欢迎大家来 star 一同共建~
@@ -48,6 +53,21 @@ Misaka 具有以下**独有特性**：
 | **更新提醒** | 启动时自动检测 Claude Code CLI 是否有新版本 |
 | **跨平台** | Windows · macOS |
 | **开发者模式** | 支持热重载和调试日志，便于开发调试 |
+
+---
+
+## 🛠 技术栈
+
+| 分类 | 技术 |
+|------|------|
+| **语言** | Python 3.10+ |
+| **UI 框架** | [Flet](https://flet.dev)（基于 Flutter） |
+| **Claude 集成** | [claude-agent-sdk](https://pypi.org/project/claude-agent-sdk/) |
+| **运行时** | Node.js（Claude Code CLI） |
+| **语法高亮** | Pygments |
+| **图片处理** | Pillow |
+| **文件监听** | watchdog |
+| **异步 I/O** | aiofiles · anyio |
 
 ---
 
