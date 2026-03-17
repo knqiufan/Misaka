@@ -587,6 +587,114 @@ class SessionImportService:
             return None
         return _make_title(info.project_name, info.preview, info.slug)
 
+    def _ensure_session_can_be_imported(
+        self,
+        session_id: str,
+        db: DatabaseBackend,
+        expected_message_count: int,
+    ) -> None:
+        """Reject duplicates unless the existing import is a stale partial record."""
+        existing = db.get_session_by_sdk_id(session_id)
+        if existing is None:
+            return
+        if self._is_stale_partial_import(db, existing.id, expected_message_count):
+            logger.warning(
+                "Removing stale imported session %s for CLI session %s",
+                existing.id,
+                session_id,
+            )
+            if not db.delete_session(existing.id):
+                raise ValueError(
+                    f"Session {session_id} has already been imported "
+                    f"(Misaka session {existing.id})"
+                )
+            return
+        raise ValueError(
+            f"Session {session_id} has already been imported "
+            f"(Misaka session {existing.id})"
+        )
+
+    @staticmethod
+    def _is_stale_partial_import(
+        db: DatabaseBackend,
+        misaka_session_id: str,
+        expected_message_count: int,
+    ) -> bool:
+        """Detect a previously interrupted import that left no messages behind."""
+        if expected_message_count <= 0:
+            return False
+        messages, _ = db.get_messages(misaka_session_id, limit=1)
+        return len(messages) == 0
+
+    @staticmethod
+    def _load_import_payload(file_path: Path) -> tuple[ClaudeSessionInfo, list[dict]]:
+        """Parse the metadata and message payload required for import."""
+        info = _parse_jsonl_metadata(file_path)
+        if info is None:
+            raise ValueError(
+                f"Failed to parse session metadata from {file_path}"
+            )
+        messages = _parse_jsonl_messages(file_path)
+        return (info, messages)
+
+    @staticmethod
+    def _rollback_failed_import(
+        db: DatabaseBackend,
+        session_id: str,
+        cli_session_id: str,
+    ) -> None:
+        """Remove a partially created session after an import failure."""
+        try:
+            deleted = db.delete_session(session_id)
+        except Exception:
+            logger.exception(
+                "Failed to roll back partial import for CLI session %s "
+                "(Misaka session %s)",
+                cli_session_id,
+                session_id,
+            )
+            return
+        if deleted:
+            logger.warning(
+                "Rolled back partial import for CLI session %s "
+                "(Misaka session %s)",
+                cli_session_id,
+                session_id,
+            )
+
+    @staticmethod
+    def _create_imported_session(
+        db: DatabaseBackend,
+        session_id: str,
+        info: ClaudeSessionInfo,
+        title: str,
+        messages: list[dict],
+    ) -> ChatSession:
+        """Persist the imported session and roll back if any step fails."""
+        session = db.create_session(
+            title=title,
+            working_directory=info.cwd or info.project_path,
+            mode="agent",
+        )
+        try:
+            db.update_sdk_session_id(session.id, session_id)
+            db.add_messages_batch(
+                session_id=session.id,
+                messages=[
+                    {
+                        "role": message["role"],
+                        "content": message["content"],
+                        "token_usage": message.get("token_usage"),
+                    }
+                    for message in messages
+                ],
+            )
+        except Exception:
+            SessionImportService._rollback_failed_import(db, session.id, session_id)
+            raise
+        session.sdk_session_id = session_id
+        return session
+
     def import_session(self, session_id: str, db: DatabaseBackend) -> ChatSession:
         """Import a Claude Code CLI session into the Misaka database.
 
@@ -609,43 +717,19 @@ class SessionImportService:
                 f"Cannot find JSONL file for session {session_id}"
             )
 
-        # Duplicate check: O(1) lookup via indexed column.
-        existing = db.get_session_by_sdk_id(session_id)
-        if existing is not None:
-            raise ValueError(
-                f"Session {session_id} has already been imported "
-                f"(Misaka session {existing.id})"
-            )
-
-        # Parse metadata and messages.
-        info = _parse_jsonl_metadata(file_path)
-        if info is None:
-            raise ValueError(
-                f"Failed to parse session metadata from {file_path}"
-            )
-
-        messages = _parse_jsonl_messages(file_path)
-
-        # Build session title.
-        title = _make_title(info.project_name, info.preview, info.slug)
-
-        # Create the session in the database.
-        session = db.create_session(
-            title=title,
-            working_directory=info.cwd or info.project_path,
-            mode="agent",
+        info, messages = self._load_import_payload(file_path)
+        self._ensure_session_can_be_imported(
+            session_id=session_id,
+            db=db,
+            expected_message_count=len(messages),
         )
-
-        # Store the CLI session UUID so we can detect duplicates later.
-        db.update_sdk_session_id(session.id, session_id)
-
-        # Insert all parsed messages in a single batch.
-        db.add_messages_batch(
-            session_id=session.id,
-            messages=[
-                {"role": m["role"], "content": m["content"], "token_usage": m.get("token_usage")}
-                for m in messages
-            ],
+        title = _make_title(info.project_name, info.preview, info.slug)
+        session = self._create_imported_session(
+            db=db,
+            session_id=session_id,
+            info=info,
+            title=title,
+            messages=messages,
         )
 
         logger.info(
@@ -655,6 +739,21 @@ class SessionImportService:
             session.id,
         )
         return session
+
+    def delete_cli_session(self, session_id: str) -> None:
+        """Delete a Claude CLI session JSONL file from disk."""
+        file_path = self._find_session_file(session_id)
+        if file_path is None:
+            raise FileNotFoundError(
+                f"Cannot find JSONL file for session {session_id}"
+            )
+        try:
+            file_path.unlink()
+        except OSError as exc:
+            raise ValueError(
+                f"Failed to delete CLI session {session_id}: {exc}"
+            ) from exc
+        logger.info("Deleted CLI session file for %s", session_id)
 
     # ----- Internals -----
 

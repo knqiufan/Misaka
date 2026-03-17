@@ -20,10 +20,13 @@ from misaka.services.session.session_import_service import (
     SessionImportService,
 )
 from misaka.ui.common.theme import (
+    ERROR_RED,
     SUCCESS_GREEN,
     make_badge,
     make_button,
+    make_danger_button,
     make_dialog,
+    make_icon_button,
     make_text_button,
     make_text_field,
 )
@@ -57,6 +60,7 @@ class ImportSessionDialog:
         self._offset = 0
         self._search_query = ""
         self._importing_id: str | None = None
+        self._deleting_id: str | None = None
         self._loading = False
         self._search_debounce: asyncio.TimerHandle | None = None
         self._session_list: ft.ListView | None = None
@@ -273,11 +277,16 @@ class ImportSessionDialog:
     def _build_session_card(self, session: ClaudeSessionInfo) -> ft.Control:
         """Build a single session card with compact layout."""
         is_importing = self._importing_id == session.session_id
+        is_deleting = self._deleting_id == session.session_id
 
         title_row = self._build_title_row(session)
         preview_row = self._build_preview_row(session)
         meta_row = self._build_meta_row(session)
-        action_ctrl = self._build_action_control(session, is_importing)
+        action_ctrl = self._build_action_row(
+            session,
+            is_importing,
+            is_deleting,
+        )
 
         card = ft.Container(
             content=ft.Column(
@@ -353,25 +362,35 @@ class ImportSessionDialog:
             opacity=0.45,
         )
 
-    def _build_action_control(
+    def _build_busy_action(
+        self,
+        text_key: str,
+    ) -> ft.Control:
+        """Build a compact busy indicator row for import/delete actions."""
+        return ft.Row(
+            controls=[
+                ft.ProgressRing(width=14, height=14, stroke_width=2),
+                ft.Text(
+                    t(f"import_session.{text_key}"),
+                    size=11,
+                    opacity=0.7,
+                ),
+            ],
+            spacing=6,
+            tight=True,
+        )
+
+    def _build_primary_action_control(
         self,
         session: ClaudeSessionInfo,
         is_importing: bool,
+        is_deleting: bool,
     ) -> ft.Control:
-        """Build import button or status badge."""
+        """Build the main action control for a CLI session row."""
         if is_importing:
-            return ft.Row(
-                controls=[
-                    ft.ProgressRing(width=14, height=14, stroke_width=2),
-                    ft.Text(
-                        t("import_session.importing"),
-                        size=11,
-                        opacity=0.7,
-                    ),
-                ],
-                spacing=6,
-                tight=True,
-            )
+            return self._build_busy_action("importing")
+        if is_deleting:
+            return self._build_busy_action("deleting")
         if self._is_already_imported(session.session_id):
             return ft.Row(
                 controls=[
@@ -391,9 +410,202 @@ class ImportSessionDialog:
             on_click=lambda e, sid=session.session_id: self._handle_import(sid),
         )
 
+    def _build_delete_button(
+        self,
+        session_id: str,
+        disabled: bool,
+    ) -> ft.Control:
+        """Build the delete icon button shown on each session row."""
+        return make_icon_button(
+            ft.Icons.DELETE_OUTLINE,
+            tooltip=t("common.delete"),
+            icon_color=ERROR_RED,
+            icon_size=18,
+            disabled=disabled,
+            on_click=lambda e, sid=session_id: self._confirm_delete_cli_session(sid),
+        )
+
+    def _build_action_row(
+        self,
+        session: ClaudeSessionInfo,
+        is_importing: bool,
+        is_deleting: bool,
+    ) -> ft.Control:
+        """Build the row containing import state/button and delete icon."""
+        primary = self._build_primary_action_control(
+            session,
+            is_importing,
+            is_deleting,
+        )
+        if is_importing or is_deleting:
+            return primary
+        delete_btn = self._build_delete_button(
+            session.session_id,
+            disabled=False,
+        )
+        return ft.Row(
+            controls=[
+                primary,
+                ft.Container(expand=True),
+                delete_btn,
+            ],
+            spacing=8,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
     def _is_already_imported(self, session_id: str) -> bool:
         """Check if session was already imported."""
+        db = None
+        if hasattr(self._state, "services") and self._state.services:
+            db = self._state.services.db
+        if db:
+            return self._get_existing_imported_session(db, session_id) is not None
         return any(s.sdk_session_id == session_id for s in self._state.sessions)
+
+    @staticmethod
+    def _get_existing_imported_session(db, session_id: str):
+        """Return a completed imported session, ignoring stale empty imports."""
+        existing = db.get_session_by_sdk_id(session_id)
+        if existing is None:
+            return None
+        messages, _ = db.get_messages(existing.id, limit=1)
+        if not messages:
+            return None
+        return existing
+
+    def _sync_imported_session_state(self, session_id: str, session) -> None:
+        """Merge the imported session into in-memory state without duplicates."""
+        remaining = [
+            s
+            for s in self._state.sessions
+            if s.id != session.id and s.sdk_session_id != session_id
+        ]
+        self._state.sessions = [session] + remaining
+
+    def _reset_importing_ui(self) -> None:
+        """Clear importing state and refresh the visible list."""
+        self._importing_id = None
+        self._refresh_list()
+        if self._session_list:
+            self._session_list.update()
+
+    def _reset_deleting_ui(self) -> None:
+        """Clear deleting state and refresh the visible list."""
+        self._deleting_id = None
+        self._refresh_list()
+        if self._session_list:
+            self._session_list.update()
+
+    def _notify_import_success(self) -> None:
+        """Show the standard import success feedback."""
+        self._page.show_dialog(
+            ft.SnackBar(
+                content=ft.Text(t("import_session.import_success")),
+                bgcolor=ft.Colors.GREEN,
+            )
+        )
+
+    def _notify_import_error(self, error: Exception) -> None:
+        """Show the standard import failure feedback."""
+        self._page.show_dialog(
+            ft.SnackBar(
+                content=ft.Text(
+                    t("import_session.import_error", error=str(error))
+                ),
+                bgcolor=ft.Colors.ERROR,
+            )
+        )
+
+    def _notify_delete_success(self) -> None:
+        """Show the standard delete success feedback."""
+        self._page.show_dialog(
+            ft.SnackBar(
+                content=ft.Text(t("import_session.delete_success")),
+                bgcolor=ft.Colors.GREEN,
+            )
+        )
+
+    def _notify_delete_error(self, error: Exception) -> None:
+        """Show the standard delete failure feedback."""
+        self._page.show_dialog(
+            ft.SnackBar(
+                content=ft.Text(
+                    t("import_session.delete_error", error=str(error))
+                ),
+                bgcolor=ft.Colors.ERROR,
+            )
+        )
+
+    def _reload_after_delete(self) -> None:
+        """Reload the current import list after deleting a CLI session."""
+        self._deleting_id = None
+        self._loaded = []
+        self._offset = 0
+        self._total_count = 0
+        self._refresh_list()
+        if self._session_list:
+            self._session_list.update()
+        self._update_status_text()
+        self._update_load_more_visibility()
+        self._refresh_footer()
+        self._schedule_load(offset=0, append=False)
+
+    def _confirm_delete_cli_session(self, session_id: str) -> None:
+        """Show a confirmation dialog before deleting a CLI session."""
+        if self._importing_id or self._deleting_id:
+            return
+
+        def do_delete(e: ft.ControlEvent) -> None:
+            self._page.pop_dialog()
+            self._handle_delete_cli_session(session_id)
+
+        dialog = make_dialog(
+            title=t("chat.delete"),
+            content=ft.Text(t("chat.confirm_delete")),
+            actions=[
+                make_text_button(
+                    t("common.cancel"),
+                    on_click=lambda e: self._page.pop_dialog(),
+                ),
+                make_danger_button(t("common.delete"), on_click=do_delete),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self._page.show_dialog(dialog)
+
+    def _handle_delete_cli_session(self, session_id: str) -> None:
+        """Delete the selected CLI session and refresh the dialog list."""
+        if self._importing_id or self._deleting_id:
+            return
+        self._deleting_id = session_id
+        self._refresh_list()
+        if self._session_list:
+            self._session_list.update()
+        try:
+            self._service.delete_cli_session(session_id)
+        except Exception as exc:
+            logger.exception("Failed to delete CLI session %s", session_id)
+            self._reset_deleting_ui()
+            self._notify_delete_error(exc)
+            return
+        self._reload_after_delete()
+        self._notify_delete_success()
+
+    def _complete_import(self, session_id: str, session) -> None:
+        """Finalize a successful import and refresh the page state."""
+        self._sync_imported_session_state(session_id, session)
+        self._importing_id = None
+        try:
+            self.close()
+            self._state.update()
+            self._notify_import_success()
+            self._on_import(session.id)
+        except Exception:
+            logger.exception(
+                "Imported session %s, but failed to refresh UI",
+                session_id,
+            )
+            self._state.update()
 
     def _on_search_changed(self, e: ft.ControlEvent) -> None:
         """Handle search input with debounce."""
@@ -434,38 +646,19 @@ class ImportSessionDialog:
             db = self._state.services.db
 
         if not db:
-            self._importing_id = None
-            self._refresh_list()
-            if self._session_list:
-                self._session_list.update()
+            self._reset_importing_ui()
             return
 
         try:
             session = self._service.import_session(session_id, db)
-            self._state.sessions = [session] + self._state.sessions
-            self.close()
-            self._importing_id = None
-
-            self._page.show_dialog(
-                ft.SnackBar(
-                    content=ft.Text(t("import_session.import_success")),
-                    bgcolor=ft.Colors.GREEN,
-                )
-            )
-            self._on_import(session.id)
-
         except Exception as exc:
+            existing = self._get_existing_imported_session(db, session_id)
+            if existing is not None:
+                self._complete_import(session_id, existing)
+                return
             logger.exception("Failed to import session %s", session_id)
-            self._importing_id = None
-            self._refresh_list()
-            if self._session_list:
-                self._session_list.update()
+            self._reset_importing_ui()
+            self._notify_import_error(exc)
+            return
 
-            self._page.show_dialog(
-                ft.SnackBar(
-                    content=ft.Text(
-                        t("import_session.import_error", error=str(exc))
-                    ),
-                    bgcolor=ft.Colors.ERROR,
-                )
-            )
+        self._complete_import(session_id, session)
