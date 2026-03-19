@@ -5,7 +5,7 @@
 #define MyAppName "Misaka"
 ; Version can be overridden via command line: iscc /DMyAppVersion=x.x.x installer.iss
 #ifndef MyAppVersion
-  #define MyAppVersion "0.1.1"
+  #define MyAppVersion "0.1.2"
 #endif
 #define MyAppExeName "Misaka.exe"
 #define MyAppPublisher "Misaka"
