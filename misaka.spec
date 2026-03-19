@@ -16,6 +16,8 @@ Or via:
 import sys
 from pathlib import Path
 
+import flet
+
 block_cipher = None
 
 # Project root directory
@@ -24,11 +26,23 @@ project_root = Path(SPECPATH)
 # i18n JSON files must be bundled so Path(__file__).parent finds them when frozen
 _i18n_dir = project_root / "misaka" / "i18n"
 _assets_dir = project_root / "assets"
+
+# Flet icon data files (loaded at runtime; PyInstaller does not auto-collect them)
+_flet_path = Path(flet.__file__).parent
+_flet_datas = []
+_material_icons = _flet_path / "controls" / "material" / "icons.json"
+if _material_icons.exists():
+    _flet_datas.append((str(_material_icons), "flet/controls/material"))
+_cupertino_icons = _flet_path / "controls" / "cupertino" / "cupertino_icons.json"
+if _cupertino_icons.exists():
+    _flet_datas.append((str(_cupertino_icons), "flet/controls/cupertino"))
+
 _datas = [
     (str(_i18n_dir / "en.json"), "misaka/i18n"),
     (str(_i18n_dir / "zh_CN.json"), "misaka/i18n"),
     (str(_i18n_dir / "zh_TW.json"), "misaka/i18n"),
     (str(_assets_dir), "assets"),
+    *_flet_datas,
 ]
 
 a = Analysis(
