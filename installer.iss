@@ -35,7 +35,8 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 使用项目内嵌的语言文件，不依赖 Inno Setup 安装目录中的 Unofficial 语言包
+Name: "chinesesimplified"; MessagesFile: "installer_languages\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
