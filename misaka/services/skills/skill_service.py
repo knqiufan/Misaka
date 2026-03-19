@@ -151,8 +151,8 @@ class SkillService:
 
         Args:
             cwd: The current working directory used to resolve the
-                 *project* skill source.  When ``None``, the project
-                 source is skipped.
+                 *project* skill source.  When ``None``, the current
+                 working directory is used automatically.
 
         Returns:
             A list of :class:`SkillFile` instances.  The list may be
@@ -164,34 +164,49 @@ class SkillService:
 
         # 1. Global skills
         global_dir = home / ".claude" / "commands"
-        skills.extend(self._scan_directory(global_dir, source="global"))
+        global_skills = self._scan_directory(global_dir, source="global")
+        logger.debug("Global skills from %s: %d found", global_dir, len(global_skills))
+        skills.extend(global_skills)
 
-        # 2. Project skills
-        if cwd is not None:
-            project_dir = Path(cwd) / ".claude" / "commands"
-            skills.extend(self._scan_directory(project_dir, source="project"))
+        # 2. Project skills — always attempt with cwd fallback
+        effective_cwd = cwd or str(Path.cwd())
+        project_dir = Path(effective_cwd) / ".claude" / "commands"
+        project_skills = self._scan_directory(project_dir, source="project")
+        logger.debug("Project skills from %s: %d found", project_dir, len(project_skills))
+        skills.extend(project_skills)
 
         # 3. Installed skills (agents)
         agents_dir = home / ".agents" / "skills"
-        skills.extend(
-            self._scan_installed_skills(agents_dir, installed_source="agents")
-        )
+        agents_skills = self._scan_installed_skills(agents_dir, installed_source="agents")
+        logger.debug("Installed (agents) skills from %s: %d found", agents_dir, len(agents_skills))
+        skills.extend(agents_skills)
 
         # 4. Installed skills (claude)
         claude_skills_dir = home / ".claude" / "skills"
-        skills.extend(
-            self._scan_installed_skills(claude_skills_dir, installed_source="claude")
+        claude_skills = self._scan_installed_skills(claude_skills_dir, installed_source="claude")
+        logger.debug(
+            "Installed (claude) skills from %s: %d found",
+            claude_skills_dir, len(claude_skills),
         )
+        skills.extend(claude_skills)
 
         # 5. Plugin skills
         plugin_base = home / ".claude" / "plugins" / "marketplaces"
-        skills.extend(self._scan_plugin_skills(plugin_base))
+        plugin_skills = self._scan_plugin_skills(plugin_base)
+        logger.debug("Plugin skills from %s: %d found", plugin_base, len(plugin_skills))
+        skills.extend(plugin_skills)
 
         deduplicated = self._deduplicate_skills(skills)
-        logger.debug(
-            "Discovered %d skill(s) in total (%d after dedup)",
+        logger.info(
+            "Skill scan complete: %d total, %d after dedup "
+            "(global=%d, project=%d, agents=%d, claude=%d, plugin=%d)",
             len(skills),
             len(deduplicated),
+            len(global_skills),
+            len(project_skills),
+            len(agents_skills),
+            len(claude_skills),
+            len(plugin_skills),
         )
         return deduplicated
 
@@ -446,22 +461,32 @@ class SkillService:
         """
         skills: list[SkillFile] = []
 
-        if not directory.is_dir():
+        try:
+            if not directory.exists() or not directory.is_dir():
+                return skills
+        except OSError:
+            logger.debug("Cannot access directory: %s", directory)
             return skills
 
         try:
             entries = sorted(directory.iterdir(), key=lambda e: e.name.lower())
-        except (PermissionError, OSError):
-            logger.warning("Cannot read directory: %s", directory)
+        except (PermissionError, OSError) as exc:
+            logger.warning("Cannot read directory %s: %s", directory, exc)
             return skills
 
         for entry in entries:
-            if entry.is_dir():
+            try:
+                is_dir = entry.is_dir()
+                is_file = not is_dir and entry.is_file()
+            except OSError:
+                continue
+
+            if is_dir:
                 child_prefix = f"{prefix}{entry.name}:" if prefix else f"{entry.name}:"
                 skills.extend(
                     self._scan_directory(entry, source=source, prefix=child_prefix)
                 )
-            elif entry.is_file() and entry.suffix.lower() == ".md":
+            elif is_file and entry.suffix.lower() == ".md":
                 skill = self._load_skill_file(entry, source=source, prefix=prefix)
                 if skill is not None:
                     skills.append(skill)
@@ -486,20 +511,30 @@ class SkillService:
         """
         skills: list[SkillFile] = []
 
-        if not directory.is_dir():
+        try:
+            if not directory.exists() or not directory.is_dir():
+                return skills
+        except OSError:
+            logger.debug("Cannot access directory: %s", directory)
             return skills
 
         try:
             entries = sorted(directory.iterdir(), key=lambda e: e.name.lower())
-        except (PermissionError, OSError):
-            logger.warning("Cannot read directory: %s", directory)
+        except (PermissionError, OSError) as exc:
+            logger.warning("Cannot read directory %s: %s", directory, exc)
             return skills
 
         for entry in entries:
-            if not entry.is_dir():
+            try:
+                if not entry.is_dir():
+                    continue
+            except OSError:
                 continue
             skill_file = entry / "SKILL.md"
-            if not skill_file.is_file():
+            try:
+                if not skill_file.is_file():
+                    continue
+            except OSError:
                 continue
 
             try:
@@ -539,47 +574,63 @@ class SkillService:
         """
         skills: list[SkillFile] = []
 
-        if not marketplaces_dir.is_dir():
+        try:
+            if not marketplaces_dir.exists() or not marketplaces_dir.is_dir():
+                return skills
+        except OSError:
+            logger.debug("Cannot access directory: %s", marketplaces_dir)
             return skills
 
         try:
             marketplace_entries = sorted(
                 marketplaces_dir.iterdir(), key=lambda e: e.name.lower()
             )
-        except (PermissionError, OSError):
-            logger.warning("Cannot read directory: %s", marketplaces_dir)
+        except (PermissionError, OSError) as exc:
+            logger.warning("Cannot read directory %s: %s", marketplaces_dir, exc)
             return skills
 
         for marketplace in marketplace_entries:
-            if not marketplace.is_dir():
+            try:
+                if not marketplace.is_dir():
+                    continue
+            except OSError:
                 continue
 
             plugins_dir = marketplace / "plugins"
-            if not plugins_dir.is_dir():
+            try:
+                if not plugins_dir.exists() or not plugins_dir.is_dir():
+                    continue
+            except OSError:
                 continue
 
             try:
                 plugin_entries = sorted(
                     plugins_dir.iterdir(), key=lambda e: e.name.lower()
                 )
-            except (PermissionError, OSError):
-                logger.warning("Cannot read directory: %s", plugins_dir)
+            except (PermissionError, OSError) as exc:
+                logger.warning("Cannot read directory %s: %s", plugins_dir, exc)
                 continue
 
             for plugin in plugin_entries:
-                if not plugin.is_dir():
+                try:
+                    if not plugin.is_dir():
+                        continue
+                except OSError:
                     continue
 
                 commands_dir = plugin / "commands"
-                if not commands_dir.is_dir():
+                try:
+                    if not commands_dir.exists() or not commands_dir.is_dir():
+                        continue
+                except OSError:
                     continue
 
                 try:
                     md_files = sorted(
                         commands_dir.iterdir(), key=lambda e: e.name.lower()
                     )
-                except (PermissionError, OSError):
-                    logger.warning("Cannot read directory: %s", commands_dir)
+                except (PermissionError, OSError) as exc:
+                    logger.warning("Cannot read directory %s: %s", commands_dir, exc)
                     continue
 
                 for md_file in md_files:

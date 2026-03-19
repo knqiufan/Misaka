@@ -17,10 +17,8 @@ from misaka.ui.common.theme import (
     RADIUS_LG,
     RADIUS_MD,
     make_button,
-    make_dialog,
     make_empty_state,
     make_outlined_button,
-    make_text_button,
     make_text_field,
 )
 from misaka.ui.skills.pages.skill_editor_panel import SkillEditorPanel
@@ -43,7 +41,11 @@ class ExtensionsPage(ft.Column):
         self._search_query = ""
         self._skill_list: ft.ListView | None = None
         self._editor_panel: SkillEditorPanel | None = None
-        self._build_ui()
+        self._file_picker: ft.FilePicker | None = None
+        self._initialized = False
+        # Build the UI skeleton without loading data yet.
+        # Data is loaded on first refresh() or when the page becomes visible.
+        self._build_ui_skeleton()
 
     def _get_skill_service(self):
         return self.state.get_service("skill_service")
@@ -53,14 +55,17 @@ class ExtensionsPage(ft.Column):
     # ------------------------------------------------------------------
 
     def _load_skills(self) -> None:
+        """Scan all skill sources and populate ``_skills``."""
         svc = self._get_skill_service()
-        if svc:
-            try:
-                self._skills = svc.list_skills()
-            except Exception as exc:
-                logger.warning("Failed to load skills: %s", exc)
-                self._skills = []
-        else:
+        if not svc:
+            logger.warning("SkillService not available, cannot load skills")
+            self._skills = []
+            self._apply_filter()
+            return
+        try:
+            self._skills = svc.list_skills()
+        except Exception as exc:
+            logger.warning("Failed to load skills: %s", exc)
             self._skills = []
         self._apply_filter()
 
@@ -75,12 +80,11 @@ class ExtensionsPage(ft.Column):
             ]
 
     # ------------------------------------------------------------------
-    # UI construction
+    # UI construction (one-time skeleton)
     # ------------------------------------------------------------------
 
-    def _build_ui(self) -> None:
-        self._load_skills()
-
+    def _build_ui_skeleton(self) -> None:
+        """Build the static UI structure once. Data is populated later."""
         header = self._build_header()
 
         search_field = make_text_field(
@@ -98,13 +102,13 @@ class ExtensionsPage(ft.Column):
             padding=ft.Padding.symmetric(horizontal=8, vertical=8),
             scroll=ft.ScrollMode.AUTO,
         )
-        self._refresh_skill_list()
+        # Show empty state initially
+        self._skill_list.controls = [self._build_empty_list_indicator()]
 
         left_panel = self._build_left_panel(search_field)
 
         self._editor_panel = SkillEditorPanel(
             self.state,
-            self._get_skill_service(),
             on_skill_saved=self._handle_skill_saved,
             on_skill_deleted=self._handle_skill_deleted,
         )
@@ -455,6 +459,26 @@ class ExtensionsPage(ft.Column):
             self._editor_panel.clear()
         self.state.update()
 
+    def _ensure_file_picker(self) -> ft.FilePicker | None:
+        """Lazily create and register a FilePicker on the page.
+
+        Flet's FilePicker is a Service control — it must be appended to
+        ``page.services`` (not overlay) and the page must be updated
+        before the picker can be used.  We create it once and reuse it.
+        """
+        if self._file_picker is not None:
+            return self._file_picker
+
+        page = self.state.page
+        if not page:
+            return None
+
+        picker = ft.FilePicker()
+        page.services.append(picker)
+        page.update()
+        self._file_picker = picker
+        return picker
+
     # ------------------------------------------------------------------
     # ZIP install
     # ------------------------------------------------------------------
@@ -463,77 +487,29 @@ class ExtensionsPage(ft.Column):
         if not e.page:
             return
         page = e.page
-        result, zip_path = self._pick_zip_file_path()
-        if result == "selected" and zip_path:
-            self._install_skill_from_zip_path(page, zip_path)
+
+        picker = self._ensure_file_picker()
+        if not picker:
             return
-        if result == "cancelled":
-            return
-        self._show_zip_path_dialog(page)
 
-    @staticmethod
-    def _pick_zip_file_path() -> tuple[str, str | None]:
-        """Open native file dialog and return (status, zip_path).
+        async def _do_pick() -> None:
+            try:
+                files = await picker.pick_files(
+                    dialog_title=t("extensions.install_from_zip"),
+                    file_type=ft.FilePickerFileType.CUSTOM,
+                    allowed_extensions=["zip"],
+                    allow_multiple=False,
+                )
+            except Exception as exc:
+                logger.warning("FilePicker failed: %s", exc)
+                files = None
 
-        Status values:
-        - "selected": user picked a file
-        - "cancelled": dialog opened, but user cancelled/closed it
-        - "unavailable": native picker is not available
-        """
-        try:
-            import tkinter as tk
-            from tkinter import filedialog
-        except ImportError:
-            return "unavailable", None
+            if files:
+                zip_path = files[0].path
+                if zip_path:
+                    self._install_skill_from_zip_path(page, zip_path)
 
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        try:
-            selected = filedialog.askopenfilename(
-                title="Select skill ZIP",
-                filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")],
-            )
-            if selected:
-                return "selected", selected
-            return "cancelled", None
-        finally:
-            root.destroy()
-
-    def _show_zip_path_dialog(self, page: ft.Page) -> None:
-        zip_path_field = make_text_field(
-            label=t("extensions.zip_path_label"),
-            hint_text=t("extensions.zip_path_hint"),
-            autofocus=True,
-            dense=True,
-        )
-
-        def do_install(_ev: ft.ControlEvent) -> None:
-            zip_path = (zip_path_field.value or "").strip()
-            if not zip_path:
-                return
-            page.pop_dialog()
-            self._install_skill_from_zip_path(page, zip_path)
-
-        dialog = make_dialog(
-            title=t("extensions.install_from_zip"),
-            content=ft.Column(
-                controls=[
-                    ft.Text(t("extensions.install_zip_manual_notice"), size=12, opacity=0.7),
-                    zip_path_field,
-                ],
-                spacing=12,
-                tight=True,
-                width=420,
-            ),
-            actions=[
-                make_text_button(
-                    t("common.cancel"), on_click=lambda ev: page.pop_dialog(),
-                ),
-                make_button(t("common.confirm"), on_click=do_install),
-            ],
-        )
-        page.show_dialog(dialog)
+        page.run_task(_do_pick)
 
     def _install_skill_from_zip_path(self, page: ft.Page, zip_path: str) -> None:
         svc = self._get_skill_service()
@@ -567,5 +543,14 @@ class ExtensionsPage(ft.Column):
         page.show_dialog(snackbar)
 
     def refresh(self) -> None:
-        """Rebuild the extensions page."""
-        self._build_ui()
+        """Reload skill data and update the existing UI controls.
+
+        Called by AppShell when the user navigates to this page.
+        Does NOT rebuild the control tree — only reloads data and
+        updates the list contents in-place.
+        """
+        self._load_skills()
+        self._refresh_skill_list()
+        # Clear editor selection on page re-entry to avoid stale state
+        if not self._initialized:
+            self._initialized = True

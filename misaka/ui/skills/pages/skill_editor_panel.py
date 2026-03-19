@@ -25,7 +25,6 @@ from misaka.ui.common.theme import (
 )
 
 if TYPE_CHECKING:
-    from misaka.services.skills.skill_service import SkillService
     from misaka.state import AppState
 
 logger = logging.getLogger(__name__)
@@ -51,9 +50,9 @@ class SkillEditorPanel(ft.Container):
     Parameters
     ----------
     state:
-        Application state (used for ``state.update()``).
-    skill_service:
-        Reference to the ``SkillService`` instance (may be ``None``).
+        Application state — used both for ``state.update()`` and to
+        dynamically look up the ``SkillService`` via
+        ``state.get_service("skill_service")``.
     on_skill_saved:
         Callback invoked after a skill is saved successfully.
         Receives ``(skill_name: str, skill_source: str)`` so the parent
@@ -65,13 +64,11 @@ class SkillEditorPanel(ft.Container):
     def __init__(
         self,
         state: AppState,
-        skill_service: SkillService | None,
         *,
         on_skill_saved: Callable[[str, str], None] | None = None,
         on_skill_deleted: Callable[[], None] | None = None,
     ) -> None:
         self._state = state
-        self._skill_service = skill_service
         self._on_skill_saved = on_skill_saved
         self._on_skill_deleted = on_skill_deleted
 
@@ -89,6 +86,10 @@ class SkillEditorPanel(ft.Container):
             expand=True,
             padding=ft.Padding.all(16),
         )
+
+    def _get_skill_service(self):
+        """Dynamically fetch SkillService from state every time it's needed."""
+        return self._state.get_service("skill_service")
 
     @property
     def selected_skill(self):
@@ -201,7 +202,7 @@ class SkillEditorPanel(ft.Container):
         ]
 
     def _on_save_click(self, e: ft.ControlEvent) -> None:
-        svc = self._skill_service
+        svc = self._get_skill_service()
         skill = self._selected_skill
         if not svc or not skill:
             return
@@ -225,7 +226,7 @@ class SkillEditorPanel(ft.Container):
 
         def do_delete(_ev: ft.ControlEvent) -> None:
             page.pop_dialog()
-            svc = self._skill_service
+            svc = self._get_skill_service()
             if not svc:
                 return
             try:

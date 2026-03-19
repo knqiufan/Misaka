@@ -16,7 +16,9 @@ from misaka.services.session.session_import_service import (
 
 
 def _make_cli_session_file(projects_dir: Path, session_id: str) -> Path:
-    project_dir = projects_dir / "D:-code-Misaka"
+    # Use a Unix-style encoded project name to avoid Windows interpreting
+    # "D:" as a drive letter in pathlib (which would escape tmp_path).
+    project_dir = projects_dir / "Users-foo-projects-Misaka"
     project_dir.mkdir(parents=True, exist_ok=True)
     file_path = project_dir / f"{session_id}.jsonl"
     file_path.write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n')

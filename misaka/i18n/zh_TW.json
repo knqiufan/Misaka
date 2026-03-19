@@ -211,10 +211,7 @@
     "refresh_skills": "重新整理",
     "skills_refreshed": "技能列表已重新整理。",
     "install_zip_success": "已從 ZIP 安裝 {count} 個技能包。",
-    "install_zip_failed": "ZIP 安裝失敗：{error}",
-    "install_zip_manual_notice": "目前環境不支援系統檔案選擇器，請輸入 ZIP 檔案絕對路徑。",
-    "zip_path_label": "ZIP 檔案路徑",
-    "zip_path_hint": "例如 C:/Users/you/Downloads/my-skill.zip"
+    "install_zip_failed": "ZIP 安裝失敗：{error}"
   },
   "import_session": {
     "title": "匯入 CLI 會話",

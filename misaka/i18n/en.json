@@ -211,10 +211,7 @@
     "refresh_skills": "Refresh",
     "skills_refreshed": "Skills list refreshed.",
     "install_zip_success": "Installed {count} skill package(s) from ZIP.",
-    "install_zip_failed": "ZIP install failed: {error}",
-    "install_zip_manual_notice": "Native file picker is unavailable. Please input the ZIP file path.",
-    "zip_path_label": "ZIP File Path",
-    "zip_path_hint": "e.g. C:/Users/you/Downloads/my-skill.zip"
+    "install_zip_failed": "ZIP install failed: {error}"
   },
   "import_session": {
     "title": "Import CLI Session",
