@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 import flet
+import flet_desktop
 
 block_cipher = None
 
@@ -37,12 +38,21 @@ _cupertino_icons = _flet_path / "controls" / "cupertino" / "cupertino_icons.json
 if _cupertino_icons.exists():
     _flet_datas.append((str(_cupertino_icons), "flet/controls/cupertino"))
 
+# flet_desktop contains the Flutter desktop client binary (flet.exe + DLLs + data).
+# It MUST be bundled — otherwise the frozen app tries to pip-install it at runtime.
+_flet_desktop_path = Path(flet_desktop.__file__).parent
+_flet_desktop_app = _flet_desktop_path / "app"
+_flet_desktop_datas = []
+if _flet_desktop_app.exists():
+    _flet_desktop_datas.append((str(_flet_desktop_app), "flet_desktop/app"))
+
 _datas = [
     (str(_i18n_dir / "en.json"), "misaka/i18n"),
     (str(_i18n_dir / "zh_CN.json"), "misaka/i18n"),
     (str(_i18n_dir / "zh_TW.json"), "misaka/i18n"),
     (str(_assets_dir), "assets"),
     *_flet_datas,
+    *_flet_desktop_datas,
 ]
 
 a = Analysis(
@@ -117,6 +127,8 @@ a = Analysis(
         "flet",
         "flet_core",
         "flet_runtime",
+        "flet_desktop",
+        "flet_desktop.version",
         "pygments",
         "pygments.lexers",
         "pygments.formatters",
