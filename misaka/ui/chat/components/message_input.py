@@ -9,6 +9,7 @@ Supports image upload via file picker and clipboard paste (Ctrl+V).
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import logging
 import os
 from collections.abc import Callable
@@ -41,6 +42,15 @@ _CLAUDE_ATTACH_EXTENSIONS = [
 
 # Image formats that should be processed as image attachments
 _IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp"}
+
+
+@dataclasses.dataclass
+class FileRef:
+    """Mapping between a short display tag and an absolute file path."""
+
+    display: str
+    abs_path: str
+    is_dir: bool
 
 
 class MessageInput(ft.Container):
@@ -85,6 +95,12 @@ class MessageInput(ft.Container):
         self._pending_images: list[PendingImage] = []
         # Keyboard modifier tracking for Ctrl+V
         self._ctrl_pressed: bool = False
+        # File reference tags: display text -> FileRef mapping
+        self._file_references: dict[str, FileRef] = {}
+        self._prev_text: str = ""
+        self._guard_in_progress: bool = False
+        self._file_hint_row: ft.Row | None = None
+        self._file_hint_container: ft.Container | None = None
         self._build_ui()
 
     async def _do_focus(self) -> None:
@@ -216,12 +232,26 @@ class MessageInput(ft.Container):
             on_click=self._handle_shell_click,
         )
 
-        # Content column: menus, image preview bar, input shell
+        # File reference hint bar (above input, below image preview)
+        self._file_hint_row = ft.Row(
+            controls=[],
+            spacing=4,
+            wrap=True,
+            run_spacing=4,
+        )
+        self._file_hint_container = ft.Container(
+            content=self._file_hint_row,
+            visible=False,
+            padding=ft.Padding.only(left=14, right=14, top=2, bottom=4),
+        )
+
+        # Content column: menus, image preview bar, file hints, input shell
         content_column = ft.Column(
             controls=[
                 self._command_menu_container,
                 self._file_menu_container,
                 self._image_preview_bar,
+                self._file_hint_container,
                 self._input_shell,
             ],
             spacing=0,
@@ -269,8 +299,29 @@ class MessageInput(ft.Container):
     # ------------------------------------------------------------------
 
     def _handle_text_change(self, e: ft.ControlEvent) -> None:
-        """Detect '/' prefix or '@' for commands and file picking."""
+        """Detect '/' prefix or '@' for commands and file picking.
+
+        Also enforces atomic integrity of file-reference tags: if a user
+        partially deletes a tag, the remaining fragment is removed
+        automatically.
+        """
         value = e.data or ""
+
+        if self._guard_in_progress:
+            self._prev_text = value
+            return
+
+        fixed = self._guard_file_references(value)
+        if fixed is not None:
+            self._guard_in_progress = True
+            self._text_field.value = fixed  # type: ignore[union-attr]
+            self._prev_text = fixed
+            self._text_field.update()  # type: ignore[union-attr]
+            self._guard_in_progress = False
+            self._refresh_file_hints()
+            return
+
+        self._prev_text = value
 
         self._detect_at_file_picker(value)
 
@@ -358,6 +409,7 @@ class MessageInput(ft.Container):
             if self._text_field:
                 self._text_field.value = ""
                 self._text_field.update()
+            self._clear_file_references()
             self._show_model_menu()
             return
 
@@ -365,13 +417,14 @@ class MessageInput(ft.Container):
             if self._text_field:
                 self._text_field.value = ""
                 self._text_field.update()
+            self._clear_file_references()
             if self._on_command:
                 self._on_command(f"/{cmd.name}")
         elif cmd.prompt and self._on_send:
-            # 有 prompt 的命令（如 /init）直接发送，不显示 badge
             if self._text_field:
                 self._text_field.value = ""
                 self._text_field.update()
+            self._clear_file_references()
             self._on_send(cmd.prompt, [])
         else:
             self._set_badge(cmd)
@@ -379,6 +432,7 @@ class MessageInput(ft.Container):
                 self._text_field.value = ""
                 self._text_field.update()
                 self._schedule_focus()
+            self._clear_file_references()
 
     # ------------------------------------------------------------------
     # File menu (@ file picking)
@@ -565,10 +619,20 @@ class MessageInput(ft.Container):
             self._show_file_menu(new_query)
             return
 
-        self._text_field.value = f"{before}@{node.path} "
+        # Replace the @query with a short file-reference tag
+        display = self._make_unique_display(node.path)
+        self._file_references[display] = FileRef(
+            display=display,
+            abs_path=node.path,
+            is_dir=False,
+        )
+        new_value = f"{before}{display} "
+        self._text_field.value = new_value
+        self._prev_text = new_value
         self._text_field.update()
         self._schedule_focus()
         self._hide_file_menu()
+        self._refresh_file_hints()
 
     @staticmethod
     def _build_dir_query(old_query: str, dir_name: str) -> str:
@@ -592,21 +656,167 @@ class MessageInput(ft.Container):
             self._file_menu_container.update()
 
     # ------------------------------------------------------------------
-    # Insert file path from external source (right-click menu)
+    # File reference tag helpers
     # ------------------------------------------------------------------
 
-    def insert_at_symbol(self, path: str) -> None:
-        """Insert a file path prefixed with @ into the input field.
+    def _make_unique_display(self, path: str) -> str:
+        """Generate a unique short display tag like ``[@filename.ext]``.
 
-        Trailing space prevents the @ file picker from re-activating.
+        If a tag with the same basename already maps to a *different* path,
+        disambiguate by prepending the parent directory name.
         """
+        basename = os.path.basename(path.rstrip("\\/"))
+        if os.path.isdir(path):
+            candidate = f"[@{basename}/]"
+        else:
+            candidate = f"[@{basename}]"
+
+        existing = self._file_references.get(candidate)
+        if existing is None or existing.abs_path == path:
+            return candidate
+
+        parent = os.path.basename(os.path.dirname(path.rstrip("\\/")))
+        if parent:
+            if os.path.isdir(path):
+                return f"[@{parent}/{basename}/]"
+            return f"[@{parent}/{basename}]"
+        return candidate
+
+    def _insert_file_tag(self, path: str) -> None:
+        """Create a file-reference tag and insert it at the current cursor."""
+        if not self._text_field:
+            return
+
+        display = self._make_unique_display(path)
+        if display in self._file_references:
+            if self._file_references[display].abs_path == path:
+                pass  # same file selected again, still insert a second occurrence
+            # different path collision already handled by _make_unique_display
+        self._file_references[display] = FileRef(
+            display=display,
+            abs_path=path,
+            is_dir=os.path.isdir(path),
+        )
+
+        self._insert_text_at_cursor(f"{display} ")
+        self._refresh_file_hints()
+
+    def _insert_text_at_cursor(self, text: str) -> None:
+        """Insert *text* at the current cursor position in the TextField."""
         if not self._text_field:
             return
 
         current = self._text_field.value or ""
-        separator = " " if current and not current.endswith((" ", "\n")) else ""
-        self._text_field.value = f"{current}{separator}@{path} "
+        cursor_pos = len(current)
+
+        sel = self._text_field.selection
+        if sel is not None and sel.is_valid:
+            start, end = sel.start, sel.end
+            before = current[:start]
+            after = current[end:]
+            new_value = f"{before}{text}{after}"
+            cursor_pos = start + len(text)
+        else:
+            separator = " " if current and not current.endswith((" ", "\n")) else ""
+            new_value = f"{current}{separator}{text}"
+            cursor_pos = len(new_value)
+
+        self._text_field.value = new_value
+        self._text_field.selection = ft.TextSelection(
+            base_offset=cursor_pos, extent_offset=cursor_pos,
+        )
+        self._prev_text = new_value
         self._text_field.update()
+
+    # ------------------------------------------------------------------
+    # Atomic integrity guard for file-reference tags
+    # ------------------------------------------------------------------
+
+    def _guard_file_references(self, new_text: str) -> str | None:
+        """If any registered tag was partially edited, remove the remnant.
+
+        Returns the corrected text when a fix was applied, or ``None``
+        when nothing changed.
+        """
+        if not self._file_references:
+            return None
+
+        damaged = [d for d in self._file_references if d not in new_text]
+        if not damaged:
+            return None
+
+        fixed = self._remove_damaged_tags(new_text, damaged)
+        for d in damaged:
+            del self._file_references[d]
+        return fixed
+
+    def _remove_damaged_tags(self, new_text: str, damaged: list[str]) -> str:
+        """Remove remnant characters of *damaged* tags from *new_text*.
+
+        Strategy: rebuild ``new_text`` from ``_prev_text`` by removing
+        every damaged tag entirely, then replaying the user's edit.
+        """
+        old = self._prev_text
+        prefix, old_end, new_end = self._diff_bounds(old, new_text)
+        user_inserted = new_text[prefix:new_end]
+
+        cleaned_old = old
+        for display in damaged:
+            tag_pos = cleaned_old.find(display)
+            if tag_pos < 0:
+                continue
+
+            remove_start = tag_pos
+            remove_end = tag_pos + len(display)
+
+            # Also consume a trailing space that was auto-inserted with the tag
+            if remove_end < len(cleaned_old) and cleaned_old[remove_end] == " ":
+                remove_end += 1
+
+            removed_len = remove_end - remove_start
+            cleaned_old = cleaned_old[:remove_start] + cleaned_old[remove_end:]
+
+            removed_before_edit = 0
+            if remove_start < prefix:
+                removed_before_edit = min(remove_end, prefix) - remove_start
+            prefix -= removed_before_edit
+            old_end -= removed_len
+
+        # Clamp edit boundaries after removals
+        prefix = max(0, min(prefix, len(cleaned_old)))
+        old_end = max(prefix, min(old_end, len(cleaned_old)))
+
+        result = cleaned_old[:prefix] + user_inserted + cleaned_old[old_end:]
+        return result
+
+    @staticmethod
+    def _diff_bounds(old: str, new: str) -> tuple[int, int, int]:
+        """Return *(common_prefix_len, old_change_end, new_change_end)*.
+
+        ``old[prefix:old_change_end]`` was replaced by
+        ``new[prefix:new_change_end]``.
+        """
+        i = 0
+        while i < len(old) and i < len(new) and old[i] == new[i]:
+            i += 1
+        j_old, j_new = len(old), len(new)
+        while j_old > i and j_new > i and old[j_old - 1] == new[j_new - 1]:
+            j_old -= 1
+            j_new -= 1
+        return i, j_old, j_new
+
+    # ------------------------------------------------------------------
+    # Insert file path from external source (right-click menu)
+    # ------------------------------------------------------------------
+
+    def insert_at_symbol(self, path: str) -> None:
+        """Insert a file-reference tag into the input field.
+
+        Shows a short ``[@filename.ext]`` placeholder instead of the full
+        absolute path.  The placeholder is resolved back to the real path
+        on send.
+        """
+        self._insert_file_tag(path)
         self._suppress_focus_close = True
         self._schedule_focus()
 
@@ -792,6 +1002,106 @@ class MessageInput(ft.Container):
         else:
             self._handle_send(e)
 
+    def _resolve_file_tags(self, text: str) -> str:
+        """Replace all ``[@filename]`` placeholders with ``@absolute_path``."""
+        for display, ref in self._file_references.items():
+            text = text.replace(display, f"@{ref.abs_path}")
+        return text
+
+    def _clear_file_references(self) -> None:
+        """Reset file-reference state (after send / session switch)."""
+        self._file_references.clear()
+        self._prev_text = ""
+        self._refresh_file_hints()
+
+    # ------------------------------------------------------------------
+    # File reference hint bar
+    # ------------------------------------------------------------------
+
+    def _refresh_file_hints(self) -> None:
+        """Re-render the hint bar showing full paths of referenced files."""
+        if not self._file_hint_row or not self._file_hint_container:
+            return
+
+        if not self._file_references:
+            if self._file_hint_container.visible:
+                self._file_hint_container.visible = False
+                with contextlib.suppress(Exception):
+                    self._file_hint_container.update()
+            return
+
+        chips: list[ft.Control] = []
+        for display, ref in self._file_references.items():
+            chips.append(self._build_hint_chip(display, ref))
+
+        self._file_hint_row.controls = chips
+        self._file_hint_container.visible = True
+        with contextlib.suppress(Exception):
+            self._file_hint_container.update()
+
+    def _build_hint_chip(self, display: str, ref: FileRef) -> ft.Control:
+        """Build a compact chip: icon + filename + close. Hover shows full path."""
+        icon = ft.Icons.FOLDER_ROUNDED if ref.is_dir else ft.Icons.DESCRIPTION_OUTLINED
+        icon_color = _FOLDER_COLOR if ref.is_dir else "#94a3b8"
+        basename = os.path.basename(ref.abs_path.rstrip("\\/"))
+
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(icon, size=11, color=icon_color),
+                    ft.Text(
+                        basename,
+                        size=10,
+                        weight=ft.FontWeight.W_500,
+                        color=ft.Colors.ON_SURFACE_VARIANT,
+                        max_lines=1,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
+                    ft.Container(
+                        content=ft.Icon(
+                            ft.Icons.CLOSE_ROUNDED,
+                            size=10,
+                            color=ft.Colors.with_opacity(0.4, ft.Colors.ON_SURFACE),
+                        ),
+                        on_click=lambda _, d=display: self._remove_file_tag(d),
+                        width=14,
+                        height=14,
+                        alignment=ft.Alignment.CENTER,
+                        border_radius=7,
+                        ink=True,
+                    ),
+                ],
+                spacing=4,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            tooltip=ref.abs_path,
+            padding=ft.Padding.only(left=6, right=4, top=2, bottom=2),
+            border_radius=10,
+            bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE),
+            ),
+        )
+
+    def _remove_file_tag(self, display: str) -> None:
+        """Remove a file-reference tag via the hint-bar close button."""
+        if display not in self._file_references:
+            return
+
+        del self._file_references[display]
+
+        if self._text_field:
+            current = self._text_field.value or ""
+            if display in current:
+                new_value = current.replace(display, "")
+                new_value = new_value.replace("  ", " ")
+                self._text_field.value = new_value
+                self._prev_text = new_value
+                self._text_field.update()
+
+        self._refresh_file_hints()
+
     def _handle_send(self, e: ft.ControlEvent) -> None:
         if not self._text_field:
             return
@@ -803,29 +1113,31 @@ class MessageInput(ft.Container):
             self._remove_badge()
             prompt = badge.prompt
             if user_text:
+                user_text = self._resolve_file_tags(user_text)
                 prompt = f"{prompt}\n\nUser context: {user_text}"
             self._text_field.value = ""
             self._text_field.update()
+            self._clear_file_references()
             if self._on_send and prompt:
                 self._on_send(prompt, [])
             return
 
-        # Check if there's text or images to send
+        user_text = self._resolve_file_tags(user_text)
+
         has_text = bool(user_text)
         has_images = bool(self._pending_images)
 
         if not has_text and not has_images:
             return
 
-        # Capture pending images before clearing
         images_to_send = list(self._pending_images)
 
         self._text_field.value = ""
         self._text_field.update()
         self._hide_command_menu()
         self._hide_file_menu()
+        self._clear_file_references()
 
-        # Clear image preview bar
         if self._image_preview_bar:
             self._image_preview_bar.clear()
         self._pending_images = []
