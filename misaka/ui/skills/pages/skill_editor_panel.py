@@ -59,6 +59,7 @@ class SkillEditorPanel(ft.Container):
         can reload and re-select.
     on_skill_deleted:
         Callback invoked after a skill is deleted successfully.
+        Receives ``(skill_name: str, skill_source: str)`` of the deleted skill.
     """
 
     def __init__(
@@ -66,7 +67,7 @@ class SkillEditorPanel(ft.Container):
         state: AppState,
         *,
         on_skill_saved: Callable[[str, str], None] | None = None,
-        on_skill_deleted: Callable[[], None] | None = None,
+        on_skill_deleted: Callable[[str, str], None] | None = None,
     ) -> None:
         self._state = state
         self._on_skill_saved = on_skill_saved
@@ -224,16 +225,18 @@ class SkillEditorPanel(ft.Container):
         page = e.page
         skill = self._selected_skill
 
+        del_name, del_source = skill.name, skill.source
+
         def do_delete(_ev: ft.ControlEvent) -> None:
             page.pop_dialog()
             svc = self._get_skill_service()
             if not svc:
                 return
             try:
-                svc.delete_skill(skill.name, source=skill.source)
+                svc.delete_skill(del_name, source=del_source)
                 self._show_snackbar(page, t("extensions.skill_deleted"))
                 if self._on_skill_deleted:
-                    self._on_skill_deleted()
+                    self._on_skill_deleted(del_name, del_source)
             except Exception as exc:
                 logger.error("Failed to delete skill: %s", exc)
 

@@ -13,15 +13,20 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
+from misaka.ui.common.context_menu import ContextMenuItem, shared_context_menu
 from misaka.ui.common.theme import (
     RADIUS_LG,
     RADIUS_MD,
     make_button,
+    make_danger_button,
+    make_dialog,
     make_empty_state,
     make_outlined_button,
+    make_text_button,
     make_text_field,
 )
 from misaka.ui.skills.pages.skill_editor_panel import SkillEditorPanel
+from misaka.utils.platform import open_in_file_manager
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -403,7 +408,75 @@ class ExtensionsPage(ft.Column):
                     offset=ft.Offset(0, 1),
                 ),
             ]
-        return ft.Container(**card_style)
+        card = ft.Container(**card_style)
+        return ft.GestureDetector(
+            content=card,
+            on_secondary_tap_down=lambda e, s=skill: self._on_skill_context_menu(e, s),
+        )
+
+    # ------------------------------------------------------------------
+    # Context menu (right-click on skill item)
+    # ------------------------------------------------------------------
+
+    def _on_skill_context_menu(self, e: ft.TapEvent, skill) -> None:
+        """Show context menu for a skill list item."""
+        page = self.page
+        if not page:
+            return
+        pos = e.global_position
+        items: list[ContextMenuItem] = [
+            ContextMenuItem(
+                icon=ft.Icons.FOLDER_OPEN_OUTLINED,
+                label=t("right_panel.open_in_file_manager"),
+                on_click=lambda s=skill: self._open_skill_in_file_manager(s),
+                icon_color="#64748b",
+            ),
+        ]
+        if skill.source in ("global", "project", "installed"):
+            items.append(ContextMenuItem(
+                icon=ft.Icons.DELETE,
+                label=t("extensions.delete_skill"),
+                on_click=lambda s=skill: self._confirm_delete_skill(s),
+                icon_color=ft.Colors.ERROR,
+            ))
+        shared_context_menu.show(page, global_x=pos.x, global_y=pos.y, items=items)
+
+    def _open_skill_in_file_manager(self, skill) -> None:
+        shared_context_menu.dismiss()
+        open_in_file_manager(skill.file_path)
+
+    def _confirm_delete_skill(self, skill) -> None:
+        """Show delete confirmation dialog for a skill from the list."""
+        shared_context_menu.dismiss()
+        page = self.page
+        if not page:
+            return
+        name, source = skill.name, skill.source
+
+        def do_delete(_ev: ft.ControlEvent) -> None:
+            page.pop_dialog()
+            svc = self._get_skill_service()
+            if not svc:
+                return
+            try:
+                svc.delete_skill(name, source=source)
+                self._show_snackbar(page, t("extensions.skill_deleted"))
+                self._reload_after_delete(name, source)
+            except Exception as exc:
+                logger.error("Failed to delete skill: %s", exc)
+
+        dialog = make_dialog(
+            title=t("extensions.delete_skill_title"),
+            content=ft.Text(t("extensions.delete_skill_confirm")),
+            actions=[
+                make_text_button(
+                    t("common.cancel"),
+                    on_click=lambda ev: page.pop_dialog(),
+                ),
+                make_danger_button(t("common.delete"), on_click=do_delete),
+            ],
+        )
+        page.show_dialog(dialog)
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -450,13 +523,27 @@ class ExtensionsPage(ft.Column):
             self._editor_panel.set_skill(self._selected_skill)
         self.state.update()
 
-    def _handle_skill_deleted(self) -> None:
+    def _handle_skill_deleted(self, name: str, source: str) -> None:
         """Called by the editor panel after a successful delete."""
-        self._selected_skill = None
+        self._reload_after_delete(name, source)
+
+    def _reload_after_delete(self, deleted_name: str, deleted_source: str) -> None:
+        """Reload skills and update UI after a skill is deleted.
+
+        Clears the editor only when the deleted skill was the one being viewed,
+        preserving the selection otherwise.
+        """
+        is_selected_deleted = (
+            self._selected_skill is not None
+            and self._selected_skill.name == deleted_name
+            and self._selected_skill.source == deleted_source
+        )
         self._load_skills()
+        if is_selected_deleted:
+            self._selected_skill = None
+            if self._editor_panel:
+                self._editor_panel.clear()
         self._refresh_skill_list()
-        if self._editor_panel:
-            self._editor_panel.clear()
         self.state.update()
 
     def _ensure_file_picker(self) -> ft.FilePicker | None:
