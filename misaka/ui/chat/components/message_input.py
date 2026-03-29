@@ -666,10 +666,7 @@ class MessageInput(ft.Container):
         disambiguate by prepending the parent directory name.
         """
         basename = os.path.basename(path.rstrip("\\/"))
-        if os.path.isdir(path):
-            candidate = f"[@{basename}/]"
-        else:
-            candidate = f"[@{basename}]"
+        candidate = f"[@{basename}/]" if os.path.isdir(path) else f"[@{basename}]"
 
         existing = self._file_references.get(candidate)
         if existing is None or existing.abs_path == path:
@@ -688,10 +685,9 @@ class MessageInput(ft.Container):
             return
 
         display = self._make_unique_display(path)
-        if display in self._file_references:
-            if self._file_references[display].abs_path == path:
-                pass  # same file selected again, still insert a second occurrence
-            # different path collision already handled by _make_unique_display
+        if display in self._file_references and self._file_references[display].abs_path == path:
+            pass  # same file selected again, still insert a second occurrence
+        # different path collision already handled by _make_unique_display
         self._file_references[display] = FileRef(
             display=display,
             abs_path=path,
