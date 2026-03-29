@@ -75,7 +75,8 @@ class MessageItem(ft.Container):
             return
 
         if is_user:
-            self.content = self._build_user_layout(content_controls)
+            bubble_copy_text = self._extract_markdown_from_blocks(blocks)
+            self.content = self._build_user_layout(content_controls, bubble_copy_text)
         else:
             header = self._build_header()
             body = self._wrap_assistant_content(content_controls, blocks)
@@ -91,7 +92,11 @@ class MessageItem(ft.Container):
             self.bgcolor = None
             self.border = None
 
-    def _build_user_layout(self, content_controls: list[ft.Control]) -> ft.Control:
+    def _build_user_layout(
+        self,
+        content_controls: list[ft.Control],
+        bubble_copy_text: str,
+    ) -> ft.Control:
         """Build right-aligned user message: content bubble + avatar on the right."""
         avatar = ft.Container(
             content=ft.Icon(
@@ -137,15 +142,42 @@ class MessageItem(ft.Container):
             ),
         )
 
-        # Spacer: 1 part, bubble: 9 parts — bubble adapts to ~90% of available width
+        copy_row = self._build_user_copy_row(bubble_copy_text)
+        bubble_stack: list[ft.Control] = [bubble]
+        if copy_row is not None:
+            bubble_stack.append(copy_row)
+
+        bubble_with_actions = ft.Column(
+            controls=bubble_stack,
+            spacing=4,
+            expand=True,
+        )
+
+        # Spacer: 1 part, bubble column: 9 parts — bubble adapts to ~90% of available width
         return ft.Row(
             controls=[
                 ft.Container(expand=1),
-                ft.Container(content=bubble, expand=9),
+                ft.Container(content=bubble_with_actions, expand=9),
                 ft.Container(content=avatar, margin=ft.Margin.only(left=10)),
             ],
             alignment=ft.MainAxisAlignment.END,
             vertical_alignment=ft.CrossAxisAlignment.START,
+        )
+
+    def _build_user_copy_row(self, copy_text: str) -> ft.Row | None:
+        """Copy control below the user bubble (outside border/bg); only when there is text."""
+        if not copy_text.strip():
+            return None
+        copy_btn = make_icon_button(
+            ft.Icons.CONTENT_COPY_ROUNDED,
+            tooltip=t("chat.copy_user_message"),
+            on_click=self._copy_to_clipboard,
+            icon_size=14,
+        )
+        copy_btn.data = copy_text
+        return ft.Row(
+            controls=[ft.Container(expand=True), copy_btn],
+            alignment=ft.MainAxisAlignment.END,
         )
 
     def _build_header(self) -> ft.Control:
@@ -191,7 +223,7 @@ class MessageItem(ft.Container):
             copy_btn = make_icon_button(
                 ft.Icons.CONTENT_COPY_ROUNDED,
                 tooltip=t("chat.copy_reply"),
-                on_click=self._copy_reply,
+                on_click=self._copy_to_clipboard,
                 icon_size=14,
             )
             copy_btn.data = markdown_text
@@ -259,8 +291,8 @@ class MessageItem(ft.Container):
                 parts.append(f"```{lang}\n{block.code}\n```")
         return "\n\n".join(parts) if parts else ""
 
-    async def _copy_reply(self, e: ft.ControlEvent) -> None:
-        """Copy assistant reply markdown to clipboard with visual feedback."""
+    async def _copy_to_clipboard(self, e: ft.ControlEvent) -> None:
+        """Copy message markdown (assistant reply or user bubble) with visual feedback."""
         text = getattr(e.control, "data", None) if e.control else None
         if not text or not e.page:
             return

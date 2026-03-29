@@ -44,6 +44,7 @@
     "command_menu": "Command Menu",
     "select_model": "Select Model",
     "copy_reply": "Copy reply",
+    "copy_user_message": "Copy this message",
     "regenerate": "Regenerate",
     "command_interrupted": "Command was interrupted"
   },

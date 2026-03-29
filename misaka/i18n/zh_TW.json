@@ -44,6 +44,7 @@
     "command_menu": "命令選單",
     "select_model": "選擇模型",
     "copy_reply": "複製回覆",
+    "copy_user_message": "複製此則訊息",
     "regenerate": "重新生成",
     "command_interrupted": "命令已被打斷"
   },
