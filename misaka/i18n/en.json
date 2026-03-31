@@ -212,7 +212,12 @@
     "refresh_skills": "Refresh",
     "skills_refreshed": "Skills list refreshed.",
     "install_zip_success": "Installed {count} skill package(s) from ZIP.",
-    "install_zip_failed": "ZIP install failed: {error}"
+    "install_zip_failed": "ZIP install failed: {error}",
+    "skill_name_required": "Skill name is required.",
+    "skill_exists": "A skill with this name already exists.",
+    "folder_files": "Folder Files",
+    "no_folder_files": "No files found",
+    "open_file": "Open in file manager"
   },
   "import_session": {
     "title": "Import CLI Session",

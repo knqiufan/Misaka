@@ -193,7 +193,7 @@ Then click **Reload Config** in the Plugins page. See [Claude Code MCP docs](htt
 
 ### Skills — Quick Guide
 
-Skills (Claude Code Extensions) are markdown files that provide reusable instructions and templates. Open **Skills** from the sidebar to view and manage them. *Create and edit are not yet supported in the UI — add skills manually by placing `.md` files in the paths below.*
+Skills (Claude Code Extensions) are markdown files that provide reusable instructions and templates. Open **Skills** from the sidebar to create, edit, and manage them. You can browse folder contents in the skill detail view, and right-click any skill to open its folder in the system file explorer.
 
 ![image-20260313011413318](./image/image-20260313011413318.png)
 

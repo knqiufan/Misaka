@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import flet as ft
 
 from misaka.i18n import t
 from misaka.ui.common.theme import (
+    RADIUS_LG,
     make_badge,
     make_button,
     make_danger_button,
@@ -23,6 +25,7 @@ from misaka.ui.common.theme import (
     make_text_button,
     make_text_field,
 )
+from misaka.utils.platform import open_in_file_manager
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -138,17 +141,21 @@ class SkillEditorPanel(ft.Container):
         header = self._build_header(skill)
         desc_row = self._build_description(skill)
         path_row = ft.Text(skill.file_path, size=11, opacity=0.4)
+        folder_section = self._build_folder_files_section(skill)
         action_buttons = self._build_action_buttons(is_readonly)
 
+        controls = [
+            header,
+            desc_row,
+            path_row,
+            folder_section,
+            make_divider(),
+            self._editor_field,
+            ft.Row(controls=action_buttons, spacing=8),
+        ]
+
         return ft.Column(
-            controls=[
-                header,
-                desc_row,
-                path_row,
-                make_divider(),
-                self._editor_field,
-                ft.Row(controls=action_buttons, spacing=8),
-            ],
+            controls=controls,
             spacing=8,
             expand=True,
         )
@@ -178,6 +185,102 @@ class SkillEditorPanel(ft.Container):
         if skill.description:
             return ft.Text(skill.description, size=12, opacity=0.6)
         return ft.Container(height=0)
+
+    def _build_folder_files_section(self, skill) -> ft.Control:
+        """Build a collapsible section listing files in the skill's folder."""
+        folder = Path(skill.file_path).parent
+        try:
+            entries = sorted(folder.iterdir(), key=lambda e: (e.is_file(), e.name.lower()))
+            files = [e for e in entries if e.is_file()]
+        except (OSError, PermissionError):
+            files = []
+
+        if not files:
+            return ft.Container(height=0)
+
+        # Collapsed by default if only 1 file (the skill itself)
+        initially_open = len(files) > 1
+
+        def _icon_for_file(name: str) -> str:
+            lower = name.lower()
+            if lower.endswith(".md"):
+                return ft.Icons.DESCRIPTION_OUTLINED
+            if lower.endswith((".json", ".yaml", ".yml", ".toml")):
+                return ft.Icons.SETTINGS_OUTLINED
+            if lower.endswith((".py", ".js", ".ts", ".sh")):
+                return ft.Icons.CODE
+            return ft.Icons.INSERT_DRIVE_FILE_OUTLINED
+
+        def _format_size(size: int) -> str:
+            if size < 1024:
+                return f"{size} B"
+            if size < 1024 * 1024:
+                return f"{size / 1024:.1f} KB"
+            return f"{size / (1024 * 1024):.1f} MB"
+
+        file_rows: list[ft.Control] = []
+        for f in files:
+            try:
+                fsize = f.stat().st_size
+            except OSError:
+                fsize = 0
+            is_current = str(f) == skill.file_path
+            file_rows.append(
+                ft.Container(
+                    content=ft.Row(
+                        controls=[
+                            ft.Icon(
+                                _icon_for_file(f.name),
+                                size=14,
+                                color=(
+                                    ft.Colors.PRIMARY
+                                    if is_current
+                                    else ft.Colors.ON_SURFACE_VARIANT
+                                ),
+                            ),
+                            ft.Text(
+                                f.name,
+                                size=11,
+                                weight=ft.FontWeight.W_600 if is_current else ft.FontWeight.W_400,
+                                expand=True,
+                                max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                            ft.Text(
+                                _format_size(fsize),
+                                size=10,
+                                opacity=0.4,
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+                    border_radius=6,
+                    ink=True,
+                    on_click=lambda _, p=str(f): open_in_file_manager(p),
+                    tooltip=t("extensions.open_file"),
+                )
+            )
+
+        return ft.Container(
+            content=ft.ExpansionTile(
+                title=ft.Text(
+                    t("extensions.folder_files"),
+                    size=12,
+                    weight=ft.FontWeight.W_500,
+                ),
+                expanded=initially_open,
+                tile_padding=ft.Padding.symmetric(horizontal=4, vertical=0),
+                controls_padding=ft.Padding.only(left=4, right=4, bottom=4),
+                controls=file_rows,
+                dense=True,
+            ),
+            border_radius=RADIUS_LG,
+            bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)),
+            padding=0,
+        )
 
     def _build_action_buttons(self, is_readonly: bool) -> list[ft.Control]:
         if is_readonly:

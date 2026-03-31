@@ -212,7 +212,12 @@
     "refresh_skills": "重新整理",
     "skills_refreshed": "技能列表已重新整理。",
     "install_zip_success": "已從 ZIP 安裝 {count} 個技能包。",
-    "install_zip_failed": "ZIP 安裝失敗：{error}"
+    "install_zip_failed": "ZIP 安裝失敗：{error}",
+    "skill_name_required": "技能名稱不能為空。",
+    "skill_exists": "同名技能已存在。",
+    "folder_files": "資料夾內容",
+    "no_folder_files": "未找到檔案",
+    "open_file": "在檔案管理器中開啟"
   },
   "import_session": {
     "title": "匯入 CLI 會話",

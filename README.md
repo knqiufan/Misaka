@@ -193,7 +193,7 @@ MCP（Model Context Protocol）服务器可扩展 Claude Code 能力，例如连
 
 ### Skills（技能）— 快速指南
 
-Skills（Claude Code 扩展）是提供可复用指令与模板的 Markdown 文件。从侧边栏打开 **技能** 进行查看和管理。*当前不支持在界面内创建和编辑技能，需手动在以下路径中添加 `.md` 文件。*
+Skills（Claude Code 扩展）是提供可复用指令与模板的 Markdown 文件。从侧边栏打开 **技能** 即可创建、编辑和管理技能。技能详情中可浏览文件夹内容，右键点击技能可在系统文件管理器中打开所在文件夹。
 
 ![image-20260313011308546](./image/image-20260313011308546.png)
 

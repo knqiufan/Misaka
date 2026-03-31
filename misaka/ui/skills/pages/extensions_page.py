@@ -213,6 +213,11 @@ class ExtensionsPage(ft.Column):
                         on_click=self._refresh_all_skills,
                     ),
                     make_button(
+                        t("extensions.new_skill"),
+                        icon=ft.Icons.ADD,
+                        on_click=self._show_create_skill_dialog,
+                    ),
+                    make_button(
                         t("extensions.install_from_zip"),
                         icon=ft.Icons.UPLOAD_FILE,
                         on_click=self._pick_zip_and_install,
@@ -506,6 +511,127 @@ class ExtensionsPage(ft.Column):
         self.state.update()
         if e.page:
             self._show_snackbar(e.page, t("extensions.skills_refreshed"))
+
+    # ------------------------------------------------------------------
+    # New skill creation
+    # ------------------------------------------------------------------
+
+    def _show_create_skill_dialog(self, e: ft.ControlEvent) -> None:
+        """Show dialog to create a new skill."""
+        page = e.page
+        if not page:
+            return
+
+        name_field = make_text_field(
+            label=t("extensions.skill_name"),
+            hint_text=t("extensions.skill_name_hint"),
+            dense=True,
+            autofocus=True,
+        )
+        content_field = make_text_field(
+            label=t("extensions.skill_content"),
+            hint_text=t("extensions.skill_content_hint"),
+            multiline=True,
+            min_lines=6,
+            max_lines=12,
+        )
+
+        scope_state = {"scope": "global"}
+
+        def _build_scope_buttons() -> ft.Row:
+            """Build scope selector buttons (Global / Project)."""
+            def make_scope_btn(label: str, value: str) -> ft.Container:
+                is_active = scope_state["scope"] == value
+                return ft.Container(
+                    content=ft.Text(
+                        label,
+                        size=12,
+                        weight=ft.FontWeight.W_600 if is_active else ft.FontWeight.W_400,
+                        color=ft.Colors.ON_PRIMARY if is_active else ft.Colors.ON_SURFACE,
+                    ),
+                    padding=ft.Padding.symmetric(horizontal=16, vertical=6),
+                    border_radius=RADIUS_LG,
+                    bgcolor=(
+                        ft.Colors.PRIMARY
+                        if is_active
+                        else ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
+                    ),
+                    on_click=lambda _, v=value: _on_scope_change(v),
+                    ink=True,
+                )
+
+            return ft.Row(
+                controls=[
+                    ft.Text(t("extensions.skill_scope"), size=12, opacity=0.7),
+                    make_scope_btn(t("extensions.source_global"), "global"),
+                    make_scope_btn(t("extensions.source_project"), "project"),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+
+        scope_row_container = ft.Container(content=_build_scope_buttons())
+
+        def _on_scope_change(value: str) -> None:
+            scope_state["scope"] = value
+            scope_row_container.content = _build_scope_buttons()
+            scope_row_container.update()
+
+        def do_create(_ev: ft.ControlEvent) -> None:
+            name = (name_field.value or "").strip()
+            if not name:
+                self._show_snackbar(page, t("extensions.skill_name_required"))
+                return
+            svc = self._get_skill_service()
+            if not svc:
+                return
+            try:
+                new_skill = svc.create_skill(
+                    name, content_field.value or "", scope=scope_state["scope"],
+                )
+            except FileExistsError:
+                self._show_snackbar(page, t("extensions.skill_exists"))
+                return
+            except Exception as exc:
+                logger.error("Failed to create skill: %s", exc)
+                return
+
+            page.pop_dialog()
+            self._load_skills()
+            # Select the newly created skill
+            for s in self._skills:
+                if s.name == new_skill.name and s.source == new_skill.source:
+                    self._selected_skill = s
+                    break
+            self._refresh_skill_list()
+            if self._editor_panel and self._selected_skill:
+                self._editor_panel.set_skill(self._selected_skill)
+            self.state.update()
+            self._show_snackbar(page, t("extensions.skill_created"))
+
+        dialog_content = ft.Column(
+            controls=[
+                name_field,
+                scope_row_container,
+                content_field,
+            ],
+            spacing=12,
+            tight=True,
+            width=480,
+        )
+
+        dialog = make_dialog(
+            title=t("extensions.create_skill_title"),
+            content=dialog_content,
+            actions=[
+                make_text_button(
+                    t("common.cancel"),
+                    on_click=lambda ev: page.pop_dialog(),
+                ),
+                make_button(t("extensions.new_skill"), on_click=do_create),
+            ],
+        )
+        page.show_dialog(dialog)
 
     # ------------------------------------------------------------------
     # Callbacks from SkillEditorPanel
