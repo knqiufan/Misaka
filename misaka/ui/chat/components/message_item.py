@@ -13,6 +13,7 @@ import json
 import re
 import webbrowser
 from dataclasses import dataclass
+from typing import cast
 
 import flet as ft
 
@@ -607,7 +608,7 @@ class MessageItem(ft.Container):
                     )
                 )
             elif seg_type == "code":
-                lang, code = seg_content
+                lang, code = cast(tuple[str, str], seg_content)
                 controls.append(CodeBlock(code=code, language=lang))
 
         return ft.Column(controls=controls, spacing=10)
@@ -647,9 +648,9 @@ class MessageItem(ft.Container):
         )
 
     @staticmethod
-    def _split_code_blocks(text: str) -> list[tuple[str, ...]]:
+    def _split_code_blocks(text: str) -> list["tuple[str, str] | tuple[str, tuple[str, str]]"]:
         pattern = r"```(\w*)\n(.*?)```"
-        segments: list[tuple[str, ...]] = []
+        segments: list[tuple[str, str] | tuple[str, tuple[str, str]]] = []
         last_end = 0
 
         for match in re.finditer(pattern, text, re.DOTALL):
