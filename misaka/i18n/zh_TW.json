@@ -150,7 +150,17 @@
     "misaka_open_releases": "前往 Release 下載",
     "update_not_configured": "更新伺服器尚未配置",
     "claude_debug_log": "Claude 偵錯日誌",
-    "claude_debug_log_desc": "輸出精簡的 SDK 偵錯資訊（開始/結束/訊息統計/異常），便於排查對話問題。"
+    "claude_debug_log_desc": "輸出精簡的 SDK 偵錯資訊（開始/結束/訊息統計/異常），便於排查對話問題。",
+    "log_viewer": "執行時日誌",
+    "log_viewer_desc": "檢視最近的應用日誌（環形緩衝，最近 200 筆）。",
+    "log_viewer_empty": "尚無日誌條目。",
+    "log_viewer_clear": "清空",
+    "log_viewer_refresh": "重新整理",
+    "log_viewer_copy": "複製全部",
+    "log_viewer_copied": "日誌已複製到剪貼簿。",
+    "log_viewer_cleared": "日誌緩衝已清空。",
+    "log_viewer_all": "全部",
+    "log_viewer_entries": "{count} 筆"
   },
   "plugins": {
     "title": "MCP 伺服器",

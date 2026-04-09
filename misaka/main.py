@@ -47,6 +47,7 @@ from misaka.services.task.task_service import TaskService
 from misaka.state import AppState
 from misaka.ui.common.app_shell import AppShell
 from misaka.ui.common.theme import apply_theme
+from misaka.utils.log_buffer import install_ring_handler
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +207,10 @@ def _setup_logging() -> None:
         handlers.append(file_handler)
     except OSError as exc:
         print(f"Warning: could not open log file {LOG_PATH}: {exc}", file=sys.stderr)
+
+    ring_handler = install_ring_handler(logger_name=None, maxlen=200)
+    ring_handler.setLevel(logging.DEBUG)
+    handlers.append(ring_handler)
 
     logging.basicConfig(
         level=level,

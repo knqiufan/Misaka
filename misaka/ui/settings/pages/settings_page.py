@@ -1,8 +1,8 @@
 """Settings page.
 
 Application settings including API provider management,
-theme selection, permission mode, language selector, and
-default model configuration.
+theme selection, permission mode, language selector,
+default model configuration, and runtime log viewer.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from misaka.config import SettingKeys, get_assets_path
 from misaka.i18n import t
 from misaka.ui.common.theme import (
     ERROR_RED,
+    MONO_FONT_FAMILY,
     RADIUS_LG,
     RADIUS_MD,
     SUCCESS_GREEN,
@@ -24,6 +25,7 @@ from misaka.ui.common.theme import (
     make_button,
     make_outlined_button,
     make_section_card,
+    show_snackbar,
 )
 from misaka.ui.settings.pages.appearance_section import (
     build_appearance_section,
@@ -36,6 +38,7 @@ from misaka.ui.settings.pages.provider_section import (
     build_router_section,
     show_router_form,
 )
+from misaka.utils.log_buffer import get_ring_handler
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -86,6 +89,7 @@ class SettingsPage(ft.Column):
         claude_update_section = self._build_claude_update_section()
         misaka_update_section = self._build_misaka_update_section()
         env_status_section = self._build_env_status_section()
+        log_viewer_section = self._build_log_viewer_section()
         language_section = build_language_section(
             self.state,
             on_language_click=self._change_language,
@@ -99,6 +103,7 @@ class SettingsPage(ft.Column):
             self._wrap_card(claude_update_section),
             self._wrap_card(misaka_update_section),
             self._wrap_card(env_status_section),
+            self._wrap_card(log_viewer_section),
             self._wrap_card(language_section),
             self._wrap_card(about_section),
             ft.Container(height=16),
@@ -659,6 +664,157 @@ class SettingsPage(ft.Column):
             await page.launch_url(self._MISAKA_RELEASES_URL)
 
         page.run_task(_launch)
+
+    # ------------------------------------------------------------------
+    # Log viewer section
+    # ------------------------------------------------------------------
+
+    _LOG_LEVELS = ("All", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+    def _build_log_viewer_section(self) -> ft.Control:
+        handler = get_ring_handler()
+        selected_level: str = getattr(self, "_log_level_filter", "All")
+        level_filter = None if selected_level == "All" else selected_level
+        entries = handler.get_entries(level_filter=level_filter)
+
+        level_chips: list[ft.Control] = []
+        for lvl in self._LOG_LEVELS:
+            label = t("settings.log_viewer_all") if lvl == "All" else lvl
+            is_selected = selected_level == lvl
+            level_chips.append(
+                ft.Container(
+                    content=ft.Text(
+                        label,
+                        size=11,
+                        weight=ft.FontWeight.W_600 if is_selected else ft.FontWeight.W_400,
+                        color=ft.Colors.ON_PRIMARY if is_selected else ft.Colors.ON_SURFACE_VARIANT,
+                    ),
+                    bgcolor=(
+                        ft.Colors.PRIMARY if is_selected
+                        else ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
+                    ),
+                    border_radius=12,
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=4),
+                    on_click=lambda e, lv=lvl: self._set_log_level_filter(lv),
+                    ink=True,
+                ),
+            )
+
+        count_text = t("settings.log_viewer_entries").format(count=len(entries))
+
+        if entries:
+            log_lines: list[ft.Control] = []
+            for entry in entries:
+                color = self._level_color(entry.level)
+                log_lines.append(
+                    ft.Text(
+                        entry.format_line(),
+                        size=11,
+                        font_family=MONO_FONT_FAMILY,
+                        color=color,
+                        selectable=True,
+                        no_wrap=True,
+                    ),
+                )
+            log_content: ft.Control = ft.Column(
+                controls=log_lines,
+                spacing=1,
+                scroll=ft.ScrollMode.AUTO,
+            )
+        else:
+            log_content = ft.Text(
+                t("settings.log_viewer_empty"),
+                size=12, italic=True, opacity=0.5,
+            )
+
+        log_container = ft.Container(
+            content=log_content,
+            bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE)),
+            border_radius=RADIUS_LG,
+            padding=ft.Padding.all(10),
+            height=260,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+        )
+
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Text(
+                                t("settings.log_viewer"),
+                                size=16, weight=ft.FontWeight.W_600,
+                            ),
+                            ft.Text(count_text, size=11, opacity=0.5),
+                            ft.Container(expand=True),
+                            make_outlined_button(
+                                t("settings.log_viewer_copy"),
+                                icon=ft.Icons.COPY,
+                                on_click=self._handle_copy_logs,
+                            ),
+                            make_outlined_button(
+                                t("settings.log_viewer_clear"),
+                                icon=ft.Icons.DELETE_OUTLINE,
+                                on_click=self._handle_clear_logs,
+                            ),
+                            make_outlined_button(
+                                t("settings.log_viewer_refresh"),
+                                icon=ft.Icons.REFRESH,
+                                on_click=self._handle_refresh_logs,
+                            ),
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=6,
+                    ),
+                    ft.Text(t("settings.log_viewer_desc"), size=12, opacity=0.6),
+                    ft.Row(controls=level_chips, spacing=6, wrap=True),
+                    log_container,
+                ],
+                spacing=12,
+            ),
+            padding=ft.Padding.symmetric(horizontal=24, vertical=16),
+        )
+
+    @staticmethod
+    def _level_color(level: str) -> str | None:
+        if level == "ERROR" or level == "CRITICAL":
+            return ERROR_RED
+        if level == "WARNING":
+            return WARNING_AMBER
+        if level == "DEBUG":
+            return ft.Colors.ON_SURFACE_VARIANT
+        return None
+
+    def _set_log_level_filter(self, level: str) -> None:
+        self._log_level_filter = level
+        self._build_ui()
+        self.state.update()
+
+    def _handle_refresh_logs(self, e: ft.ControlEvent) -> None:
+        self._build_ui()
+        self.state.update()
+
+    def _handle_clear_logs(self, e: ft.ControlEvent) -> None:
+        handler = get_ring_handler()
+        handler.clear()
+        self._build_ui()
+        self.state.update()
+        page = e.page
+        if page:
+            show_snackbar(page, t("settings.log_viewer_cleared"))
+
+    def _handle_copy_logs(self, e: ft.ControlEvent) -> None:
+        page = e.page
+        if not page:
+            return
+        handler = get_ring_handler()
+        selected_level: str = getattr(self, "_log_level_filter", "All")
+        level_filter = None if selected_level == "All" else selected_level
+        entries = handler.get_entries(level_filter=level_filter)
+        text = "\n".join(entry.format_line() for entry in entries)
+        page.set_clipboard(text)
+        show_snackbar(page, t("settings.log_viewer_copied"))
 
     # ------------------------------------------------------------------
     # About section

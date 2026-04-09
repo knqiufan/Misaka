@@ -150,7 +150,17 @@
     "misaka_open_releases": "Open Releases",
     "update_not_configured": "Update server not configured yet",
     "claude_debug_log": "Claude Debug Log",
-    "claude_debug_log_desc": "Emit concise SDK debug info (start/end/message stats/errors) for troubleshooting."
+    "claude_debug_log_desc": "Emit concise SDK debug info (start/end/message stats/errors) for troubleshooting.",
+    "log_viewer": "Runtime Logs",
+    "log_viewer_desc": "View recent application logs (ring buffer, last 200 entries).",
+    "log_viewer_empty": "No log entries yet.",
+    "log_viewer_clear": "Clear",
+    "log_viewer_refresh": "Refresh",
+    "log_viewer_copy": "Copy All",
+    "log_viewer_copied": "Logs copied to clipboard.",
+    "log_viewer_cleared": "Log buffer cleared.",
+    "log_viewer_all": "All",
+    "log_viewer_entries": "{count} entries"
   },
   "plugins": {
     "title": "MCP Servers",
