@@ -211,12 +211,18 @@ class PluginsPage(ft.Column):
         return ft.Container(content=config_content, padding=ft.Padding.only(top=8))
 
     def _load_mcp_config(self) -> None:
-        """Load MCP server configurations from settings files."""
+        """Load MCP server configurations from settings files and project .mcp.json."""
         home = Path.home()
-        config_paths = [
+        config_paths: list[Path] = [
             home / ".claude.json",
             home / ".claude" / "settings.json",
         ]
+
+        session = getattr(self.state, "current_session", None) if self.state else None
+        if session and getattr(session, "working_directory", None):
+            project_mcp = Path(session.working_directory) / ".mcp.json"
+            if project_mcp.is_file():
+                config_paths.append(project_mcp)
 
         self._mcp_configs = {}
         self._mcp_config_sources = {}
@@ -809,7 +815,9 @@ class PluginsPage(ft.Column):
         page = e.page if e else self.state.page
         mcp_service = self.state.get_service("mcp_service") if self.state else None
         if mcp_service is not None:
-            mcp_servers = mcp_service.load_mcp_servers()
+            session = self.state.current_session if self.state else None
+            wd = session.working_directory if session else None
+            mcp_servers = mcp_service.load_mcp_servers(working_directory=wd)
             sdk_format = mcp_service.to_sdk_format(mcp_servers)
             self.state.mcp_servers_sdk = sdk_format
         self._load_mcp_config()

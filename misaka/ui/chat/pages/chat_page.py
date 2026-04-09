@@ -237,6 +237,7 @@ class ChatPage(ft.Stack):
         if session:
             self.state.sdk_session_id = session.sdk_session_id or None
             self._load_file_tree(session)
+            self._reload_mcp_for_session(session)
         # Refresh UI — targeted refreshes instead of _rebuild_all()
         # Use refresh_selection() for efficient highlight update without rebuilding list
         if self._chat_list:
@@ -271,6 +272,7 @@ class ChatPage(ft.Stack):
         self.state.tasks = []
         self._stream_handler.reset_stream_state()
         self._scan_file_tree_async(path)
+        self._reload_mcp_for_session(session)
         if self._chat_list:
             self._chat_list.refresh()
         if self._chat_view:
@@ -797,6 +799,15 @@ class ChatPage(ft.Stack):
         self._stream_handler.resolve_permission(allow=False)
 
     # ---- Helpers ----
+
+    def _reload_mcp_for_session(self, session: ChatSession) -> None:
+        """Reload MCP configs including project-level .mcp.json for the session."""
+        mcp_service = self.state.get_service("mcp_service")
+        if not mcp_service:
+            return
+        wd = session.working_directory or None
+        mcp_servers = mcp_service.load_mcp_servers(working_directory=wd)
+        self.state.mcp_servers_sdk = mcp_service.to_sdk_format(mcp_servers)
 
     def _rebuild_all(self) -> None:
         """Rebuild all sub-components."""

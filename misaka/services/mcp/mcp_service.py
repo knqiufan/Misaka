@@ -165,17 +165,25 @@ class MCPService:
     def __init__(self) -> None:
         self._servers: dict[str, MCPServerProcess] = {}
 
-    def load_mcp_servers(self) -> dict[str, MCPServerConfig]:
+    def load_mcp_servers(
+        self,
+        working_directory: str | None = None,
+    ) -> dict[str, MCPServerConfig]:
         """Load MCP server configs from Claude configuration files.
 
-        Reads from ``~/.claude.json`` and ``~/.claude/settings.json``,
-        merging configs from both sources.
+        Reads from ``~/.claude.json``, ``~/.claude/settings.json``, and
+        optionally a project-level ``.mcp.json`` in *working_directory*.
+        Project-level configs override global ones with the same name.
         """
         home = Path.home()
-        config_paths = [
+        config_paths: list[Path] = [
             home / ".claude.json",
             home / ".claude" / "settings.json",
         ]
+        if working_directory:
+            project_mcp = Path(working_directory) / ".mcp.json"
+            if project_mcp.is_file():
+                config_paths.append(project_mcp)
 
         merged: dict[str, MCPServerConfig] = {}
 
