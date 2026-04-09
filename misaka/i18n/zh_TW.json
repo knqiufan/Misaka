@@ -5,10 +5,33 @@
     "welcome_subtitle": "選擇一個聊天會話或建立一個新會話開始使用。"
   },
   "nav": {
+    "dashboard": "儀表板",
     "chat": "聊天",
     "mcp": "MCP",
     "skills": "技能",
     "settings": "設定"
+  },
+  "dashboard": {
+    "title": "儀表板",
+    "refresh": "重新整理",
+    "env_status": "環境狀態",
+    "mcp_status": "MCP 伺服器",
+    "session_stats": "會話統計",
+    "token_usage": "Token 用量",
+    "total_sessions": "總會話數",
+    "active_sessions": "活躍會話",
+    "archived_sessions": "已封存",
+    "total_messages": "總訊息數",
+    "total_input": "輸入 Token",
+    "total_output": "輸出 Token",
+    "total_cache": "快取讀取",
+    "total_cost": "累計費用",
+    "no_data": "尚無資料",
+    "healthy": "健康",
+    "unhealthy": "異常",
+    "not_checked": "未檢查",
+    "configured": "已設定",
+    "no_servers": "未設定 MCP 伺服器"
   },
   "chat": {
     "chats": "聊天",

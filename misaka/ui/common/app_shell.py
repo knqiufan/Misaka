@@ -2,8 +2,8 @@
 Main application shell for Misaka.
 
 Implements the root layout: navigation rail + content area.
-The content area switches between pages (Chat, Settings, Plugins, Extensions)
-based on navigation selection.
+The content area switches between pages (Dashboard, Chat, Settings,
+Plugins, Extensions) based on navigation selection.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import flet as ft
 
 from misaka.ui.chat.pages.chat_page import ChatPage
 from misaka.ui.common.theme import apply_theme
+from misaka.ui.dashboard.pages.dashboard_page import DashboardPage
 from misaka.ui.dialogs.env_check_dialog import EnvCheckDialog
 from misaka.ui.navigation.nav_rail import build_nav_rail
 from misaka.ui.pages.plugins_page import PluginsPage
@@ -44,6 +45,7 @@ class AppShell(ft.Row):
 
         self._nav_rail: ft.Container | None = None
         self._content_area: ft.Container | None = None
+        self._dashboard_page: DashboardPage | None = None
         self._chat_page: ChatPage | None = None
         self._settings_page: SettingsPage | None = None
         self._plugins_page: PluginsPage | None = None
@@ -78,13 +80,12 @@ class AppShell(ft.Row):
 
     def _build_pages(self) -> None:
         """Create all page instances."""
-        if self._db:
-            self._chat_page = ChatPage(state=self.state, db=self._db)
-        else:
-            self._chat_page = ChatPage(
-                state=self.state,
-                db=self._get_fallback_db(),
-            )
+        if not self._db:
+            self._get_fallback_db()
+
+        self._dashboard_page = DashboardPage(state=self.state)
+
+        self._chat_page = ChatPage(state=self.state, db=self._db)
         self._wire_chat_callbacks()
 
         self._settings_page = SettingsPage(
@@ -122,12 +123,13 @@ class AppShell(ft.Row):
     def _get_current_page(self) -> ft.Control:
         """Return the page control for the current navigation state."""
         page_map = {
+            "dashboard": self._dashboard_page,
             "chat": self._chat_page,
             "settings": self._settings_page,
             "plugins": self._plugins_page,
             "extensions": self._extensions_page,
         }
-        return page_map.get(self.state.current_page, self._chat_page)
+        return page_map.get(self.state.current_page, self._dashboard_page)
 
     def _on_nav_change(self, page_name: str) -> None:
         """Handle navigation rail selection changes."""
@@ -205,6 +207,10 @@ class AppShell(ft.Row):
         )
         self.controls[0] = self._nav_rail
         self.state.update()
+
+    def get_dashboard_page(self) -> DashboardPage | None:
+        """Return the dashboard page instance for initial data loading."""
+        return self._dashboard_page
 
     def get_chat_page(self) -> ChatPage | None:
         """Return the chat page instance for external wiring."""

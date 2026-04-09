@@ -138,7 +138,8 @@ class AppState:
         self.right_panel_open: bool = True
 
         # --- Navigation ---
-        self.current_page: str = "chat"  # "chat" | "settings" | "plugins" | "extensions"
+        # "dashboard" | "chat" | "settings" | "plugins" | "extensions"
+        self.current_page: str = "chat"
 
         # --- Theme ---
         self.theme_mode: str = "system"  # "system" | "light" | "dark"

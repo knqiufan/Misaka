@@ -33,6 +33,7 @@ from misaka.services.chat.claude_service import ClaudeService
 from misaka.services.chat.message_service import MessageService
 from misaka.services.chat.permission_service import PermissionService
 from misaka.services.chat.session_service import SessionService
+from misaka.services.dashboard.dashboard_service import DashboardService
 from misaka.services.file.file_service import FileService
 from misaka.services.file.update_check_service import UpdateCheckService
 from misaka.services.images.image_service import ImageService
@@ -162,6 +163,7 @@ class ServiceContainer:
         self.router_config_service = RouterConfigService(
             db, self.cli_settings_service
         )
+        self.dashboard_service = DashboardService(db)
 
     async def close(self) -> None:
         """Release resources held by services."""
@@ -290,6 +292,11 @@ def _main(page: ft.Page) -> None:
     app_shell = AppShell(state)
     page.add(app_shell)
     page.update()
+
+    # --- Load dashboard data ---
+    dashboard_page = app_shell.get_dashboard_page()
+    if dashboard_page:
+        dashboard_page.refresh()
 
     # --- Run environment check on startup ---
     async def _run_env_check() -> None:

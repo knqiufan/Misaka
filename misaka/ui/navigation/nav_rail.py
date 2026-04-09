@@ -3,7 +3,7 @@
 Custom vertical navigation bar on the left side of the application.
 Slim icon-focused design with pill-shaped selection indicators,
 smooth hover highlights, and animated selection state.
-Destinations: Chat, Settings, Plugins, Skills.
+Destinations: Dashboard, Chat, Plugins, Skills, Settings.
 Includes a theme toggle at the bottom.
 """
 
@@ -39,6 +39,12 @@ _NAV_ITEMS: list[dict] = [
         "icon": ft.Icons.CODE_OUTLINED,
         "selected_icon": ft.Icons.CODE,
         "label_key": "nav.skills",
+    },
+    {
+        "page": "dashboard",
+        "icon": ft.Icons.DASHBOARD_OUTLINED,
+        "selected_icon": ft.Icons.DASHBOARD,
+        "label_key": "nav.dashboard",
     },
     {
         "page": "settings",

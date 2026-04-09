@@ -5,10 +5,33 @@
     "welcome_subtitle": "Select a chat session or create a new one to begin."
   },
   "nav": {
+    "dashboard": "Dashboard",
     "chat": "Chat",
     "mcp": "MCP",
     "skills": "Skills",
     "settings": "Settings"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "refresh": "Refresh",
+    "env_status": "Environment",
+    "mcp_status": "MCP Servers",
+    "session_stats": "Sessions",
+    "token_usage": "Token Usage",
+    "total_sessions": "Total Sessions",
+    "active_sessions": "Active",
+    "archived_sessions": "Archived",
+    "total_messages": "Total Messages",
+    "total_input": "Input Tokens",
+    "total_output": "Output Tokens",
+    "total_cache": "Cache Read",
+    "total_cost": "Total Cost",
+    "no_data": "No data",
+    "healthy": "Healthy",
+    "unhealthy": "Unhealthy",
+    "not_checked": "Not checked",
+    "configured": "Configured",
+    "no_servers": "No MCP servers configured"
   },
   "chat": {
     "chats": "Chats",

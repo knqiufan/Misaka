@@ -5,10 +5,33 @@
     "welcome_subtitle": "选择一个聊天会话或创建一个新会话开始使用。"
   },
   "nav": {
+    "dashboard": "仪表板",
     "chat": "聊天",
     "mcp": "MCP",
     "skills": "技能",
     "settings": "设置"
+  },
+  "dashboard": {
+    "title": "仪表板",
+    "refresh": "刷新",
+    "env_status": "环境状态",
+    "mcp_status": "MCP 服务器",
+    "session_stats": "会话统计",
+    "token_usage": "Token 用量",
+    "total_sessions": "总会话数",
+    "active_sessions": "活跃会话",
+    "archived_sessions": "已归档",
+    "total_messages": "总消息数",
+    "total_input": "输入 Token",
+    "total_output": "输出 Token",
+    "total_cache": "缓存读取",
+    "total_cost": "累计费用",
+    "no_data": "暂无数据",
+    "healthy": "健康",
+    "unhealthy": "异常",
+    "not_checked": "未检查",
+    "configured": "已配置",
+    "no_servers": "未配置 MCP 服务器"
   },
   "chat": {
     "chats": "聊天",

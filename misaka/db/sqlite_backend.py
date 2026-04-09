@@ -523,3 +523,32 @@ class SQLiteBackend(DatabaseBackend):
         )
         conn.commit()
         return True
+
+    # ----- Dashboard aggregation -----
+
+    def get_session_counts(self) -> dict[str, int]:
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active,
+                SUM(CASE WHEN status='archived' THEN 1 ELSE 0 END) AS archived
+            FROM chat_sessions"""
+        ).fetchone()
+        msg_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM messages"
+        ).fetchone()
+        return {
+            "total": row["total"] or 0,
+            "active": row["active"] or 0,
+            "archived": row["archived"] or 0,
+            "messages": msg_row["cnt"] or 0,
+        }
+
+    def get_token_usage_rows(self) -> list[str]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT token_usage FROM messages "
+            "WHERE role = 'assistant' AND token_usage IS NOT NULL"
+        ).fetchall()
+        return [r["token_usage"] for r in rows if r["token_usage"]]

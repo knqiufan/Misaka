@@ -202,6 +202,19 @@ class DatabaseBackend(ABC):
     def activate_router_config(self, config_id: str) -> bool:
         """Set a router config as active (deactivating all others). Return True if found."""
 
+    # ----- Dashboard aggregation -----
+
+    @abstractmethod
+    def get_session_counts(self) -> dict[str, int]:
+        """Return session and message counts for dashboard.
+
+        Expected keys: total, active, archived, messages.
+        """
+
+    @abstractmethod
+    def get_token_usage_rows(self) -> list[str]:
+        """Return raw token_usage JSON strings for all assistant messages."""
+
 
 # ---------------------------------------------------------------------------
 # Factory
