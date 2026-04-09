@@ -49,7 +49,12 @@
     "command_interrupted": "Command was interrupted",
     "group_by_project": "Group by project",
     "group_by_date": "Group by date",
-    "no_project": "No Project"
+    "no_project": "No Project",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "archived": "Archived",
+    "show_archived": "Show archived",
+    "no_archived_sessions": "No archived sessions"
   },
   "settings": {
     "title": "Settings",

@@ -39,6 +39,8 @@ class ChatList(ft.Column):
         on_delete: Callable[[str], None] | None = None,
         on_rename: Callable[[str, str], None] | None = None,
         on_remove_from_list: Callable[[str], None] | None = None,
+        on_archive: Callable[[str], None] | None = None,
+        on_unarchive: Callable[[str], None] | None = None,
         on_import: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(spacing=0, expand=True)
@@ -48,8 +50,11 @@ class ChatList(ft.Column):
         self._on_delete = on_delete
         self._on_rename = on_rename
         self._on_remove_from_list = on_remove_from_list
+        self._on_archive = on_archive
+        self._on_unarchive = on_unarchive
         self._on_import = on_import
         self._search_query = ""
+        self._show_archived = False
         self._search_field: ft.TextField | None = None
         self._session_list: ft.ListView | None = None
         self._pulse_phase: bool = False
@@ -78,6 +83,12 @@ class ChatList(ft.Column):
             on_click=self._toggle_group_mode,
         )
 
+        self._archive_toggle_btn = make_icon_button(
+            ft.Icons.ARCHIVE_OUTLINED,
+            tooltip=t("chat.show_archived"),
+            on_click=self._toggle_show_archived,
+        )
+
         header = ft.Container(
             content=ft.Row(
                 controls=[
@@ -87,6 +98,7 @@ class ChatList(ft.Column):
                         weight=ft.FontWeight.W_600,
                         expand=True,
                     ),
+                    self._archive_toggle_btn,
                     self._group_toggle_btn,
                     make_icon_button(
                         ft.Icons.DOWNLOAD_ROUNDED,
@@ -137,7 +149,12 @@ class ChatList(ft.Column):
         sessions = self._get_filtered_sessions()
 
         if not sessions:
-            msg = t("chat.no_matching_sessions") if self._search_query else t("chat.no_sessions")
+            if self._search_query:
+                msg = t("chat.no_matching_sessions")
+            elif self._show_archived:
+                msg = t("chat.no_archived_sessions")
+            else:
+                msg = t("chat.no_sessions")
             self._session_list.controls = [
                 ft.Container(
                     content=ft.Column(
@@ -273,9 +290,26 @@ class ChatList(ft.Column):
         if self._session_list:
             self._session_list.update()
 
+    def _toggle_show_archived(self, e: ft.ControlEvent) -> None:
+        """Toggle between showing active and archived sessions."""
+        self._show_archived = not self._show_archived
+        self._archive_toggle_btn.icon = (
+            ft.Icons.ARCHIVE if self._show_archived else ft.Icons.ARCHIVE_OUTLINED
+        )
+        self._archive_toggle_btn.tooltip = (
+            t("chat.chats") if self._show_archived else t("chat.show_archived")
+        )
+        self._item_cache.clear()
+        self._refresh_list()
+        if self._session_list:
+            self._session_list.update()
+
     def _get_filtered_sessions(self) -> list[ChatSession]:
-        """Return sessions filtered by search query and status (exclude hidden)."""
-        sessions = [s for s in self.state.sessions if s.status != "hidden"]
+        """Return sessions filtered by search query and status."""
+        if self._show_archived:
+            sessions = [s for s in self.state.sessions if s.status == "archived"]
+        else:
+            sessions = [s for s in self.state.sessions if s.status not in ("hidden", "archived")]
         if not self._search_query:
             return sessions
         q = self._search_query.lower()
@@ -454,6 +488,21 @@ class ChatList(ft.Column):
                 on_click=handle_action(self._start_rename, session_id, page),
             ),
         ]
+
+        if session.status == "archived":
+            if self._on_unarchive:
+                items.append(ContextMenuItem(
+                    icon=ft.Icons.UNARCHIVE,
+                    label=t("chat.unarchive"),
+                    on_click=handle_action(self._on_unarchive, session_id),
+                ))
+        else:
+            if self._on_archive:
+                items.append(ContextMenuItem(
+                    icon=ft.Icons.ARCHIVE_OUTLINED,
+                    label=t("chat.archive"),
+                    on_click=handle_action(self._on_archive, session_id),
+                ))
 
         if self._on_remove_from_list:
             items.append(ContextMenuItem(

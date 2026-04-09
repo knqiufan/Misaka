@@ -49,7 +49,12 @@
     "command_interrupted": "命令已被打斷",
     "group_by_project": "按專案分組",
     "group_by_date": "按日期分組",
-    "no_project": "未分類"
+    "no_project": "未分類",
+    "archive": "封存",
+    "unarchive": "取消封存",
+    "archived": "已封存",
+    "show_archived": "顯示已封存",
+    "no_archived_sessions": "沒有已封存的會話"
   },
   "settings": {
     "title": "設定",

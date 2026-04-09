@@ -88,6 +88,8 @@ class ChatPage(ft.Stack):
             on_delete=self._on_delete_session,
             on_rename=self._on_rename_session,
             on_remove_from_list=self._on_remove_from_list,
+            on_archive=self._on_archive_session,
+            on_unarchive=self._on_unarchive_session,
             on_import=self._on_import_session,
         )
 
@@ -330,6 +332,38 @@ class ChatPage(ft.Stack):
         if self._right_panel:
             self._clear_right_panel_preview()
             self._right_panel.refresh()
+
+    def _on_archive_session(self, session_id: str) -> None:
+        """Archive a session (move to archived state)."""
+        self._abort_session_if_streaming(session_id)
+        self.db.update_session_status(session_id, "archived")
+        for s in self.state.sessions:
+            if s.id == session_id:
+                s.status = "archived"
+                break
+        if self.state.current_session_id == session_id:
+            self.state.current_session_id = None
+            self.state.messages = []
+            self.state.has_more_messages = False
+            self.state.file_tree_root = None
+            self.state.file_tree_nodes = []
+        if self._chat_list:
+            self._chat_list.refresh()
+        if self._chat_view:
+            self._chat_view.refresh_for_session_change()
+        if self._right_panel:
+            self._clear_right_panel_preview()
+            self._right_panel.refresh()
+
+    def _on_unarchive_session(self, session_id: str) -> None:
+        """Unarchive a session (restore to active state)."""
+        self.db.update_session_status(session_id, "active")
+        for s in self.state.sessions:
+            if s.id == session_id:
+                s.status = "active"
+                break
+        if self._chat_list:
+            self._chat_list.refresh()
 
     def _on_import_session(self) -> None:
         """Open the import session dialog."""

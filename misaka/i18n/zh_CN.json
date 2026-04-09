@@ -49,7 +49,12 @@
     "command_interrupted": "命令已被打断",
     "group_by_project": "按项目分组",
     "group_by_date": "按日期分组",
-    "no_project": "未分类"
+    "no_project": "未分类",
+    "archive": "归档",
+    "unarchive": "取消归档",
+    "archived": "已归档",
+    "show_archived": "显示已归档",
+    "no_archived_sessions": "没有已归档的会话"
   },
   "settings": {
     "title": "设置",
