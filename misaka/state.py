@@ -168,6 +168,9 @@ class AppState:
         # --- Model selection ---
         self.selected_model: str = "default"
 
+        # --- Chat list grouping ---
+        self.chat_group_mode: str = "date"  # "date" | "project"
+
     # ----- Helpers -----
 
     def get_service(self, name: str) -> Any:

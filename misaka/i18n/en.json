@@ -46,7 +46,10 @@
     "copy_reply": "Copy reply",
     "copy_user_message": "Copy this message",
     "regenerate": "Regenerate",
-    "command_interrupted": "Command was interrupted"
+    "command_interrupted": "Command was interrupted",
+    "group_by_project": "Group by project",
+    "group_by_date": "Group by date",
+    "no_project": "No Project"
   },
   "settings": {
     "title": "Settings",

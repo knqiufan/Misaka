@@ -258,6 +258,11 @@ def _main(page: ft.Page) -> None:
     state.accent_color = saved_accent
     apply_theme(page, state.theme_mode, state.accent_color)
 
+    # --- Load chat group mode ---
+    saved_group_mode = services.settings_service.get(SettingKeys.CHAT_GROUP_MODE)
+    if saved_group_mode in ("date", "project"):
+        state.chat_group_mode = saved_group_mode
+
     # --- Load initial data ---
     state.sessions = services.session_service.get_all()
 

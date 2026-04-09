@@ -94,6 +94,7 @@ class SettingKeys:
     CLAUDE_DEBUG_LOG = "claude_debug_log"
     LANGUAGE = "language"
     ACCENT_COLOR = "accent_color"
+    CHAT_GROUP_MODE = "chat_group_mode"
 
 
 # ---------------------------------------------------------------------------

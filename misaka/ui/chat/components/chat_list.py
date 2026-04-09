@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 from collections.abc import Callable
 from datetime import date, datetime
 from typing import TYPE_CHECKING
@@ -70,6 +71,13 @@ class ChatList(ft.Column):
             on_change=self._on_search,
         )
 
+        is_project_mode = self.state.chat_group_mode == "project"
+        self._group_toggle_btn = make_icon_button(
+            ft.Icons.FOLDER_OUTLINED if is_project_mode else ft.Icons.CALENDAR_TODAY,
+            tooltip=t("chat.group_by_date") if is_project_mode else t("chat.group_by_project"),
+            on_click=self._toggle_group_mode,
+        )
+
         header = ft.Container(
             content=ft.Row(
                 controls=[
@@ -79,6 +87,7 @@ class ChatList(ft.Column):
                         weight=ft.FontWeight.W_600,
                         expand=True,
                     ),
+                    self._group_toggle_btn,
                     make_icon_button(
                         ft.Icons.DOWNLOAD_ROUNDED,
                         tooltip=t("chat.import_session"),
@@ -155,8 +164,10 @@ class ChatList(ft.Column):
             ]
             return
 
-        # Group sessions by date
-        grouped = self._group_by_date(sessions)
+        if self.state.chat_group_mode == "project":
+            grouped = self._group_by_project(sessions)
+        else:
+            grouped = self._group_by_date(sessions)
         controls: list[ft.Control] = []
         for label, group in grouped:
             if label:
@@ -216,6 +227,54 @@ class ChatList(ft.Column):
         if len(result) == 1:
             return [("", result[0][1])]
         return result
+
+    @staticmethod
+    def _group_by_project(
+        sessions: list[ChatSession],
+    ) -> list[tuple[str, list[ChatSession]]]:
+        """Group sessions by working directory (project)."""
+        buckets: dict[str, list[ChatSession]] = {}
+        no_project_key = ""
+        for s in sessions:
+            wd = (s.working_directory or "").strip()
+            if wd:
+                label = s.project_name or os.path.basename(wd) or wd
+            else:
+                label = no_project_key
+            buckets.setdefault(label, []).append(s)
+
+        result: list[tuple[str, list[ChatSession]]] = []
+        no_project = buckets.pop(no_project_key, None)
+        for label in sorted(buckets):
+            result.append((label, buckets[label]))
+        if no_project:
+            result.append((t("chat.no_project"), no_project))
+        if len(result) == 1:
+            return [("", result[0][1])]
+        return result
+
+    def _toggle_group_mode(self, e: ft.ControlEvent) -> None:
+        """Switch between date and project grouping."""
+        new_mode = "date" if self.state.chat_group_mode == "project" else "project"
+        self.state.chat_group_mode = new_mode
+
+        settings_svc = self.state.get_service("settings")
+        if settings_svc:
+            from misaka.config import SettingKeys
+            settings_svc.set(SettingKeys.CHAT_GROUP_MODE, new_mode)
+
+        is_project = new_mode == "project"
+        self._group_toggle_btn.icon = (
+            ft.Icons.FOLDER_OUTLINED if is_project else ft.Icons.CALENDAR_TODAY
+        )
+        self._group_toggle_btn.tooltip = (
+            t("chat.group_by_date") if is_project else t("chat.group_by_project")
+        )
+
+        self._item_cache.clear()
+        self._refresh_list()
+        if self._session_list:
+            self._session_list.update()
 
     def _get_filtered_sessions(self) -> list[ChatSession]:
         """Return sessions filtered by search query and status (exclude hidden)."""
