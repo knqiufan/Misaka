@@ -648,7 +648,7 @@ class MessageItem(ft.Container):
         )
 
     @staticmethod
-    def _split_code_blocks(text: str) -> list["tuple[str, str] | tuple[str, tuple[str, str]]"]:
+    def _split_code_blocks(text: str) -> list[tuple[str, str] | tuple[str, tuple[str, str]]]:
         pattern = r"```(\w*)\n(.*?)```"
         segments: list[tuple[str, str] | tuple[str, tuple[str, str]]] = []
         last_end = 0
