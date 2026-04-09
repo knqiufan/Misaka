@@ -237,10 +237,7 @@ class ChatList(ft.Column):
         no_project_key = ""
         for s in sessions:
             wd = (s.working_directory or "").strip()
-            if wd:
-                label = s.project_name or os.path.basename(wd) or wd
-            else:
-                label = no_project_key
+            label = (s.project_name or os.path.basename(wd) or wd) if wd else no_project_key
             buckets.setdefault(label, []).append(s)
 
         result: list[tuple[str, list[ChatSession]]] = []
