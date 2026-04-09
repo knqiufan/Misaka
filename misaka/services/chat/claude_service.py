@@ -65,6 +65,7 @@ class ClaudeService:
         self._abort_events: dict[str, asyncio.Event] = {}
         self._debug_log_enabled: bool = False
         self._saw_text_delta_in_turn: bool = False
+        self._saw_thinking_delta_in_turn: bool = False
 
     def _is_debug_log_enabled(self) -> bool:
         """Return whether Claude SDK debug logging is enabled.
@@ -195,6 +196,7 @@ class ClaudeService:
         permission_mode: str = "default",
         should_auto_allow: Callable[[str], bool] | None = None,
         on_text: Callable[[str], None] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
         on_tool_use: Callable[[dict[str, Any]], None] | None = None,
         on_tool_result: Callable[[dict[str, Any]], None] | None = None,
         on_status: Callable[[dict[str, Any]], None] | None = None,
@@ -227,6 +229,7 @@ class ClaudeService:
         self._abort_events[session_id] = abort_event
         self._debug_log_enabled = self._is_debug_log_enabled()
         self._saw_text_delta_in_turn = False
+        self._saw_thinking_delta_in_turn = False
         message_counts: dict[str, int] = {
             "assistant": 0,
             "user": 0,
@@ -319,6 +322,7 @@ class ClaudeService:
                     self._dispatch_message(
                         message,
                         on_text=on_text,
+                        on_thinking=on_thinking,
                         on_tool_use=on_tool_use,
                         on_tool_result=on_tool_result,
                         on_status=on_status,
@@ -409,6 +413,7 @@ class ClaudeService:
             self._abort_events.pop(session_id, None)
             self._debug_log_enabled = False
             self._saw_text_delta_in_turn = False
+            self._saw_thinking_delta_in_turn = False
 
     @staticmethod
     def _classify_message_kind(message: Any) -> str:
@@ -482,6 +487,7 @@ class ClaudeService:
         message: Any,
         *,
         on_text: Callable[[str], None] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
         on_tool_use: Callable[[dict[str, Any]], None] | None = None,
         on_tool_result: Callable[[dict[str, Any]], None] | None = None,
         on_status: Callable[[dict[str, Any]], None] | None = None,
@@ -501,7 +507,9 @@ class ClaudeService:
             from claude_agent_sdk.types import StreamEvent
 
         if AssistantMessage and isinstance(message, AssistantMessage):
-            self._handle_assistant_message(message, on_text=on_text, on_tool_use=on_tool_use)
+            self._handle_assistant_message(
+                message, on_text=on_text, on_thinking=on_thinking, on_tool_use=on_tool_use,
+            )
             return
         if UserMessage and isinstance(message, UserMessage):
             self._handle_user_message(message, on_tool_result=on_tool_result)
@@ -513,13 +521,15 @@ class ClaudeService:
             self._handle_system_message(message, on_status=on_status)
             return
         if StreamEvent and isinstance(message, StreamEvent):
-            self._handle_stream_event(message, on_text=on_text)
+            self._handle_stream_event(message, on_text=on_text, on_thinking=on_thinking)
             return
 
         msg_type = getattr(message, "type", None)
 
         if msg_type == "assistant":
-            self._handle_assistant_message(message, on_text=on_text, on_tool_use=on_tool_use)
+            self._handle_assistant_message(
+                message, on_text=on_text, on_thinking=on_thinking, on_tool_use=on_tool_use,
+            )
 
         elif msg_type == "user":
             self._handle_user_message(message, on_tool_result=on_tool_result)
@@ -531,7 +541,7 @@ class ClaudeService:
             self._handle_system_message(message, on_status=on_status)
 
         elif msg_type == "stream_event":
-            self._handle_stream_event(message, on_text=on_text)
+            self._handle_stream_event(message, on_text=on_text, on_thinking=on_thinking)
 
         elif msg_type == "tool_progress":
             self._handle_tool_progress(message, on_status=on_status)
@@ -543,6 +553,7 @@ class ClaudeService:
         message: Any,
         *,
         on_text: Callable[[str], None] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
         on_tool_use: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """Handle an AssistantMessage from the SDK."""
@@ -556,13 +567,20 @@ class ClaudeService:
             from claude_agent_sdk.types import TextBlock, ThinkingBlock, ToolUseBlock
 
         for block in content:
-            # Skip ThinkingBlock (extended thinking) - internal reasoning, not user output
             if ThinkingBlock and isinstance(block, ThinkingBlock):
+                if on_thinking and not self._saw_thinking_delta_in_turn:
+                    thinking_text = getattr(block, "thinking", "")
+                    if thinking_text:
+                        on_thinking(thinking_text)
                 continue
             block_type = getattr(block, "type", None)
             if isinstance(block, dict) and block_type is None:
                 block_type = block.get("type")
             if block_type == "thinking":
+                if on_thinking and not self._saw_thinking_delta_in_turn:
+                    thinking_text = _battr(block, "thinking", "")
+                    if thinking_text:
+                        on_thinking(thinking_text)
                 continue
 
             if TextBlock and isinstance(block, TextBlock) and on_text:
@@ -710,13 +728,14 @@ class ClaudeService:
         message: Any,
         *,
         on_text: Callable[[str], None] | None = None,
+        on_thinking: Callable[[str], None] | None = None,
     ) -> None:
         """Handle a partial/stream event for real-time text updates.
 
-        Supports content_block_delta with text_delta. Skips thinking_block_delta
-        (extended thinking) as it is internal reasoning. Event may be dict or object.
+        Supports content_block_delta with text_delta and thinking_delta.
+        Event may be dict or object.
         """
-        if not on_text:
+        if not on_text and not on_thinking:
             return
 
         event = getattr(message, "event", None)
@@ -724,27 +743,28 @@ class ClaudeService:
             return
 
         event_type = _battr(event, "type", "")
-        if event_type != "content_block_delta":
-            # e.g. thinking_block_delta, content_block_start - skip
-            self._debug_log(
-                "stream_event skip event_type=%s (waiting for content_block_delta)",
-                event_type or "(empty)",
-            )
+        if event_type == "content_block_delta":
+            delta = _battr(event, "delta", None)
+            if not delta:
+                return
+
+            delta_type = _battr(delta, "type", "")
+            if delta_type == "text_delta":
+                text = _battr(delta, "text", "")
+                if text and on_text:
+                    self._saw_text_delta_in_turn = True
+                    on_text(text)
+            elif delta_type == "thinking_delta":
+                thinking = _battr(delta, "thinking", "")
+                if thinking and on_thinking:
+                    self._saw_thinking_delta_in_turn = True
+                    on_thinking(thinking)
             return
 
-        delta = _battr(event, "delta", None)
-        if not delta:
-            return
-
-        delta_type = _battr(delta, "type", "")
-        if delta_type != "text_delta":
-            # thinking_block_delta etc - skip, wait for actual text
-            return
-
-        text = _battr(delta, "text", "")
-        if text:
-            self._saw_text_delta_in_turn = True
-            on_text(text)
+        self._debug_log(
+            "stream_event skip event_type=%s",
+            event_type or "(empty)",
+        )
 
     def _handle_tool_progress(
         self,

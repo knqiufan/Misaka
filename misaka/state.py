@@ -28,6 +28,12 @@ class StreamingTextBlock:
 
 
 @dataclass
+class StreamingThinkingBlock:
+    """Accumulated thinking/reasoning content from extended thinking."""
+    thinking: str = ""
+
+
+@dataclass
 class StreamingToolUseBlock:
     """A tool invocation observed during streaming."""
     id: str = ""
@@ -47,7 +53,7 @@ class PermissionRequest:
     decision_reason: str | None = None
 
 
-StreamingBlock = StreamingTextBlock | StreamingToolUseBlock
+StreamingBlock = StreamingTextBlock | StreamingThinkingBlock | StreamingToolUseBlock
 
 
 # ---------------------------------------------------------------------------

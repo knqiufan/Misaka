@@ -47,6 +47,7 @@
     "copy_user_message": "复制此条消息",
     "regenerate": "重新生成",
     "command_interrupted": "命令已被打断",
+    "thinking": "思考过程",
     "group_by_project": "按项目分组",
     "group_by_date": "按日期分组",
     "no_project": "未分类",

@@ -20,6 +20,7 @@ from misaka.state import (
     PermissionRequest,
     StreamingBlock,
     StreamingTextBlock,
+    StreamingThinkingBlock,
     StreamingToolUseBlock,
     TokenUsageInfo,
 )
@@ -211,6 +212,13 @@ class StreamHandler:
         result_sdk_session_id: str | None = None
         stream_error: str | None = None
 
+        def _append_thinking_to_ctx(text: str) -> None:
+            """Append thinking text to the context's block list."""
+            if ctx.blocks and isinstance(ctx.blocks[-1], StreamingThinkingBlock):
+                ctx.blocks[-1].thinking += text
+                return
+            ctx.blocks.append(StreamingThinkingBlock(thinking=text))
+
         def _append_text_to_ctx(text: str) -> None:
             """Append text to the context's block list."""
             if not ctx.blocks:
@@ -243,6 +251,12 @@ class StreamHandler:
                 self._append_stream_text(text)
                 self._throttled_ui_refresh()
             _append_text_to_ctx(text)
+
+        def on_thinking(text: str) -> None:
+            if self._is_current_foreground_ctx(ctx):
+                self._append_stream_thinking(text)
+                self._throttled_ui_refresh()
+            _append_thinking_to_ctx(text)
 
         def on_tool_use(payload: dict) -> None:
             if self._is_current_foreground_ctx(ctx):
@@ -332,6 +346,7 @@ class StreamHandler:
                 session.mode or "agent",
             ),
             on_text=on_text,
+            on_thinking=on_thinking,
             on_tool_use=on_tool_use,
             on_tool_result=on_tool_result,
             on_status=on_status,
@@ -516,6 +531,13 @@ class StreamHandler:
     # Block accumulation
     # ------------------------------------------------------------------
 
+    def _append_stream_thinking(self, text: str) -> None:
+        blocks = self._state.streaming_blocks
+        if blocks and isinstance(blocks[-1], StreamingThinkingBlock):
+            blocks[-1].thinking += text
+            return
+        blocks.append(StreamingThinkingBlock(thinking=text))
+
     def _append_stream_text(self, text: str) -> None:
         if not self._state.streaming_blocks:
             self._state.streaming_blocks.append(StreamingTextBlock())
@@ -550,46 +572,25 @@ class StreamHandler:
         """Serialize accumulated blocks to a JSON or plain-text string.
 
         Returns ``(content, format)`` where *format* is ``"json"``
-        when tool-use blocks are present, otherwise ``"text"``.
+        when tool-use or thinking blocks are present, otherwise ``"text"``.
         """
-        blocks: list[dict] = []
-        plain_parts: list[str] = []
-        has_tool = False
-        for block in self._state.streaming_blocks:
-            if isinstance(block, StreamingTextBlock) and block.text:
-                blocks.append({"type": "text", "text": block.text})
-                plain_parts.append(block.text)
-            elif isinstance(block, StreamingToolUseBlock):
-                has_tool = True
-                blocks.append({
-                    "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
-                })
-                if block.output is not None:
-                    blocks.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": block.output,
-                        "is_error": block.is_error,
-                    })
-        if has_tool:
-            return json.dumps(blocks, ensure_ascii=False), "json"
-        return "".join(plain_parts).strip(), "text"
+        return self._serialize_blocks(self._state.streaming_blocks)
 
     @staticmethod
     def _serialize_blocks(block_list: list[StreamingBlock]) -> tuple[str, str]:
         """Serialize an arbitrary block list to (content, format)."""
         blocks: list[dict] = []
         plain_parts: list[str] = []
-        has_tool = False
+        has_structured = False
         for block in block_list:
-            if isinstance(block, StreamingTextBlock) and block.text:
+            if isinstance(block, StreamingThinkingBlock) and block.thinking:
+                has_structured = True
+                blocks.append({"type": "thinking", "thinking": block.thinking})
+            elif isinstance(block, StreamingTextBlock) and block.text:
                 blocks.append({"type": "text", "text": block.text})
                 plain_parts.append(block.text)
             elif isinstance(block, StreamingToolUseBlock):
-                has_tool = True
+                has_structured = True
                 blocks.append({
                     "type": "tool_use",
                     "id": block.id,
@@ -603,7 +604,7 @@ class StreamHandler:
                         "content": block.output,
                         "is_error": block.is_error,
                     })
-        if has_tool:
+        if has_structured:
             return json.dumps(blocks, ensure_ascii=False), "json"
         return "".join(plain_parts).strip(), "text"
 

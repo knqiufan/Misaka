@@ -249,6 +249,54 @@ class MessageItem(ft.Container):
 
         return ft.Column(controls=body_controls, spacing=6)
 
+    def _build_thinking_block(self, thinking_text: str) -> ft.Control:
+        """Build a collapsible block displaying the model's reasoning process."""
+        md = self._create_markdown(thinking_text)
+        detail_container = ft.Container(
+            content=md,
+            padding=ft.Padding.only(left=12, top=8, right=8, bottom=8),
+            visible=False,
+        )
+        chevron = ft.Icon(ft.Icons.CHEVRON_RIGHT_ROUNDED, size=14, opacity=0.5)
+
+        def toggle(_: ft.ControlEvent) -> None:
+            detail_container.visible = not detail_container.visible
+            chevron.name = (
+                ft.Icons.EXPAND_MORE_ROUNDED if detail_container.visible
+                else ft.Icons.CHEVRON_RIGHT_ROUNDED
+            )
+            with contextlib.suppress(Exception):
+                detail_container.update()
+                chevron.update()
+
+        header = ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.PSYCHOLOGY_ROUNDED, size=14, color=ft.Colors.SECONDARY),
+                    ft.Text(
+                        t("chat.thinking"),
+                        size=11,
+                        weight=ft.FontWeight.W_500,
+                        color=ft.Colors.SECONDARY,
+                    ),
+                    chevron,
+                ],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            on_click=toggle,
+            ink=True,
+            border_radius=6,
+            padding=ft.Padding.symmetric(horizontal=8, vertical=5),
+        )
+
+        return ft.Container(
+            content=ft.Column(controls=[header, detail_container], spacing=0, tight=True),
+            bgcolor=ft.Colors.with_opacity(0.04, ft.Colors.SECONDARY),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.SECONDARY)),
+            border_radius=8,
+        )
+
     def _build_interrupted_banner(self) -> ft.Control:
         """Build error banner indicating the command was interrupted by user."""
         return ft.Container(
@@ -331,6 +379,12 @@ class MessageItem(ft.Container):
         for block in blocks:
             if block.type == "interrupted":
                 controls.append(self._build_interrupted_banner())
+                continue
+
+            if block.type == "thinking":
+                thinking_text = block.thinking or ""
+                if thinking_text.strip():
+                    controls.append(self._build_thinking_block(thinking_text))
                 continue
 
             if block.type == "text":

@@ -45,9 +45,11 @@ class MessageContentBlock:
     The ``type`` field discriminates between text, tool_use,
     tool_result, code, and image blocks.
     """
-    type: str  # "text" | "tool_use" | "tool_result" | "code" | "image"
+    type: str  # "text" | "thinking" | "tool_use" | "tool_result" | "code" | "image"
     # Text block fields
     text: str | None = None
+    # Thinking block fields
+    thinking: str | None = None
     # Tool use fields
     id: str | None = None  # tool_use id
     name: str | None = None

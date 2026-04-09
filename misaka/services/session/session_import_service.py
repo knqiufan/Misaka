@@ -103,7 +103,8 @@ def _extract_text_from_content(content: Any) -> str:
 def _content_to_blocks(content: Any) -> list[dict]:
     """Convert content to a list of content blocks for merging.
 
-    Per spec §5.5: ``thinking`` blocks are converted to ``text`` for display.
+    Thinking blocks are preserved as-is for display in the UI's
+    collapsible thinking component.
     """
     if isinstance(content, str):
         return [{"type": "text", "text": content}] if content else []
@@ -112,13 +113,7 @@ def _content_to_blocks(content: Any) -> list[dict]:
         for b in content:
             if not isinstance(b, dict) or not b.get("type"):
                 continue
-            block = dict(b)
-            # Convert thinking to text for display (spec §5.5)
-            if block.get("type") == "thinking":
-                thinking_text = block.get("thinking", "")
-                result.append({"type": "text", "text": str(thinking_text)})
-            else:
-                result.append(block)
+            result.append(dict(b))
         return result
     return [{"type": "text", "text": str(content)}] if content else []
 

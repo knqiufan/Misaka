@@ -14,10 +14,11 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.config import get_assets_path
+from misaka.i18n import t
 from misaka.ui.chat.components.tool_call_block import ToolCallBlock
 
 if TYPE_CHECKING:
-    from misaka.state import AppState, StreamingToolUseBlock
+    from misaka.state import AppState, StreamingThinkingBlock, StreamingToolUseBlock
 
 
 class StreamingMessage(ft.Container):
@@ -57,6 +58,58 @@ class StreamingMessage(ft.Container):
             self._pulse_low = not self._pulse_low
             with contextlib.suppress(Exception):
                 self._thinking_container.update()
+
+    # ------------------------------------------------------------------
+    # Thinking block rendering
+    # ------------------------------------------------------------------
+
+    def _build_thinking_block(self, thinking_text: str) -> ft.Control:
+        """Build a collapsible block displaying the model's reasoning process."""
+        md = self._create_markdown(thinking_text)
+        detail_container = ft.Container(
+            content=md,
+            padding=ft.Padding.only(left=12, top=8, right=8, bottom=8),
+            visible=False,
+        )
+        chevron = ft.Icon(ft.Icons.CHEVRON_RIGHT_ROUNDED, size=14, opacity=0.5)
+
+        def toggle(_: ft.ControlEvent) -> None:
+            detail_container.visible = not detail_container.visible
+            chevron.name = (
+                ft.Icons.EXPAND_MORE_ROUNDED if detail_container.visible
+                else ft.Icons.CHEVRON_RIGHT_ROUNDED
+            )
+            with contextlib.suppress(Exception):
+                detail_container.update()
+                chevron.update()
+
+        header = ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.PSYCHOLOGY_ROUNDED, size=14, color=ft.Colors.SECONDARY),
+                    ft.Text(
+                        t("chat.thinking"),
+                        size=11,
+                        weight=ft.FontWeight.W_500,
+                        color=ft.Colors.SECONDARY,
+                    ),
+                    chevron,
+                ],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            on_click=toggle,
+            ink=True,
+            border_radius=6,
+            padding=ft.Padding.symmetric(horizontal=8, vertical=5),
+        )
+
+        return ft.Container(
+            content=ft.Column(controls=[header, detail_container], spacing=0, tight=True),
+            bgcolor=ft.Colors.with_opacity(0.04, ft.Colors.SECONDARY),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.SECONDARY)),
+            border_radius=8,
+        )
 
     # ------------------------------------------------------------------
     # Markdown rendering helpers
@@ -138,7 +191,11 @@ class StreamingMessage(ft.Container):
         )
 
         for block in self.state.streaming_blocks:
-            if hasattr(block, "text") and block.text:
+            if hasattr(block, "thinking"):
+                thinking_block: StreamingThinkingBlock = block  # type: ignore[assignment]
+                if thinking_block.thinking:
+                    controls.append(self._build_thinking_block(thinking_block.thinking))
+            elif hasattr(block, "text") and block.text:
                 md = self._create_markdown(block.text)
                 wrapped = self._wrap_markdown(md, block.text)
                 controls.append(wrapped)
@@ -244,9 +301,14 @@ class StreamingMessage(ft.Container):
 
             for i in range(self._rendered_block_count, current_count):
                 block = blocks[i]
-                if hasattr(block, "text"):
-                    # Add text block even when empty, so _last_text_md is set
-                    # for incremental updates when more chunks arrive
+                if hasattr(block, "thinking"):
+                    thinking_block_inc: StreamingThinkingBlock = block  # type: ignore[assignment]
+                    if thinking_block_inc.thinking:
+                        self._content_column.controls.append(
+                            self._build_thinking_block(thinking_block_inc.thinking)
+                        )
+                    self._last_text_md = None
+                elif hasattr(block, "text"):
                     md = self._create_markdown(block.text or "")
                     wrapped = self._wrap_markdown(md, block.text or "")
                     self._content_column.controls.append(wrapped)
