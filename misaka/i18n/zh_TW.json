@@ -304,6 +304,14 @@
     "refresh": "重新整理",
     "open_in_file_manager": "在檔案管理員中開啟"
   },
+  "token_usage": {
+    "input": "輸入",
+    "output": "輸出",
+    "cache_read": "快取",
+    "cost": "費用",
+    "total": "總計",
+    "context_tooltip": "上下文窗口：{used} / {total}（{percent}）"
+  },
   "common": {
     "ok": "確定",
     "cancel": "取消",

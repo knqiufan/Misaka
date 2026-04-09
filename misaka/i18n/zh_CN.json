@@ -304,6 +304,14 @@
     "refresh": "刷新",
     "open_in_file_manager": "在文件管理器中打开"
   },
+  "token_usage": {
+    "input": "输入",
+    "output": "输出",
+    "cache_read": "缓存",
+    "cost": "费用",
+    "total": "总计",
+    "context_tooltip": "上下文窗口：{used} / {total}（{percent}）"
+  },
   "common": {
     "ok": "确定",
     "cancel": "取消",

@@ -16,6 +16,7 @@ import flet as ft
 from misaka.i18n import t
 from misaka.ui.chat.components.message_input import MessageInput
 from misaka.ui.chat.components.message_list import MessageList
+from misaka.ui.chat.components.token_usage_bar import TokenUsageBar
 from misaka.ui.common.theme import ACCENT_BLUE, SUCCESS_GREEN, WARNING_AMBER, make_icon_button
 from misaka.ui.panels.offset_menu import OffsetMenu, OffsetMenuOption
 from misaka.ui.status.connection_status import ConnectionStatus
@@ -72,6 +73,7 @@ class ChatView(ft.Column):
         self._title_text: ft.Text | None = None
         self._welcome_view: ft.Container | None = None
         self._input_container: ft.Container | None = None
+        self._token_usage_bar: TokenUsageBar | None = None
         self._clear_btn: ft.Control | None = None
         self._build_ui()
 
@@ -200,11 +202,20 @@ class ChatView(ft.Column):
             on_model_change=self._handle_model_change_from_input,
         )
 
+        # --- Token usage bar ---
+        self._token_usage_bar = TokenUsageBar(state=self.state)
+        if has_session:
+            self._token_usage_bar.refresh()
+
         # --- Welcome view (when no session selected) ---
         self._welcome_view = self._build_welcome_view(visible=not has_session)
         self._message_list.visible = has_session
         self._input_container = ft.Container(
-            content=self._message_input,
+            content=ft.Column(
+                controls=[self._token_usage_bar, self._message_input],
+                spacing=0,
+                tight=True,
+            ),
             visible=has_session,
             border=ft.Border(
                 top=ft.BorderSide(
@@ -390,6 +401,8 @@ class ChatView(ft.Column):
                 model=session.model if session else None,
                 is_streaming=self.state.is_streaming,
             )
+        if self._token_usage_bar:
+            self._token_usage_bar.refresh()
         self._refresh_error_banner()
         if self._header:
             with contextlib.suppress(Exception):
@@ -430,6 +443,8 @@ class ChatView(ft.Column):
             self._message_input.refresh()
         if self._connection_status:
             self._connection_status.set_status(is_streaming=self.state.is_streaming)
+        if self._token_usage_bar:
+            self._token_usage_bar.refresh()
         self._refresh_error_banner()
 
     def refresh_messages_minimal(self, new_message: Message) -> None:
@@ -478,6 +493,8 @@ class ChatView(ft.Column):
             self._message_input.refresh()
         if self._connection_status:
             self._connection_status.set_status(is_streaming=self.state.is_streaming)
+        if self._token_usage_bar:
+            self._token_usage_bar.refresh()
 
     def insert_file_path(self, path: str) -> None:
         """Insert a file path into the message input field."""

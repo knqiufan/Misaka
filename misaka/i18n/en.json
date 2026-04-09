@@ -304,6 +304,14 @@
     "refresh": "Refresh",
     "open_in_file_manager": "Open in File Manager"
   },
+  "token_usage": {
+    "input": "In",
+    "output": "Out",
+    "cache_read": "Cache",
+    "cost": "Cost",
+    "total": "Total",
+    "context_tooltip": "Context window: {used} / {total} ({percent})"
+  },
   "common": {
     "ok": "OK",
     "cancel": "Cancel",
