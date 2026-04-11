@@ -437,6 +437,24 @@ class DashboardPage(ft.Column):
                     ),
                 )
 
+        y_step = max(1, max_tokens // 5)
+        left_labels: list[fch.ChartAxisLabel] = []
+        y_val = 0
+        while y_val <= max_tokens:
+            if y_val >= 1_000_000:
+                lbl = f"{y_val / 1_000_000:.1f}M"
+            elif y_val >= 1_000:
+                lbl = f"{y_val / 1_000:.0f}K"
+            else:
+                lbl = str(y_val)
+            left_labels.append(
+                fch.ChartAxisLabel(
+                    value=y_val,
+                    label=ft.Text(lbl, size=9, opacity=0.6),
+                ),
+            )
+            y_val += y_step
+
         legend = ft.Row(
             controls=[
                 ft.Row(
@@ -488,11 +506,10 @@ class DashboardPage(ft.Column):
                 label_size=28,
             ),
             left_axis=fch.ChartAxis(
+                labels=left_labels,
                 label_size=50,
-                labels_interval=max(1, max_tokens // 5),
             ),
             horizontal_grid_lines=fch.ChartGridLines(
-                interval=max(1, max_tokens // 5),
                 color=ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE),
                 width=1,
                 dash_pattern=[4, 4],
