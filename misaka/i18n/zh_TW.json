@@ -368,6 +368,72 @@
     "total": "總計",
     "context_tooltip": "上下文窗口：{used} / {total}（{percent}）"
   },
+  "errors": {
+    "network": {
+      "message": "網路錯誤：{detail}",
+      "suggestion": "請檢查網路連線後重試。"
+    },
+    "auth": {
+      "message": "認證失敗：{detail}",
+      "suggestion": "請在「設定 > API 提供者」中檢查 API 金鑰。"
+    },
+    "rate_limit": {
+      "message": "請求頻率超限：{detail}",
+      "suggestion": "請稍候後重試，或檢查 API 配額。"
+    },
+    "parse": {
+      "message": "資料解析錯誤：{detail}",
+      "suggestion": "回應格式可能已損壞，請重試。"
+    },
+    "permission": {
+      "message": "權限不足：{detail}",
+      "suggestion": "請檢查檔案或目錄權限後重試。"
+    },
+    "timeout": {
+      "message": "請求逾時：{detail}",
+      "suggestion": "操作耗時過長，請查看執行時日誌了解詳情。"
+    },
+    "cli_not_found": {
+      "message": "未找到 Claude Code CLI。",
+      "suggestion": "請執行: npm install -g @anthropic-ai/claude-code"
+    },
+    "cli_connection": {
+      "message": "無法連線 Claude CLI：{detail}",
+      "suggestion": "請確認 Claude Code CLI 已安裝且可存取。"
+    },
+    "process": {
+      "message": "Claude 處理程序錯誤：{detail}",
+      "suggestion": "子處理程序異常結束，請查看執行時日誌。"
+    },
+    "sdk": {
+      "message": "SDK 錯誤：{detail}",
+      "suggestion": "請查看執行時日誌了解詳情。"
+    },
+    "file_not_found": {
+      "message": "檔案未找到：{detail}",
+      "suggestion": "請確認檔案路徑存在且可存取。"
+    },
+    "file_exists": {
+      "message": "檔案已存在：{detail}",
+      "suggestion": "請選擇其他名稱或刪除現有檔案。"
+    },
+    "validation": {
+      "message": "校驗錯誤：{detail}",
+      "suggestion": "請檢查輸入內容後重試。"
+    },
+    "import": {
+      "message": "缺少依賴：{detail}",
+      "suggestion": "請安裝所需的套件並重新啟動應用。"
+    },
+    "io": {
+      "message": "I/O 錯誤：{detail}",
+      "suggestion": "請檢查磁碟空間和檔案系統權限。"
+    },
+    "unknown": {
+      "message": "未知錯誤：{detail}",
+      "suggestion": "請查看執行時日誌了解詳情。"
+    }
+  },
   "common": {
     "ok": "確定",
     "cancel": "取消",

@@ -24,6 +24,7 @@ from typing import Any
 
 from misaka.config import SettingKeys
 from misaka.db.database import DatabaseBackend
+from misaka.errors import ErrorClassifier
 from misaka.services.chat.permission_service import PermissionService
 from misaka.services.common.claude_env_builder import build_claude_env
 from misaka.utils.platform import find_claude_sdk_binary
@@ -302,13 +303,9 @@ class ClaudeService:
                         )
                     except StopAsyncIteration:
                         break
-                    except asyncio.TimeoutError:
-                        error_msg = (
-                            f"No response from Claude CLI for "
-                            f"{self._STREAM_IDLE_TIMEOUT}s — "
-                            f"the subprocess may be stuck. "
-                            f"Check logs for [Claude CLI stderr] entries."
-                        )
+                    except asyncio.TimeoutError as timeout_exc:
+                        classified = ErrorClassifier.classify(timeout_exc)
+                        error_msg = ErrorClassifier.format_user_message(classified)
                         logger.error(error_msg)
                         if on_error:
                             on_error(error_msg)
@@ -345,17 +342,16 @@ class ClaudeService:
                         else:
                             logger.warning("Stream aclose raised: %s", exc)
 
-        except CLINotFoundError:
-            error_msg = (
-                "Claude Code CLI not found. Please install it with:\n"
-                "npm install -g @anthropic-ai/claude-code"
-            )
+        except CLINotFoundError as exc:
+            classified = ErrorClassifier.classify(exc)
+            error_msg = ErrorClassifier.format_user_message(classified)
             logger.error(error_msg)
             if on_error:
                 on_error(error_msg)
 
         except CLIConnectionError as exc:
-            error_msg = f"Failed to connect to Claude: {exc}"
+            classified = ErrorClassifier.classify(exc)
+            error_msg = ErrorClassifier.format_user_message(classified)
             logger.error(error_msg, exc_info=True)
             if on_error:
                 on_error(error_msg)
@@ -368,7 +364,8 @@ class ClaudeService:
                     exc,
                 )
             else:
-                error_msg = f"Claude process error: {exc}"
+                classified = ErrorClassifier.classify(exc)
+                error_msg = ErrorClassifier.format_user_message(classified)
                 logger.error(error_msg, exc_info=True)
                 if on_error:
                     on_error(error_msg)
@@ -381,7 +378,8 @@ class ClaudeService:
                     exc,
                 )
             else:
-                error_msg = f"SDK error: {exc}"
+                classified = ErrorClassifier.classify(exc)
+                error_msg = ErrorClassifier.format_user_message(classified)
                 logger.error(error_msg, exc_info=True)
                 if on_error:
                     on_error(error_msg)
@@ -397,7 +395,8 @@ class ClaudeService:
                     exc,
                 )
             else:
-                error_msg = f"Unexpected error: {exc}"
+                classified = ErrorClassifier.classify(exc)
+                error_msg = ErrorClassifier.format_user_message(classified)
                 logger.error("ClaudeService.send_message error: %s", exc, exc_info=True)
                 if on_error:
                     on_error(error_msg)

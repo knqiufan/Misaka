@@ -368,6 +368,72 @@
     "total": "Total",
     "context_tooltip": "Context window: {used} / {total} ({percent})"
   },
+  "errors": {
+    "network": {
+      "message": "Network error: {detail}",
+      "suggestion": "Check your internet connection and try again."
+    },
+    "auth": {
+      "message": "Authentication failed: {detail}",
+      "suggestion": "Verify your API key in Settings > API Providers."
+    },
+    "rate_limit": {
+      "message": "Rate limit exceeded: {detail}",
+      "suggestion": "Wait a moment and try again, or check your API quota."
+    },
+    "parse": {
+      "message": "Data parsing error: {detail}",
+      "suggestion": "The response format may be corrupted. Try again."
+    },
+    "permission": {
+      "message": "Permission denied: {detail}",
+      "suggestion": "Check file/directory permissions and try again."
+    },
+    "timeout": {
+      "message": "Request timed out: {detail}",
+      "suggestion": "The operation took too long. Check logs for details."
+    },
+    "cli_not_found": {
+      "message": "Claude Code CLI not found.",
+      "suggestion": "Install it with: npm install -g @anthropic-ai/claude-code"
+    },
+    "cli_connection": {
+      "message": "Failed to connect to Claude CLI: {detail}",
+      "suggestion": "Ensure Claude Code CLI is installed and accessible."
+    },
+    "process": {
+      "message": "Claude process error: {detail}",
+      "suggestion": "The subprocess exited unexpectedly. Check runtime logs."
+    },
+    "sdk": {
+      "message": "SDK error: {detail}",
+      "suggestion": "Check runtime logs for details."
+    },
+    "file_not_found": {
+      "message": "File not found: {detail}",
+      "suggestion": "Verify the file path exists and is accessible."
+    },
+    "file_exists": {
+      "message": "File already exists: {detail}",
+      "suggestion": "Choose a different name or remove the existing file."
+    },
+    "validation": {
+      "message": "Validation error: {detail}",
+      "suggestion": "Check your input and try again."
+    },
+    "import": {
+      "message": "Missing dependency: {detail}",
+      "suggestion": "Install the required package and restart the application."
+    },
+    "io": {
+      "message": "I/O error: {detail}",
+      "suggestion": "Check disk space and file system permissions."
+    },
+    "unknown": {
+      "message": "Unexpected error: {detail}",
+      "suggestion": "Check runtime logs for details."
+    }
+  },
   "common": {
     "ok": "OK",
     "cancel": "Cancel",

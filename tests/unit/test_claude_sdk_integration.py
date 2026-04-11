@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import misaka.i18n
 from misaka.services.chat.claude_service import ClaudeService
 from misaka.services.chat.permission_service import PermissionService
 from misaka.utils.platform import find_claude_sdk_binary
@@ -26,6 +27,12 @@ from misaka.services.common.claude_env_builder import _sanitize_env, _sanitize_e
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _init_i18n() -> None:
+    """Ensure i18n is initialised so ErrorClassifier can format messages."""
+    misaka.i18n.init("en")
+
 
 @pytest.fixture
 def permission_service() -> PermissionService:
