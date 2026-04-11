@@ -100,6 +100,26 @@ class RouterConfigService:
                 env["ANTHROPIC_BASE_URL"] = str(value)
             else:
                 env.pop("ANTHROPIC_BASE_URL", None)
+        elif field_name == "high_effort":
+            if value:
+                data["effortLevel"] = "high"
+            else:
+                data.pop("effortLevel", None)
+        elif field_name == "disable_autoupdater":
+            if value:
+                env["DISABLE_AUTOUPDATER"] = "1"
+            else:
+                env.pop("DISABLE_AUTOUPDATER", None)
+        elif field_name == "hide_attribution":
+            if value:
+                data["attribution"] = {"commit": "", "pr": ""}
+            else:
+                data.pop("attribution", None)
+        elif field_name == "enable_tool_search":
+            if value:
+                env["ENABLE_TOOL_SEARCH"] = "true"
+            else:
+                env.pop("ENABLE_TOOL_SEARCH", None)
         elif field_name in _FIELD_TO_ENV_KEY:
             env_key = _FIELD_TO_ENV_KEY[field_name]
             if value:
@@ -129,6 +149,10 @@ class RouterConfigService:
         result["agent_team"] = env.get(_AGENT_TEAM_ENV_KEY) == "1"
         result["api_key"] = env.get("ANTHROPIC_AUTH_TOKEN", "")
         result["base_url"] = env.get("ANTHROPIC_BASE_URL", "")
+        result["high_effort"] = data.get("effortLevel") == "high"
+        result["disable_autoupdater"] = env.get("DISABLE_AUTOUPDATER") == "1"
+        result["hide_attribution"] = isinstance(data.get("attribution"), dict)
+        result["enable_tool_search"] = env.get("ENABLE_TOOL_SEARCH") == "true"
         return result
 
     def ensure_default_config(self) -> None:

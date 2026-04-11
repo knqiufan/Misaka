@@ -292,7 +292,9 @@ class _FormFields:
     __slots__ = (
         "name", "api_key", "base_url",
         "main_model", "haiku_model", "opus_model", "sonnet_model",
-        "agent_team_switch", "config_json",
+        "agent_team_switch", "high_effort_switch",
+        "disable_autoupdater_switch", "hide_attribution_switch",
+        "enable_tool_search_switch", "config_json",
     )
 
 
@@ -353,8 +355,24 @@ def _create_form_fields(config, form_vals: dict, default_json: str) -> _FormFiel
         value=str(form_vals.get("sonnet_model", "")),
     )
     f.agent_team_switch = ft.Switch(
-        label=t("settings.router_agent_team"),
         value=bool(form_vals.get("agent_team", False)),
+        scale=0.7,
+    )
+    f.high_effort_switch = ft.Switch(
+        value=bool(form_vals.get("high_effort", False)),
+        scale=0.7,
+    )
+    f.disable_autoupdater_switch = ft.Switch(
+        value=bool(form_vals.get("disable_autoupdater", False)),
+        scale=0.7,
+    )
+    f.hide_attribution_switch = ft.Switch(
+        value=bool(form_vals.get("hide_attribution", False)),
+        scale=0.7,
+    )
+    f.enable_tool_search_switch = ft.Switch(
+        value=bool(form_vals.get("enable_tool_search", False)),
+        scale=0.7,
     )
     f.config_json = _make_compact_field(
         hint_text=t("settings.router_config_json"),
@@ -421,6 +439,28 @@ def _wire_field_sync(svc, fields: _FormFields) -> None:
 
     fields.agent_team_switch.on_change = on_agent_team_change
 
+    switch_field_bindings = {
+        "high_effort": fields.high_effort_switch,
+        "disable_autoupdater": fields.disable_autoupdater_switch,
+        "hide_attribution": fields.hide_attribution_switch,
+        "enable_tool_search": fields.enable_tool_search_switch,
+    }
+
+    def on_switch_change(field_name: str, switch: ft.Switch):
+        def handler(e: ft.ControlEvent):
+            if not svc:
+                return
+            current_json = fields.config_json.value or "{}"
+            updated = svc.sync_form_to_json(
+                current_json, field_name, switch.value,
+            )
+            fields.config_json.value = updated
+            fields.config_json.update()
+        return handler
+
+    for sw_name, sw_ctrl in switch_field_bindings.items():
+        sw_ctrl.on_change = on_switch_change(sw_name, sw_ctrl)
+
     def on_json_change(e: ft.ControlEvent):
         if not svc:
             return
@@ -443,6 +483,11 @@ def _wire_field_sync(svc, fields: _FormFields) -> None:
         if fields.base_url.value != new_base_url:
             fields.base_url.value = new_base_url
             fields.base_url.update()
+        for sw_name, sw_ctrl in switch_field_bindings.items():
+            new_sw = bool(vals.get(sw_name, False))
+            if sw_ctrl.value != new_sw:
+                sw_ctrl.value = new_sw
+                sw_ctrl.update()
 
     fields.config_json.on_blur = on_json_change
 
@@ -482,7 +527,55 @@ def _save_router(
     state.update()
 
 
+def _make_switch_tile(label: str, switch: ft.Switch) -> ft.Container:
+    """Build a compact clickable tile: label on the left, mini switch on the right."""
+    def _toggle(e: ft.ControlEvent):
+        switch.value = not switch.value
+        switch.update()
+        if switch.on_change:
+            switch.on_change(e)
+
+    return ft.Container(
+        content=ft.Row(
+            controls=[
+                ft.Text(label, size=12, expand=True, no_wrap=True),
+                switch,
+            ],
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=4,
+        ),
+        padding=ft.Padding.symmetric(horizontal=10, vertical=4),
+        border_radius=8,
+        border=ft.Border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)),
+        bgcolor=ft.Colors.with_opacity(0.02, ft.Colors.ON_SURFACE),
+        on_click=_toggle,
+    )
+
+
+def _build_switch_grid(switch_items: list[tuple[str, ft.Switch]]) -> ft.Control:
+    """Lay out switch tiles in a responsive wrap of fixed-width chips."""
+    tiles = [_make_switch_tile(label, sw) for label, sw in switch_items]
+
+    rows: list[ft.Control] = []
+    for i in range(0, len(tiles), 2):
+        pair = tiles[i:i + 2]
+        row_controls = [ft.Container(content=tile, expand=True) for tile in pair]
+        if len(row_controls) == 1:
+            row_controls.append(ft.Container(expand=True))
+        rows.append(ft.Row(controls=row_controls, spacing=8))
+
+    return ft.Column(controls=rows, spacing=6, tight=True)
+
+
 def _build_dialog_form_groups(fields: _FormFields) -> list[ft.Control]:
+    switch_items: list[tuple[str, ft.Switch]] = [
+        (t("settings.router_agent_team"), fields.agent_team_switch),
+        (t("settings.router_high_effort"), fields.high_effort_switch),
+        (t("settings.router_disable_autoupdater"), fields.disable_autoupdater_switch),
+        (t("settings.router_hide_attribution"), fields.hide_attribution_switch),
+        (t("settings.router_enable_tool_search"), fields.enable_tool_search_switch),
+    ]
+
     return [
         _build_form_group(
             t("settings.router_title"),
@@ -495,8 +588,11 @@ def _build_dialog_form_groups(fields: _FormFields) -> list[ft.Control]:
                 fields.sonnet_model,
                 fields.opus_model,
                 fields.haiku_model,
-                fields.agent_team_switch,
             ],
+        ),
+        _build_form_group(
+            t("settings.router_advanced_options"),
+            [_build_switch_grid(switch_items)],
         ),
         _build_form_group(
             t("settings.router_config_json"),
@@ -522,7 +618,7 @@ def _build_router_dialog(
             scroll=ft.ScrollMode.AUTO,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             tight=False,
-            height=430,
+            height=500,
         ),
         subtitle=t("settings.router_desc"),
         icon=ft.Icons.ROUTE_ROUNDED,
