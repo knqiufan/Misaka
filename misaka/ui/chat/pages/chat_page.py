@@ -411,6 +411,8 @@ class ChatPage(ft.Stack):
             self._on_clear_messages()
         elif cmd == "cost":
             self._cmd_cost()
+        elif cmd == "doctor":
+            self._cmd_doctor()
 
     def _cmd_help(self) -> None:
         """Insert a help message listing available commands."""
@@ -471,6 +473,48 @@ class ChatPage(ft.Stack):
             content_text = "\n".join(rows)
 
         self._inject_system_message(content_text)
+
+    def _cmd_doctor(self) -> None:
+        """Run provider diagnostics and show results in a dialog."""
+        from misaka.ui.dialogs.doctor_dialog import DoctorDialog
+
+        page = self.state.page
+        if not page:
+            return
+
+        doctor_svc = self.state.get_service("doctor_service")
+        if not doctor_svc:
+            return
+
+        dialog_content = DoctorDialog(is_loading=True)
+
+        alert = ft.AlertDialog(modal=True, content=dialog_content, actions=[])
+        page.show_dialog(alert)
+
+        async def _run_doctor() -> None:
+            report = await doctor_svc.run_all()
+
+            def _on_dismiss() -> None:
+                import contextlib
+                with contextlib.suppress(AttributeError, RuntimeError):
+                    page.pop_dialog()
+                self.state.update()
+
+            def _on_recheck() -> None:
+                async def _recheck() -> None:
+                    dialog_content.refresh(is_loading=True)
+                    self.state.update()
+                    new_report = await doctor_svc.run_all()
+                    dialog_content.refresh(report=new_report)
+                    self.state.update()
+                page.run_task(_recheck)
+
+            dialog_content._on_dismiss = _on_dismiss
+            dialog_content._on_recheck = _on_recheck
+            dialog_content.refresh(report=report)
+            self.state.update()
+
+        page.run_task(_run_doctor)
 
     def _inject_system_message(self, text: str) -> None:
         """Insert a local-only assistant message into the current view."""

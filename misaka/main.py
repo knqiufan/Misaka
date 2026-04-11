@@ -42,6 +42,7 @@ from misaka.services.session.session_import_service import SessionImportService
 from misaka.services.settings.cli_settings_service import CliSettingsService
 from misaka.services.settings.router_config_service import RouterConfigService
 from misaka.services.settings.settings_service import SettingsService
+from misaka.services.doctor.provider_doctor_service import ProviderDoctorService
 from misaka.services.skills.env_check_service import EnvCheckService
 from misaka.services.skills.skill_service import SkillService
 from misaka.services.task.task_service import TaskService
@@ -164,6 +165,7 @@ class ServiceContainer:
             db, self.cli_settings_service
         )
         self.dashboard_service = DashboardService(db)
+        self.doctor_service = ProviderDoctorService(db)
 
     async def close(self) -> None:
         """Release resources held by services."""

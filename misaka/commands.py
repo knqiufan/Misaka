@@ -57,11 +57,9 @@ BUILT_IN_COMMANDS: list[SlashCommand] = [
     ),
     SlashCommand(
         name="doctor",
-        description="诊断项目健康状态",
+        description="诊断提供商健康状态",
         icon=ft.Icons.HEALTH_AND_SAFETY,
-        immediate=False,
-        prompt="Run diagnostic checks on this project. Check system health, "
-               "dependencies, configuration files, and report any issues.",
+        immediate=True,
     ),
     SlashCommand(
         name="init",
