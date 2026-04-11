@@ -128,6 +128,31 @@ class TestSQLiteBackend:
         assert db.delete_router_config(config.id) is True
         assert db.get_router_config(config.id) is None
 
+    def test_get_daily_token_usage_rows(self, db) -> None:
+        session = db.create_session(title="Test Session")
+        import json
+        usage1 = json.dumps({
+            "input_tokens": 100, "output_tokens": 50, "cost_usd": 0.01,
+        })
+        usage2 = json.dumps({
+            "input_tokens": 200, "output_tokens": 100, "cost_usd": 0.02,
+        })
+        db.add_message(session.id, "assistant", "msg1", token_usage=usage1)
+        db.add_message(session.id, "assistant", "msg2", token_usage=usage2)
+        db.add_message(session.id, "user", "hello")
+        db.add_message(session.id, "assistant", "msg3")
+
+        rows = db.get_daily_token_usage_rows(days=30)
+        assert len(rows) == 2
+        for day, raw in rows:
+            assert day is not None
+            data = json.loads(raw)
+            assert "input_tokens" in data
+
+    def test_get_daily_token_usage_rows_empty(self, db) -> None:
+        rows = db.get_daily_token_usage_rows(days=30)
+        assert rows == []
+
     def test_migration_drops_api_providers_table(self, tmp_path) -> None:
         db_path = tmp_path / "migrate.db"
         conn = sqlite3.connect(db_path)

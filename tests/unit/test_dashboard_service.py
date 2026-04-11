@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from misaka.services.dashboard.dashboard_service import (
+    DailyUsage,
     DashboardService,
     SessionStats,
     SkillStats,
@@ -161,6 +162,118 @@ class TestSkillStats:
         ):
             stats = DashboardService.get_skill_stats()
             assert stats.total == 0
+
+
+class TestDailyUsage:
+
+    def test_default_values(self) -> None:
+        d = DailyUsage()
+        assert d.date == ""
+        assert d.input_tokens == 0
+        assert d.output_tokens == 0
+        assert d.cache_read_tokens == 0
+        assert d.cost_usd == 0.0
+        assert d.total_tokens == 0
+
+    def test_total_tokens_property(self) -> None:
+        d = DailyUsage(input_tokens=100, output_tokens=50)
+        assert d.total_tokens == 150
+
+    def test_get_daily_usage_aggregates_by_date(
+        self, service: DashboardService, mock_db: MagicMock,
+    ) -> None:
+        rows = [
+            ("2026-04-10", json.dumps({
+                "input_tokens": 100, "output_tokens": 50,
+                "cache_read_input_tokens": 20, "cost_usd": 0.01,
+            })),
+            ("2026-04-10", json.dumps({
+                "input_tokens": 200, "output_tokens": 100,
+                "cache_read_input_tokens": 30, "cost_usd": 0.02,
+            })),
+            ("2026-04-11", json.dumps({
+                "input_tokens": 300, "output_tokens": 150,
+                "cache_read_input_tokens": 10, "cost_usd": 0.03,
+            })),
+        ]
+        mock_db.get_daily_token_usage_rows.return_value = rows
+        result = service.get_daily_usage()
+        assert len(result) == 2
+
+        day1 = result[0]
+        assert day1.date == "2026-04-10"
+        assert day1.input_tokens == 300
+        assert day1.output_tokens == 150
+        assert day1.cache_read_tokens == 50
+        assert day1.cost_usd == pytest.approx(0.03)
+        assert day1.total_tokens == 450
+
+        day2 = result[1]
+        assert day2.date == "2026-04-11"
+        assert day2.input_tokens == 300
+        assert day2.output_tokens == 150
+        assert day2.cost_usd == pytest.approx(0.03)
+
+    def test_get_daily_usage_empty(
+        self, service: DashboardService, mock_db: MagicMock,
+    ) -> None:
+        mock_db.get_daily_token_usage_rows.return_value = []
+        result = service.get_daily_usage()
+        assert result == []
+
+    def test_get_daily_usage_handles_bad_json(
+        self, service: DashboardService, mock_db: MagicMock,
+    ) -> None:
+        rows = [
+            ("2026-04-10", json.dumps({
+                "input_tokens": 100, "output_tokens": 50,
+            })),
+            ("2026-04-10", "not valid json"),
+            ("2026-04-11", json.dumps({
+                "input_tokens": 200, "output_tokens": 100,
+            })),
+        ]
+        mock_db.get_daily_token_usage_rows.return_value = rows
+        result = service.get_daily_usage()
+        assert len(result) == 2
+        assert result[0].input_tokens == 100
+        assert result[1].input_tokens == 200
+
+    def test_get_daily_usage_handles_none_values(
+        self, service: DashboardService, mock_db: MagicMock,
+    ) -> None:
+        rows = [
+            ("2026-04-10", json.dumps({
+                "input_tokens": None, "output_tokens": None,
+                "cache_read_input_tokens": None, "cost_usd": None,
+            })),
+        ]
+        mock_db.get_daily_token_usage_rows.return_value = rows
+        result = service.get_daily_usage()
+        assert len(result) == 1
+        assert result[0].input_tokens == 0
+        assert result[0].output_tokens == 0
+        assert result[0].cost_usd == 0.0
+
+    def test_get_daily_usage_sorted_by_date(
+        self, service: DashboardService, mock_db: MagicMock,
+    ) -> None:
+        rows = [
+            ("2026-04-12", json.dumps({"input_tokens": 100, "output_tokens": 50})),
+            ("2026-04-10", json.dumps({"input_tokens": 200, "output_tokens": 100})),
+            ("2026-04-11", json.dumps({"input_tokens": 300, "output_tokens": 150})),
+        ]
+        mock_db.get_daily_token_usage_rows.return_value = rows
+        result = service.get_daily_usage()
+        dates = [d.date for d in result]
+        assert dates == ["2026-04-10", "2026-04-11", "2026-04-12"]
+
+    def test_get_daily_usage_passes_days_param(
+        self, service: DashboardService, mock_db: MagicMock,
+    ) -> None:
+        mock_db.get_daily_token_usage_rows.return_value = []
+        service.get_daily_usage(days=7)
+        mock_db.get_daily_token_usage_rows.assert_called_once_with(7)
 
 
 class TestCliSessionCount:

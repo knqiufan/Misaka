@@ -552,3 +552,13 @@ class SQLiteBackend(DatabaseBackend):
             "WHERE role = 'assistant' AND token_usage IS NOT NULL"
         ).fetchall()
         return [r["token_usage"] for r in rows if r["token_usage"]]
+
+    def get_daily_token_usage_rows(self, days: int = 30) -> list[tuple[str, str]]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT DATE(created_at) AS day, token_usage FROM messages "
+            "WHERE role = 'assistant' AND token_usage IS NOT NULL "
+            "AND created_at >= DATE('now', ?)",
+            (f"-{days} days",),
+        ).fetchall()
+        return [(r["day"], r["token_usage"]) for r in rows if r["day"] and r["token_usage"]]

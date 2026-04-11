@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,6 +37,21 @@ class TokenUsageSummary:
     total_output_tokens: int = 0
     total_cache_read_tokens: int = 0
     total_cost_usd: float = 0.0
+
+
+@dataclass
+class DailyUsage:
+    """Token usage aggregated for a single day."""
+
+    date: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cost_usd: float = 0.0
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
 
 
 @dataclass
@@ -94,6 +110,39 @@ class DashboardService:
             total_cache_read_tokens=total_cache,
             total_cost_usd=total_cost,
         )
+
+    def get_daily_usage(self, days: int = 30) -> list[DailyUsage]:
+        """Return per-day token usage for the last *days* days, sorted by date."""
+        rows = self._db.get_daily_token_usage_rows(days)
+
+        buckets: dict[str, dict[str, float]] = defaultdict(
+            lambda: {"in": 0, "out": 0, "cache": 0, "cost": 0.0},
+        )
+
+        for day, raw in rows:
+            try:
+                data = json.loads(raw)
+                b = buckets[day]
+                b["in"] += data.get("input_tokens", 0) or 0
+                b["out"] += data.get("output_tokens", 0) or 0
+                b["cache"] += data.get("cache_read_input_tokens", 0) or 0
+                cost = data.get("cost_usd")
+                if cost is not None:
+                    b["cost"] += float(cost)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+
+        result = [
+            DailyUsage(
+                date=day,
+                input_tokens=int(vals["in"]),
+                output_tokens=int(vals["out"]),
+                cache_read_tokens=int(vals["cache"]),
+                cost_usd=vals["cost"],
+            )
+            for day, vals in sorted(buckets.items())
+        ]
+        return result
 
     @staticmethod
     def get_skill_stats() -> SkillStats:

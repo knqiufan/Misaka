@@ -43,7 +43,15 @@
     "skills_total": "技能总数",
     "cli_sessions": "CLI 会话",
     "check_health": "检查健康状态",
-    "checking": "检查中…"
+    "checking": "检查中…",
+    "daily_usage": "每日用量趋势",
+    "daily_usage_desc": "最近 30 天的每日 Token 消耗与费用统计。",
+    "daily_no_data": "暂无每日用量数据",
+    "daily_input": "输入",
+    "daily_output": "输出",
+    "daily_cost": "费用",
+    "daily_tokens": "Tokens",
+    "daily_date": "日期"
   },
   "chat": {
     "chats": "聊天",

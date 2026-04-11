@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import flet as ft
+import flet_charts as fch
 
 from misaka.i18n import t
 from misaka.ui.common.theme import (
@@ -27,6 +28,7 @@ from misaka.ui.common.theme import (
 
 if TYPE_CHECKING:
     from misaka.services.dashboard.dashboard_service import (
+        DailyUsage,
         SessionStats,
         SkillStats,
         TokenUsageSummary,
@@ -54,6 +56,7 @@ class DashboardPage(ft.Column):
         self.state = state
         self._session_stats: SessionStats | None = None
         self._token_summary: TokenUsageSummary | None = None
+        self._daily_usage: list[DailyUsage] | None = None
         self._skill_stats: SkillStats | None = None
         self._cli_session_count: int = 0
         self._mcp_health: dict[str, bool] | None = None
@@ -70,6 +73,7 @@ class DashboardPage(ft.Column):
         return [
             self._wrap_card(self._build_session_section()),
             self._wrap_card(self._build_token_section()),
+            self._wrap_card(self._build_daily_usage_section()),
             self._wrap_card(self._build_skill_section()),
             self._wrap_card(self._build_env_section()),
             self._wrap_card(self._build_mcp_section()),
@@ -336,6 +340,183 @@ class DashboardPage(ft.Column):
                 spacing=12,
             ),
             padding=ft.Padding.symmetric(horizontal=24, vertical=16),
+        )
+
+    # ------------------------------------------------------------------
+    # Daily usage chart section
+    # ------------------------------------------------------------------
+
+    def _build_daily_usage_section(self) -> ft.Control:
+        usage = self._daily_usage
+
+        if usage:
+            chart = self._build_daily_chart(usage)
+            body: ft.Control = chart
+        else:
+            body = ft.Text(
+                t("dashboard.daily_no_data"),
+                size=12, italic=True, opacity=0.5,
+            )
+
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        t("dashboard.daily_usage"),
+                        size=16, weight=ft.FontWeight.W_600,
+                    ),
+                    ft.Text(
+                        t("dashboard.daily_usage_desc"),
+                        size=12, opacity=0.6,
+                    ),
+                    body,
+                ],
+                spacing=12,
+            ),
+            padding=ft.Padding.symmetric(horizontal=24, vertical=16),
+        )
+
+    @staticmethod
+    def _build_daily_chart(usage: list[DailyUsage]) -> ft.Control:
+        if not usage:
+            return ft.Text(
+                t("dashboard.daily_no_data"),
+                size=12, italic=True, opacity=0.5,
+            )
+
+        max_tokens = max((d.total_tokens for d in usage), default=1) or 1
+
+        input_color = ft.Colors.BLUE_400
+        output_color = ft.Colors.ORANGE_400
+
+        groups: list[fch.BarChartGroup] = []
+        bottom_labels: list[fch.ChartAxisLabel] = []
+
+        for i, day in enumerate(usage):
+            groups.append(
+                fch.BarChartGroup(
+                    x=i,
+                    rods=[
+                        fch.BarChartRod(
+                            from_y=0,
+                            to_y=day.input_tokens,
+                            width=8,
+                            color=input_color,
+                            border_radius=ft.BorderRadius.only(
+                                top_left=2, top_right=2,
+                            ),
+                            tooltip=f"{t('dashboard.daily_input')}: "
+                                    f"{day.input_tokens:,}",
+                        ),
+                        fch.BarChartRod(
+                            from_y=0,
+                            to_y=day.output_tokens,
+                            width=8,
+                            color=output_color,
+                            border_radius=ft.BorderRadius.only(
+                                top_left=2, top_right=2,
+                            ),
+                            tooltip=f"{t('dashboard.daily_output')}: "
+                                    f"{day.output_tokens:,}",
+                        ),
+                    ],
+                ),
+            )
+
+            date_label = day.date[5:]  # "MM-DD"
+            show_label = (
+                len(usage) <= 10
+                or i % max(1, len(usage) // 10) == 0
+                or i == len(usage) - 1
+            )
+            if show_label:
+                bottom_labels.append(
+                    fch.ChartAxisLabel(
+                        value=i,
+                        label=ft.Text(date_label, size=9, opacity=0.7),
+                    ),
+                )
+
+        legend = ft.Row(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Container(
+                            width=12, height=12,
+                            bgcolor=input_color,
+                            border_radius=2,
+                        ),
+                        ft.Text(
+                            t("dashboard.daily_input"),
+                            size=11, opacity=0.8,
+                        ),
+                    ],
+                    spacing=4,
+                ),
+                ft.Row(
+                    controls=[
+                        ft.Container(
+                            width=12, height=12,
+                            bgcolor=output_color,
+                            border_radius=2,
+                        ),
+                        ft.Text(
+                            t("dashboard.daily_output"),
+                            size=11, opacity=0.8,
+                        ),
+                    ],
+                    spacing=4,
+                ),
+            ],
+            spacing=16,
+        )
+
+        chart = fch.BarChart(
+            groups=groups,
+            max_y=max_tokens * 1.15,
+            interactive=True,
+            border=ft.Border(
+                bottom=ft.BorderSide(
+                    1, ft.Colors.with_opacity(0.2, ft.Colors.ON_SURFACE),
+                ),
+                left=ft.BorderSide(
+                    1, ft.Colors.with_opacity(0.2, ft.Colors.ON_SURFACE),
+                ),
+            ),
+            bottom_axis=fch.ChartAxis(
+                labels=bottom_labels,
+                label_size=28,
+            ),
+            left_axis=fch.ChartAxis(
+                label_size=50,
+                labels_interval=max(1, max_tokens // 5),
+            ),
+            horizontal_grid_lines=fch.ChartGridLines(
+                interval=max(1, max_tokens // 5),
+                color=ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE),
+                width=1,
+                dash_pattern=[4, 4],
+            ),
+            group_spacing=max(2, 16 - len(usage) // 3),
+            expand=True,
+            height=220,
+        )
+
+        cost_items: list[ft.Control] = []
+        total_cost = sum(d.cost_usd for d in usage)
+        if total_cost > 0:
+            cost_items.append(
+                ft.Text(
+                    f"{t('dashboard.daily_cost')}: ${total_cost:,.4f}",
+                    size=12,
+                    weight=ft.FontWeight.W_500,
+                    opacity=0.7,
+                ),
+            )
+
+        return ft.Column(
+            controls=[legend, chart, *cost_items],
+            spacing=8,
         )
 
     # ------------------------------------------------------------------
@@ -794,6 +975,9 @@ class DashboardPage(ft.Column):
                 )
                 self._token_summary = (
                     dashboard_svc.get_token_usage_summary()
+                )
+                self._daily_usage = (
+                    dashboard_svc.get_daily_usage()
                 )
                 self._skill_stats = (
                     dashboard_svc.get_skill_stats()

@@ -215,6 +215,15 @@ class DatabaseBackend(ABC):
     def get_token_usage_rows(self) -> list[str]:
         """Return raw token_usage JSON strings for all assistant messages."""
 
+    @abstractmethod
+    def get_daily_token_usage_rows(self, days: int = 30) -> list[tuple[str, str]]:
+        """Return ``(date, token_usage_json)`` pairs for the last *days* days.
+
+        Each row represents one assistant message with a non-null token_usage,
+        grouped by ``DATE(created_at)`` is left to the caller; the backend
+        returns individual rows so the service layer can aggregate flexibly.
+        """
+
 
 # ---------------------------------------------------------------------------
 # Factory

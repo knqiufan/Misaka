@@ -43,7 +43,15 @@
     "skills_total": "Total Skills",
     "cli_sessions": "CLI Sessions",
     "check_health": "Check Health",
-    "checking": "Checking…"
+    "checking": "Checking…",
+    "daily_usage": "Daily Usage Trend",
+    "daily_usage_desc": "Token consumption and cost over the last 30 days.",
+    "daily_no_data": "No daily usage data yet",
+    "daily_input": "Input",
+    "daily_output": "Output",
+    "daily_cost": "Cost",
+    "daily_tokens": "Tokens",
+    "daily_date": "Date"
   },
   "chat": {
     "chats": "Chats",
