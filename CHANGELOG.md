@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-04-11
+
+### Added
+
+- Add dashboard page with environment status, MCP server health, session statistics, skill statistics, and cumulative token usage overview
+- Add thinking block functionality in chat interface — real-time display of model reasoning in collapsible blocks
+- Add skill statistics section to dashboard (total/global/project/installed/plugin counts)
+- Add router configuration options: high effort thinking, auto-updater control, AI attribution visibility, and tool search
+- Redesign skill editor panel layout — two-pane view with SKILL.md editor on the left and folder browser on the right
+- Add recursive folder tree in skill detail panel showing complete directory contents including subdirectories
+- Add inline file viewer for text files in skill folder browser (click to preview, supports 60+ text extensions)
+- Add "open folder in file manager" button in skill folder browser header
+
+### Changed
+
+- Enhance dashboard UI with descriptive text for all sections and improved layout organization
+- Skill folder file click behavior: text files now open in inline viewer instead of system file manager; only binary files open externally
+
 ## [0.1.6] - 2026-04-09
 
 ### Added
