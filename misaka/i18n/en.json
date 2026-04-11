@@ -160,6 +160,7 @@
     "env_status": "Environment Status",
     "env_status_desc": "Check and install required runtime dependencies.",
     "recheck": "Re-check",
+    "env_version_unknown": "Installed (version unknown)",
     "router_title": "Claude Code Router",
     "router_desc": "Manage multiple Claude Code configurations for quick environment switching",
     "router_add": "Add Configuration",

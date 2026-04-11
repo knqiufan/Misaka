@@ -51,6 +51,26 @@ _PERMISSION_MODES = [
 ]
 
 
+def _log_level_color(level: str) -> str:
+    if level in ("ERROR", "CRITICAL"):
+        return ERROR_RED
+    if level == "WARNING":
+        return WARNING_AMBER
+    if level == "DEBUG":
+        return ft.Colors.ON_SURFACE_VARIANT
+    return ft.Colors.ON_SURFACE
+
+
+def _log_level_bg(level: str) -> str:
+    if level in ("ERROR", "CRITICAL"):
+        return ft.Colors.with_opacity(0.12, ERROR_RED)
+    if level == "WARNING":
+        return ft.Colors.with_opacity(0.12, WARNING_AMBER)
+    if level == "DEBUG":
+        return ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
+    return ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY)
+
+
 class SettingsPage(ft.Column):
     """Application settings page with provider management, theme, and CLI settings."""
 
@@ -516,7 +536,12 @@ class SettingsPage(ft.Column):
             color=SUCCESS_GREEN if is_installed else ERROR_RED,
             size=22,
         )
-        version_text = f"v{tool.version}" if tool.version else t("env_check.not_installed")
+        if tool.version:
+            version_text = f"v{tool.version}"
+        elif tool.is_installed:
+            version_text = t("settings.env_version_unknown")
+        else:
+            version_text = t("env_check.not_installed")
         right_widget = self._build_tool_action_widget(tool, is_installed, is_installing)
 
         return ft.Container(
@@ -696,7 +721,11 @@ class SettingsPage(ft.Column):
                         label,
                         size=11,
                         weight=ft.FontWeight.W_600 if is_selected else ft.FontWeight.W_400,
-                        color=ft.Colors.ON_PRIMARY if is_selected else ft.Colors.ON_SURFACE_VARIANT,
+                        color=(
+                            ft.Colors.ON_PRIMARY
+                            if is_selected
+                            else ft.Colors.ON_SURFACE_VARIANT
+                        ),
                     ),
                     bgcolor=(
                         ft.Colors.PRIMARY if is_selected
@@ -712,37 +741,41 @@ class SettingsPage(ft.Column):
         count_text = t("settings.log_viewer_entries").format(count=len(entries))
 
         if entries:
-            log_lines: list[ft.Control] = []
-            for entry in entries:
-                color = self._level_color(entry.level)
-                log_lines.append(
-                    ft.Text(
-                        entry.format_line(),
-                        size=11,
-                        font_family=MONO_FONT_FAMILY,
-                        color=color,
-                        selectable=True,
-                        no_wrap=True,
-                    ),
-                )
-            log_content: ft.Control = ft.Column(
-                controls=log_lines,
-                spacing=1,
-                scroll=ft.ScrollMode.AUTO,
+            log_rows: list[ft.Control] = []
+            for i, entry in enumerate(entries):
+                log_rows.append(self._build_log_entry_row(entry, i))
+            log_content: ft.Control = ft.ListView(
+                controls=log_rows,
+                spacing=2,
+                padding=ft.Padding.symmetric(horizontal=4, vertical=4),
+                auto_scroll=True,
             )
         else:
-            log_content = ft.Text(
-                t("settings.log_viewer_empty"),
-                size=12, italic=True, opacity=0.5,
+            log_content = ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Icon(ft.Icons.ARTICLE_OUTLINED, size=32, opacity=0.15),
+                        ft.Text(
+                            t("settings.log_viewer_empty"),
+                            size=12, italic=True, opacity=0.4,
+                        ),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=8,
+                ),
+                expand=True,
+                alignment=ft.Alignment.CENTER,
             )
 
         log_container = ft.Container(
             content=log_content,
-            bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
-            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE)),
+            bgcolor=ft.Colors.with_opacity(0.02, ft.Colors.ON_SURFACE),
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE),
+            ),
             border_radius=RADIUS_LG,
-            padding=ft.Padding.all(10),
-            height=260,
+            height=320,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
         )
 
@@ -786,14 +819,84 @@ class SettingsPage(ft.Column):
         )
 
     @staticmethod
-    def _level_color(level: str) -> str | None:
-        if level == "ERROR" or level == "CRITICAL":
-            return ERROR_RED
-        if level == "WARNING":
-            return WARNING_AMBER
-        if level == "DEBUG":
-            return ft.Colors.ON_SURFACE_VARIANT
-        return None
+    def _build_log_entry_row(entry, index: int) -> ft.Control:
+        """Build a single structured log entry row."""
+        level = entry.level
+        level_color = _log_level_color(level)
+        level_bg = _log_level_bg(level)
+
+        level_badge = ft.Container(
+            content=ft.Text(
+                level[:4],
+                size=9,
+                weight=ft.FontWeight.W_700,
+                color=level_color,
+                font_family=MONO_FONT_FAMILY,
+            ),
+            bgcolor=level_bg,
+            border_radius=4,
+            padding=ft.Padding.symmetric(horizontal=5, vertical=1),
+            width=42,
+            alignment=ft.Alignment.CENTER,
+        )
+
+        timestamp_text = ft.Text(
+            entry.timestamp,
+            size=10,
+            font_family=MONO_FONT_FAMILY,
+            opacity=0.45,
+            no_wrap=True,
+        )
+
+        logger_text = ft.Text(
+            entry.logger_name,
+            size=10,
+            font_family=MONO_FONT_FAMILY,
+            opacity=0.5,
+            color=ft.Colors.PRIMARY,
+            max_lines=1,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+
+        msg_text = ft.Text(
+            entry.message,
+            size=11,
+            font_family=MONO_FONT_FAMILY,
+            selectable=True,
+            max_lines=3,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+
+        row_bg = (
+            ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE)
+            if index % 2 == 0
+            else None
+        )
+
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    level_badge,
+                    ft.Column(
+                        controls=[
+                            ft.Row(
+                                controls=[timestamp_text, logger_text],
+                                spacing=8,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                            msg_text,
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            ),
+            padding=ft.Padding.symmetric(horizontal=8, vertical=5),
+            border_radius=6,
+            bgcolor=row_bg,
+        )
 
     def _set_log_level_filter(self, level: str) -> None:
         self._log_level_filter = level

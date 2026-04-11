@@ -160,6 +160,7 @@
     "env_status": "环境状态",
     "env_status_desc": "检查并安装所需的运行环境依赖。",
     "recheck": "重新检查",
+    "env_version_unknown": "已安装（版本未知）",
     "router_title": "Claude Code Router",
     "router_desc": "管理多个 Claude Code 配置，快速切换不同环境",
     "router_add": "添加配置",

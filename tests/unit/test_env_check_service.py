@@ -435,3 +435,83 @@ class TestEnvCheckService:
         ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await service.install_tool("Git", on_progress=None)
             assert result is True
+
+    async def test_get_version_lenient_ignores_nonzero_exit(
+        self, service: EnvCheckService,
+    ) -> None:
+        """_get_version_lenient should parse version even with non-zero exit code."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (b"2.1.97 (Claude Code)\n", b"")
+        mock_proc.returncode = 1
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            version = await service._get_version_lenient("/usr/bin/claude", "--version")
+            assert version == "2.1.97"
+
+    async def test_get_version_lenient_returns_none_on_no_match(
+        self, service: EnvCheckService,
+    ) -> None:
+        """_get_version_lenient returns None when no version pattern found."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (b"no version here\n", b"")
+        mock_proc.returncode = 1
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            version = await service._get_version_lenient("/usr/bin/tool", "--version")
+            assert version is None
+
+    async def test_get_version_lenient_returns_none_on_timeout(
+        self, service: EnvCheckService,
+    ) -> None:
+        """_get_version_lenient returns None on timeout."""
+        with patch("asyncio.create_subprocess_exec", side_effect=asyncio.TimeoutError()):
+            version = await service._get_version_lenient("/usr/bin/slow", "--version")
+            assert version is None
+
+    async def test_check_tool_multi_claude_fallback_to_lenient(
+        self, service: EnvCheckService,
+    ) -> None:
+        """Claude CLI check falls back to lenient version when strict fails."""
+        with patch(
+            "misaka.utils.platform.find_claude_binary",
+            return_value="/usr/bin/claude",
+        ), patch.object(
+            service, "_get_version", return_value=None,
+        ), patch.object(
+            service, "_get_version_lenient", return_value="2.1.97",
+        ):
+            result = await service._check_tool_multi(
+                "Claude Code CLI", ["claude"], "--version",
+            )
+            assert result.is_installed is True
+            assert result.version == "2.1.97"
+
+    async def test_check_tool_multi_claude_installed_no_version(
+        self, service: EnvCheckService,
+    ) -> None:
+        """Claude CLI is_installed=True even when both version methods return None."""
+        with patch(
+            "misaka.utils.platform.find_claude_binary",
+            return_value="/usr/bin/claude",
+        ), patch.object(
+            service, "_get_version", return_value=None,
+        ), patch.object(
+            service, "_get_version_lenient", return_value=None,
+        ):
+            result = await service._check_tool_multi(
+                "Claude Code CLI", ["claude"], "--version",
+            )
+            assert result.is_installed is True
+            assert result.version is None
+
+    async def test_get_version_parses_claude_output(
+        self, service: EnvCheckService,
+    ) -> None:
+        """_get_version should parse Claude Code CLI output format."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (b"2.1.97 (Claude Code)\n", b"")
+        mock_proc.returncode = 0
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            version = await service._get_version("/usr/bin/claude", "--version")
+            assert version == "2.1.97"

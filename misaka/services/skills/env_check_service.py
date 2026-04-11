@@ -229,6 +229,8 @@ class EnvCheckService:
                 claude_path = find_claude_binary()
                 if claude_path:
                     version = await self._get_version(claude_path, version_flag)
+                    if version is None:
+                        version = await self._get_version_lenient(claude_path, version_flag)
                     return ToolStatus(
                         name=name,
                         command="claude",
@@ -393,4 +395,37 @@ class EnvCheckService:
 
         except (asyncio.TimeoutError, OSError, Exception) as exc:
             logger.debug("Version check failed for %s: %s", binary_path, exc)
+            return None
+
+    async def _get_version_lenient(
+        self, binary_path: str, version_flag: str
+    ) -> str | None:
+        """Like _get_version but ignores non-zero exit codes.
+
+        Some CLI wrappers (e.g. .cmd on Windows) may report a non-zero
+        return code even though they print valid version output.
+        """
+        try:
+            cmd = wrap_windows_script_command(binary_path, [version_flag])
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                **build_background_subprocess_kwargs(),
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=10
+            )
+
+            output = (stdout or b"").decode(errors="replace")
+            if not output.strip():
+                output = (stderr or b"").decode(errors="replace")
+
+            match = _VERSION_RE.search(output)
+            return match.group(1) if match else None
+
+        except (asyncio.TimeoutError, OSError, Exception) as exc:
+            logger.debug("Lenient version check failed for %s: %s", binary_path, exc)
             return None
