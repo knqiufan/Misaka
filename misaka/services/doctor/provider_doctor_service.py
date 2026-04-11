@@ -23,7 +23,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from misaka.config import get_claude_config_paths, get_expanded_path
+from misaka.config import get_expanded_path
 from misaka.utils.platform import find_claude_binary
 
 if TYPE_CHECKING:
@@ -86,18 +86,35 @@ class ProviderDoctorService:
         self._db = db
 
     async def run_all(self) -> DoctorReport:
-        """Execute all probes and return an aggregated report."""
+        """Execute all probes and return an aggregated report.
+
+        CLI existence check involves subprocess calls that can block
+        for several seconds per candidate path, so we offload those
+        I/O-bound probes to a worker thread while keeping DB-accessing
+        probes on the event loop thread (SQLite connections are
+        single-threaded).
+        """
+        import asyncio
+
+        cli_result, node_result = await asyncio.to_thread(
+            self._run_io_probes
+        )
+
         probes = [
-            self._probe_cli_existence(),
+            cli_result,
             self._probe_api_key(),
             self._probe_env_vars(),
             self._probe_cli_settings(),
-            self._probe_nodejs(),
+            node_result,
         ]
         return DoctorReport(
             probes=probes,
             checked_at=datetime.now(timezone.utc).isoformat(),
         )
+
+    def _run_io_probes(self) -> tuple[ProbeResult, ProbeResult]:
+        """Run probes that involve subprocess / PATH scanning (thread-safe)."""
+        return self._probe_cli_existence(), self._probe_nodejs()
 
     def _probe_cli_existence(self) -> ProbeResult:
         """Probe 1: Check if Claude Code CLI binary is reachable."""

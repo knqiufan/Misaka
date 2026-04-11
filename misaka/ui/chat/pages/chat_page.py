@@ -476,7 +476,9 @@ class ChatPage(ft.Stack):
 
     def _cmd_doctor(self) -> None:
         """Run provider diagnostics and show results in a dialog."""
-        from misaka.ui.dialogs.doctor_dialog import DoctorDialog
+        import contextlib
+
+        from misaka.ui.dialogs.doctor_dialog import build_doctor_dialog
 
         page = self.state.page
         if not page:
@@ -486,32 +488,31 @@ class ChatPage(ft.Stack):
         if not doctor_svc:
             return
 
-        dialog_content = DoctorDialog(is_loading=True)
+        def _dismiss() -> None:
+            with contextlib.suppress(AttributeError, RuntimeError):
+                page.pop_dialog()
+            self.state.update()
 
-        alert = ft.AlertDialog(modal=True, content=dialog_content, actions=[])
+        def _recheck() -> None:
+            async def _do_recheck() -> None:
+                content = alert.content
+                content.refresh(is_loading=True)
+                self.state.update()
+                new_report = await doctor_svc.run_all()
+                content.refresh(report=new_report)
+                self.state.update()
+            page.run_task(_do_recheck)
+
+        alert = build_doctor_dialog(
+            is_loading=True,
+            on_dismiss=_dismiss,
+            on_recheck=_recheck,
+        )
         page.show_dialog(alert)
 
         async def _run_doctor() -> None:
             report = await doctor_svc.run_all()
-
-            def _on_dismiss() -> None:
-                import contextlib
-                with contextlib.suppress(AttributeError, RuntimeError):
-                    page.pop_dialog()
-                self.state.update()
-
-            def _on_recheck() -> None:
-                async def _recheck() -> None:
-                    dialog_content.refresh(is_loading=True)
-                    self.state.update()
-                    new_report = await doctor_svc.run_all()
-                    dialog_content.refresh(report=new_report)
-                    self.state.update()
-                page.run_task(_recheck)
-
-            dialog_content._on_dismiss = _on_dismiss
-            dialog_content._on_recheck = _on_recheck
-            dialog_content.refresh(report=report)
+            alert.content.refresh(report=report)
             self.state.update()
 
         page.run_task(_run_doctor)
