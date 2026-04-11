@@ -70,15 +70,15 @@ class SettingsPage(ft.Column):
         self._on_theme_change = on_theme_change
         self._on_locale_change = on_locale_change
         self._router_list: ft.Column | None = None
+        self._sections_column: ft.Column | None = None
         self._build_ui()
 
     # ------------------------------------------------------------------
     # UI construction
     # ------------------------------------------------------------------
 
-    def _build_ui(self) -> None:
-        header = self._build_header()
-
+    def _build_sections(self) -> list[ft.Control]:
+        """Build all section cards for the settings page."""
         appearance_section = build_appearance_section(
             self.state,
             on_theme_click=self._change_theme,
@@ -96,7 +96,7 @@ class SettingsPage(ft.Column):
         )
         about_section = self._build_about_section()
 
-        sections = [
+        return [
             self._wrap_card(appearance_section),
             self._wrap_card(permission_section),
             self._wrap_card(cli_settings_section),
@@ -109,14 +109,23 @@ class SettingsPage(ft.Column):
             ft.Container(height=16),
         ]
 
-        sections_list = ft.Column(
+    def _build_ui(self) -> None:
+        sections = self._build_sections()
+
+        if self._sections_column is not None:
+            self._sections_column.controls = sections
+            return
+
+        header = self._build_header()
+
+        self._sections_column = ft.Column(
             controls=sections,
             spacing=0,
             scroll=ft.ScrollMode.AUTO,
             expand=True,
         )
         sections_container = ft.Container(
-            content=sections_list,
+            content=self._sections_column,
             expand=True,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
         )

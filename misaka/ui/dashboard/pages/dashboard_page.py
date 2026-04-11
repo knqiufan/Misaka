@@ -1,7 +1,7 @@
 """
 Unified dashboard page.
 
-Aggregates environment status, MCP server health, session statistics,
+Aggregates environment status, MCP server health, session/skill statistics,
 and cumulative token usage into a single overview page with card layout.
 """
 
@@ -21,12 +21,14 @@ from misaka.ui.common.theme import (
     WARNING_AMBER,
     make_badge,
     make_icon_button,
+    make_outlined_button,
     make_section_card,
 )
 
 if TYPE_CHECKING:
     from misaka.services.dashboard.dashboard_service import (
         SessionStats,
+        SkillStats,
         TokenUsageSummary,
     )
     from misaka.state import AppState
@@ -45,39 +47,52 @@ def _fmt_cost(cost: float) -> str:
 
 
 class DashboardPage(ft.Column):
-    """Unified dashboard with environment, MCP, session, and token cards."""
+    """Unified dashboard with env, MCP, session, skill, and token cards."""
 
     def __init__(self, state: AppState) -> None:
         super().__init__(spacing=0, expand=True)
         self.state = state
         self._session_stats: SessionStats | None = None
         self._token_summary: TokenUsageSummary | None = None
+        self._skill_stats: SkillStats | None = None
+        self._cli_session_count: int = 0
+        self._mcp_health: dict[str, bool] | None = None
+        self._mcp_checking = False
         self._loading = False
+        self._sections_column: ft.Column | None = None
         self._build_ui()
 
     # ------------------------------------------------------------------
     # Top-level layout (matches Settings / Plugins page structure)
     # ------------------------------------------------------------------
 
-    def _build_ui(self) -> None:
-        header = self._build_header()
-
-        sections = [
+    def _build_sections(self) -> list[ft.Control]:
+        return [
             self._wrap_card(self._build_session_section()),
             self._wrap_card(self._build_token_section()),
+            self._wrap_card(self._build_skill_section()),
             self._wrap_card(self._build_env_section()),
             self._wrap_card(self._build_mcp_section()),
             ft.Container(height=16),
         ]
 
-        sections_list = ft.Column(
+    def _build_ui(self) -> None:
+        sections = self._build_sections()
+
+        if self._sections_column is not None:
+            self._sections_column.controls = sections
+            return
+
+        header = self._build_header()
+
+        self._sections_column = ft.Column(
             controls=sections,
             spacing=0,
             scroll=ft.ScrollMode.AUTO,
             expand=True,
         )
         sections_container = ft.Container(
-            content=sections_list,
+            content=self._sections_column,
             expand=True,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
         )
@@ -180,7 +195,7 @@ class DashboardPage(ft.Column):
         stats = self._session_stats
 
         if stats:
-            stat_items = [
+            row1 = [
                 self._stat_chip(
                     _fmt_number(stats.total_sessions),
                     t("dashboard.total_sessions"),
@@ -196,19 +211,46 @@ class DashboardPage(ft.Column):
                     t("dashboard.archived_sessions"),
                     ft.Icons.ARCHIVE_OUTLINED,
                 ),
+            ]
+            row2 = [
                 self._stat_chip(
                     _fmt_number(stats.total_messages),
                     t("dashboard.total_messages"),
                     ft.Icons.MESSAGE_OUTLINED,
                 ),
             ]
-            body: ft.Control = ft.ResponsiveRow(
+            if self._cli_session_count > 0:
+                row2.append(
+                    self._stat_chip(
+                        _fmt_number(self._cli_session_count),
+                        t("dashboard.cli_sessions"),
+                        ft.Icons.TERMINAL,
+                    ),
+                )
+            body: ft.Control = ft.Column(
                 controls=[
-                    ft.Container(col={"xs": 6, "md": 3}, content=c)
-                    for c in stat_items
+                    ft.ResponsiveRow(
+                        controls=[
+                            ft.Container(
+                                col={"xs": 4, "md": 4}, content=c,
+                            )
+                            for c in row1
+                        ],
+                        spacing=8,
+                        run_spacing=8,
+                    ),
+                    ft.ResponsiveRow(
+                        controls=[
+                            ft.Container(
+                                col={"xs": 6, "md": 6}, content=c,
+                            )
+                            for c in row2
+                        ],
+                        spacing=8,
+                        run_spacing=8,
+                    ),
                 ],
                 spacing=8,
-                run_spacing=8,
             )
         else:
             body = ft.Text(
@@ -297,6 +339,92 @@ class DashboardPage(ft.Column):
         )
 
     # ------------------------------------------------------------------
+    # Skill statistics section
+    # ------------------------------------------------------------------
+
+    def _build_skill_section(self) -> ft.Control:
+        stats = self._skill_stats
+
+        if stats:
+            stat_items = [
+                self._stat_chip(
+                    _fmt_number(stats.total),
+                    t("dashboard.skills_total"),
+                    ft.Icons.CODE,
+                ),
+                self._stat_chip(
+                    _fmt_number(stats.global_count),
+                    t("extensions.source_global"),
+                    ft.Icons.PUBLIC,
+                ),
+                self._stat_chip(
+                    _fmt_number(stats.project_count),
+                    t("extensions.source_project"),
+                    ft.Icons.FOLDER_OUTLINED,
+                ),
+                self._stat_chip(
+                    _fmt_number(stats.installed_count),
+                    t("extensions.source_installed"),
+                    ft.Icons.DOWNLOAD_DONE,
+                ),
+                self._stat_chip(
+                    _fmt_number(stats.plugin_count),
+                    t("extensions.source_plugin"),
+                    ft.Icons.EXTENSION,
+                ),
+            ]
+            row1 = stat_items[:3]
+            row2 = stat_items[3:]
+            body: ft.Control = ft.Column(
+                controls=[
+                    ft.ResponsiveRow(
+                        controls=[
+                            ft.Container(
+                                col={"xs": 4, "md": 4}, content=c,
+                            )
+                            for c in row1
+                        ],
+                        spacing=8,
+                        run_spacing=8,
+                    ),
+                    ft.ResponsiveRow(
+                        controls=[
+                            ft.Container(
+                                col={"xs": 6, "md": 6}, content=c,
+                            )
+                            for c in row2
+                        ],
+                        spacing=8,
+                        run_spacing=8,
+                    ),
+                ],
+                spacing=8,
+            )
+        else:
+            body = ft.Text(
+                t("dashboard.no_data"),
+                size=12, italic=True, opacity=0.5,
+            )
+
+        return ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        t("dashboard.skill_stats"),
+                        size=16, weight=ft.FontWeight.W_600,
+                    ),
+                    ft.Text(
+                        t("dashboard.skill_stats_desc"),
+                        size=12, opacity=0.6,
+                    ),
+                    body,
+                ],
+                spacing=12,
+            ),
+            padding=ft.Padding.symmetric(horizontal=24, vertical=16),
+        )
+
+    # ------------------------------------------------------------------
     # Environment status section
     # ------------------------------------------------------------------
 
@@ -335,21 +463,41 @@ class DashboardPage(ft.Column):
 
     @staticmethod
     def _build_tool_row(tool) -> ft.Control:
+        has_version = tool.version is not None
         is_installed = tool.is_installed
-        status_icon = ft.Icon(
-            ft.Icons.CHECK_CIRCLE if is_installed else ft.Icons.CANCEL,
-            color=SUCCESS_GREEN if is_installed else ERROR_RED,
-            size=22,
-        )
-        version_text = (
-            f"v{tool.version}" if tool.version
-            else t("dashboard.not_checked")
-        )
-        badge = (
-            make_badge(t("dashboard.healthy"), bgcolor=SUCCESS_GREEN)
-            if is_installed
-            else make_badge(t("dashboard.unhealthy"), bgcolor=ERROR_RED)
-        )
+
+        if has_version:
+            status_icon = ft.Icon(
+                ft.Icons.CHECK_CIRCLE,
+                color=SUCCESS_GREEN, size=22,
+            )
+            version_text = f"v{tool.version}"
+            badge = make_badge(
+                t("dashboard.healthy"), bgcolor=SUCCESS_GREEN,
+            )
+            border_color = SUCCESS_GREEN
+        elif is_installed:
+            status_icon = ft.Icon(
+                ft.Icons.CHECK_CIRCLE,
+                color=WARNING_AMBER, size=22,
+            )
+            version_text = t("dashboard.version_unknown")
+            badge = make_badge(
+                t("dashboard.healthy"), bgcolor=WARNING_AMBER,
+            )
+            border_color = WARNING_AMBER
+        else:
+            status_icon = ft.Icon(
+                ft.Icons.CANCEL,
+                color=ERROR_RED, size=22,
+            )
+            version_text = t("dashboard.unhealthy")
+            badge = make_badge(
+                t("dashboard.unhealthy"), bgcolor=ERROR_RED,
+            )
+            border_color = ft.Colors.with_opacity(
+                0.06, ft.Colors.ON_SURFACE,
+            )
 
         return ft.Container(
             content=ft.Row(
@@ -375,13 +523,7 @@ class DashboardPage(ft.Column):
             ),
             padding=ft.Padding.symmetric(horizontal=12, vertical=10),
             border_radius=RADIUS_LG,
-            border=ft.Border.all(
-                1,
-                SUCCESS_GREEN if is_installed
-                else ft.Colors.with_opacity(
-                    0.06, ft.Colors.ON_SURFACE,
-                ),
-            ),
+            border=ft.Border.all(1, border_color),
             bgcolor=ft.Colors.with_opacity(
                 0.02, ft.Colors.ON_SURFACE,
             ),
@@ -396,15 +538,15 @@ class DashboardPage(ft.Column):
         server_rows: list[ft.Control] = []
 
         if mcp_configs:
-            mcp_svc = self.state.get_service("mcp_service")
-            server_status = (
-                mcp_svc.get_server_status() if mcp_svc else {}
-            )
             for name in mcp_configs:
+                health = (
+                    self._mcp_health.get(name)
+                    if self._mcp_health is not None
+                    else None
+                )
                 server_rows.append(
                     self._build_server_row(
-                        name, mcp_configs[name],
-                        server_status.get(name),
+                        name, mcp_configs[name], health,
                     )
                 )
         else:
@@ -419,6 +561,26 @@ class DashboardPage(ft.Column):
         count_text = (
             f" ({server_count})" if server_count else ""
         )
+
+        if self._mcp_checking:
+            action_widget: ft.Control = ft.Row(
+                controls=[
+                    ft.ProgressRing(
+                        width=14, height=14, stroke_width=2,
+                    ),
+                    ft.Text(
+                        t("dashboard.checking"),
+                        size=12, opacity=0.7,
+                    ),
+                ],
+                spacing=6,
+            )
+        else:
+            action_widget = make_outlined_button(
+                t("dashboard.check_health"),
+                icon=ft.Icons.HEALTH_AND_SAFETY,
+                on_click=self._on_check_mcp_health,
+            )
 
         return ft.Container(
             content=ft.Column(
@@ -435,7 +597,10 @@ class DashboardPage(ft.Column):
                                 if server_count else "",
                                 size=11, opacity=0.5,
                             ),
+                            ft.Container(expand=True),
+                            action_widget,
                         ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         spacing=8,
                     ),
                     ft.Text(
@@ -451,23 +616,24 @@ class DashboardPage(ft.Column):
 
     @staticmethod
     def _build_server_row(
-        name: str, cfg: dict | object, info: dict | None,
+        name: str,
+        cfg: dict | object,
+        health: bool | None,
     ) -> ft.Control:
-        if info:
-            healthy = info.get("is_healthy", False)
-            transport = info.get("transport", "stdio")
-            badge = (
-                make_badge(
-                    t("dashboard.healthy"), bgcolor=SUCCESS_GREEN,
-                ) if healthy else make_badge(
-                    t("dashboard.unhealthy"), bgcolor=WARNING_AMBER,
-                )
+        transport = (
+            cfg.get("type", "stdio")
+            if isinstance(cfg, dict) else "stdio"
+        )
+
+        if health is True:
+            badge = make_badge(
+                t("dashboard.healthy"), bgcolor=SUCCESS_GREEN,
+            )
+        elif health is False:
+            badge = make_badge(
+                t("dashboard.unhealthy"), bgcolor=WARNING_AMBER,
             )
         else:
-            transport = (
-                cfg.get("type", "stdio")
-                if isinstance(cfg, dict) else "stdio"
-            )
             badge = make_badge(
                 t("dashboard.not_checked"),
                 bgcolor=ft.Colors.with_opacity(
@@ -574,12 +740,45 @@ class DashboardPage(ft.Column):
         )
 
     # ------------------------------------------------------------------
-    # Refresh logic
+    # Refresh / MCP health check logic
     # ------------------------------------------------------------------
 
     def _on_refresh(self, e: ft.ControlEvent | None = None) -> None:
         if self.state.page:
             self.state.page.run_task(self._load_data)
+
+    def _on_check_mcp_health(
+        self, e: ft.ControlEvent | None = None,
+    ) -> None:
+        if self.state.page:
+            self.state.page.run_task(self._do_mcp_health_check)
+
+    async def _do_mcp_health_check(self) -> None:
+        """Start all configured MCP servers and check health."""
+        self._mcp_checking = True
+        self._build_ui()
+        self.state.update()
+
+        try:
+            mcp_svc = self.state.get_service("mcp_service")
+            if not mcp_svc:
+                return
+
+            mcp_configs = self.state.mcp_servers_sdk
+            if not mcp_configs:
+                return
+
+            mcp_raw = mcp_svc.load_mcp_servers()
+            for name, cfg in mcp_raw.items():
+                await mcp_svc.start_server(name, cfg)
+
+            self._mcp_health = await mcp_svc.check_health()
+        except Exception:
+            logger.exception("MCP health check failed")
+        finally:
+            self._mcp_checking = False
+            self._build_ui()
+            self.state.update()
 
     async def _load_data(self) -> None:
         """Load dashboard data from services on the main thread."""
@@ -595,6 +794,12 @@ class DashboardPage(ft.Column):
                 )
                 self._token_summary = (
                     dashboard_svc.get_token_usage_summary()
+                )
+                self._skill_stats = (
+                    dashboard_svc.get_skill_stats()
+                )
+                self._cli_session_count = (
+                    dashboard_svc.get_cli_session_count()
                 )
 
             self._build_ui()

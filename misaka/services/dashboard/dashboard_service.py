@@ -2,7 +2,7 @@
 Dashboard aggregation service.
 
 Provides statistics queries for the unified dashboard:
-session counts, message counts, and cumulative token usage.
+session counts, message counts, token usage, and skill statistics.
 """
 
 from __future__ import annotations
@@ -36,6 +36,17 @@ class TokenUsageSummary:
     total_output_tokens: int = 0
     total_cache_read_tokens: int = 0
     total_cost_usd: float = 0.0
+
+
+@dataclass
+class SkillStats:
+    """Skill counts broken down by source."""
+
+    total: int = 0
+    global_count: int = 0
+    project_count: int = 0
+    installed_count: int = 0
+    plugin_count: int = 0
 
 
 class DashboardService:
@@ -83,3 +94,39 @@ class DashboardService:
             total_cache_read_tokens=total_cache,
             total_cost_usd=total_cost,
         )
+
+    @staticmethod
+    def get_skill_stats() -> SkillStats:
+        """Scan skill sources and return counts by category."""
+        try:
+            from misaka.services.skills.skill_service import SkillService
+            svc = SkillService()
+            skills = svc.list_skills()
+        except Exception:
+            logger.exception("Failed to scan skills")
+            return SkillStats()
+
+        g = sum(1 for s in skills if s.source == "global")
+        p = sum(1 for s in skills if s.source == "project")
+        i = sum(1 for s in skills if s.source == "installed")
+        pl = sum(1 for s in skills if s.source == "plugin")
+        return SkillStats(
+            total=len(skills),
+            global_count=g,
+            project_count=p,
+            installed_count=i,
+            plugin_count=pl,
+        )
+
+    @staticmethod
+    def get_cli_session_count() -> int:
+        """Count CLI session files under ``~/.claude/projects/``."""
+        try:
+            from misaka.services.session.session_import_service import (
+                SessionImportService,
+            )
+            svc = SessionImportService()
+            return len(svc.list_cli_session_paths())
+        except Exception:
+            logger.exception("Failed to count CLI sessions")
+            return 0

@@ -35,8 +35,15 @@
     "healthy": "正常",
     "unhealthy": "异常",
     "not_checked": "未检查",
+    "version_unknown": "已安装（版本未知）",
     "configured": "已配置",
-    "no_servers": "未配置 MCP 服务器"
+    "no_servers": "未配置 MCP 服务器",
+    "skill_stats": "技能统计",
+    "skill_stats_desc": "已发现的 Skill 文件按来源分类。",
+    "skills_total": "技能总数",
+    "cli_sessions": "CLI 会话",
+    "check_health": "检查健康状态",
+    "checking": "检查中…"
   },
   "chat": {
     "chats": "聊天",

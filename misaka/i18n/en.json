@@ -35,8 +35,15 @@
     "healthy": "Healthy",
     "unhealthy": "Unhealthy",
     "not_checked": "Not checked",
+    "version_unknown": "Installed (version unknown)",
     "configured": "Configured",
-    "no_servers": "No MCP servers configured"
+    "no_servers": "No MCP servers configured",
+    "skill_stats": "Skills",
+    "skill_stats_desc": "Discovered skill files by source category.",
+    "skills_total": "Total Skills",
+    "cli_sessions": "CLI Sessions",
+    "check_health": "Check Health",
+    "checking": "Checking…"
   },
   "chat": {
     "chats": "Chats",
