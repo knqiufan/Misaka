@@ -276,7 +276,11 @@
     "skill_exists": "A skill with this name already exists.",
     "folder_files": "Folder Files",
     "no_folder_files": "No files found",
-    "open_file": "Open in file manager"
+    "open_file": "Open in file manager",
+    "open_folder": "Open folder in file manager",
+    "view_file": "View file content",
+    "file_too_large": "File is too large to preview (> 512 KB).",
+    "file_read_error": "Unable to read file content."
   },
   "import_session": {
     "title": "Import CLI Session",

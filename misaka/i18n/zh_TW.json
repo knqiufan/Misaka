@@ -276,7 +276,11 @@
     "skill_exists": "同名技能已存在。",
     "folder_files": "資料夾內容",
     "no_folder_files": "未找到檔案",
-    "open_file": "在檔案管理器中開啟"
+    "open_file": "在檔案管理器中開啟",
+    "open_folder": "在檔案管理器中開啟資料夾",
+    "view_file": "查看檔案內容",
+    "file_too_large": "檔案過大，無法預覽（> 512 KB）。",
+    "file_read_error": "無法讀取檔案內容。"
   },
   "import_session": {
     "title": "匯入 CLI 會話",

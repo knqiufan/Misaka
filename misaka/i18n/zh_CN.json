@@ -276,7 +276,11 @@
     "skill_exists": "同名技能已存在。",
     "folder_files": "文件夹内容",
     "no_folder_files": "未找到文件",
-    "open_file": "在文件管理器中打开"
+    "open_file": "在文件管理器中打开",
+    "open_folder": "在文件管理器中打开文件夹",
+    "view_file": "查看文件内容",
+    "file_too_large": "文件过大，无法预览（> 512 KB）。",
+    "file_read_error": "无法读取文件内容。"
   },
   "import_session": {
     "title": "导入 CLI 会话",
