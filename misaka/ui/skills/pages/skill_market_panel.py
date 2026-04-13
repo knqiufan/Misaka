@@ -68,22 +68,25 @@ class SkillMarketPanel(ft.Column):
             on_submit=self._on_search_submit,
         )
 
-        search_row = ft.Row(
-            controls=[
-                ft.Container(content=self._search_field, expand=True),
-                make_button(
-                    t("extensions.market_search_btn"),
-                    icon=ft.Icons.SEARCH,
-                    on_click=self._on_search_click,
-                ),
-                make_outlined_button(
-                    t("extensions.market_load_popular"),
-                    icon=ft.Icons.TRENDING_UP,
-                    on_click=self._on_load_popular,
-                ),
-            ],
-            spacing=8,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        search_row = ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Container(content=self._search_field, expand=True),
+                    make_button(
+                        t("extensions.market_search_btn"),
+                        icon=ft.Icons.SEARCH,
+                        on_click=self._on_search_click,
+                    ),
+                    make_outlined_button(
+                        t("extensions.market_load_popular"),
+                        icon=ft.Icons.TRENDING_UP,
+                        on_click=self._on_load_popular,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=10),
         )
 
         self._result_list.controls = [self._build_empty_hint()]
@@ -91,10 +94,6 @@ class SkillMarketPanel(ft.Column):
         left_panel = ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Container(
-                        content=search_row,
-                        padding=ft.Padding.symmetric(horizontal=12, vertical=12),
-                    ),
                     ft.Container(
                         content=self._result_list,
                         expand=True,
@@ -126,14 +125,14 @@ class SkillMarketPanel(ft.Column):
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
 
-        main_row = ft.Row(
+        content_row = ft.Row(
             controls=[left_panel, self._preview_container],
             spacing=0,
             expand=True,
             vertical_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
-        self.controls = [main_row]
+        self.controls = [search_row, content_row]
 
     def _build_empty_hint(self) -> ft.Container:
         empty = make_empty_state(
@@ -358,13 +357,19 @@ class SkillMarketPanel(ft.Column):
 
         refs_controls: list[ft.Control] = []
         if skill.refs:
-            for label, url in skill.refs.items():
-                if url:
+            for ref_label, ref_url in skill.refs.items():
+                if ref_url:
                     refs_controls.append(
                         ft.TextButton(
-                            text=label,
-                            url=url,
-                            icon=ft.Icons.OPEN_IN_NEW,
+                            content=ft.Row(
+                                controls=[
+                                    ft.Icon(ft.Icons.OPEN_IN_NEW, size=14),
+                                    ft.Text(ref_label, size=12),
+                                ],
+                                spacing=4,
+                                tight=True,
+                            ),
+                            url=ref_url,
                         )
                     )
 
