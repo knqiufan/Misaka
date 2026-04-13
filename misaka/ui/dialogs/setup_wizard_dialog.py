@@ -376,17 +376,19 @@ class SetupWizardDialog(ft.Column):
 
     def _build_workdir_step(self) -> ft.Control:
         workdir_field = make_text_field(
-            label=t("setup_wizard.workdir_label"),
-            hint_text=t("setup_wizard.workdir_hint"),
             value=self._workdir,
+            hint_text=t("setup_wizard.workdir_hint"),
             on_change=lambda e: self._update_workdir(e.control.value),
             expand=True,
         )
 
-        browse_btn = make_outlined_button(
-            t("setup_wizard.workdir_browse"),
-            icon=ft.Icons.FOLDER_OPEN,
-            on_click=lambda e: self._browse_workdir(),
+        browse_btn = ft.Container(
+            content=make_outlined_button(
+                t("setup_wizard.workdir_browse"),
+                icon=ft.Icons.FOLDER_OPEN,
+                on_click=lambda e: self._browse_workdir(),
+            ),
+            height=48,
         )
 
         return ft.Column(
@@ -396,7 +398,7 @@ class SetupWizardDialog(ft.Column):
                 ft.Row(
                     controls=[workdir_field, browse_btn],
                     spacing=10,
-                    vertical_alignment=ft.CrossAxisAlignment.END,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
             ],
             spacing=8,
@@ -597,7 +599,7 @@ class SetupWizardDialog(ft.Column):
             on_select=on_select,
             initial_path=self._workdir or None,
         )
-        picker.show()
+        picker.open()
 
     # ------------------------------------------------------------------
     # Environment check logic
