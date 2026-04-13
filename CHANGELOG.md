@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.8] - 2026-04-13
+
+### Added
+
+- Add online skill market — browse, search, and one-click install community skills from skills.sh
+- Add guided setup wizard for first-launch onboarding (CLI detection → API config → workspace selection)
+- Add Provider Doctor diagnostics with structured probes for CLI, API key, and environment validation
+- Add structured error classifier with 16 error categories and user-friendly messages
+- Add daily token usage charts with bar visualization for input/output tokens on dashboard
+- Add environment version checking enhancements
+
+### Changed
+
+- Redesign README files with modern GitHub-style branding, feature highlights, and comprehensive documentation
+- Enhance skill market panel display with relevance score
+- Improve setup wizard dialog layout and functionality
+- Improve provider diagnostics implementation and UI
+- Remove outdated image files
+
 ## [0.1.7] - 2026-04-11
 
 ### Added
@@ -82,7 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update README files with new features and images
 - Add CI/CD guide and exclude docs from git tracking
 
-[Unreleased]: https://github.com/knqiufan/Misaka/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/knqiufan/Misaka/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/knqiufan/Misaka/compare/v0.1.7...v0.1.8
+[0.1.7]: https://github.com/knqiufan/Misaka/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/knqiufan/Misaka/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/knqiufan/Misaka/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/knqiufan/Misaka/compare/v0.1.3...v0.1.4
