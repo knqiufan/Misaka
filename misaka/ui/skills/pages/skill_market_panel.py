@@ -261,10 +261,16 @@ class SkillMarketPanel(ft.Column):
                             max_lines=1,
                             overflow=ft.TextOverflow.ELLIPSIS,
                         ),
-                        ft.Text(
-                            install_text,
-                            size=9,
-                            opacity=0.4,
+                        ft.Row(
+                            controls=[
+                                ft.Text(install_text, size=9, opacity=0.4),
+                                ft.Text(
+                                    f"⭐ {skill.relevance_score:.0f}",
+                                    size=9,
+                                    opacity=0.4,
+                                ),
+                            ],
+                            spacing=8,
                         ),
                     ],
                     spacing=2,
@@ -325,10 +331,15 @@ class SkillMarketPanel(ft.Column):
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
+        score_text = f"{skill.relevance_score:.1f}"
+
         meta_row = ft.Row(
             controls=[
                 ft.Icon(ft.Icons.DOWNLOAD, size=14, opacity=0.5),
                 ft.Text(install_text, size=12, opacity=0.5),
+                ft.Container(width=12),
+                ft.Icon(ft.Icons.STAR_ROUNDED, size=14, color="#f59e0b"),
+                ft.Text(score_text, size=12, opacity=0.5),
             ],
             spacing=6,
         )
