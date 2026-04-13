@@ -330,8 +330,14 @@ def _main(page: ft.Page) -> None:
 
         result = await services.env_check_service.check_all()
         state.env_check_result = result
-        if not result.all_installed:
+
+        wizard_done = services.settings_service.get(SettingKeys.SETUP_WIZARD_COMPLETED) == "true"
+        if not wizard_done:
+            app_shell.show_setup_wizard()
+        elif not result.all_installed:
             state.show_env_check_dialog = True
+            app_shell.show_env_check_dialog()
+
         state.update()
 
     page.run_task(_run_env_check)

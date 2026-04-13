@@ -18,6 +18,7 @@ from misaka.ui.chat.pages.chat_page import ChatPage
 from misaka.ui.common.theme import apply_theme
 from misaka.ui.dashboard.pages.dashboard_page import DashboardPage
 from misaka.ui.dialogs.env_check_dialog import EnvCheckDialog
+from misaka.ui.dialogs.setup_wizard_dialog import SetupWizardDialog
 from misaka.ui.navigation.nav_rail import build_nav_rail
 from misaka.ui.pages.plugins_page import PluginsPage
 from misaka.ui.settings.pages.settings_page import SettingsPage
@@ -51,6 +52,7 @@ class AppShell(ft.Row):
         self._plugins_page: PluginsPage | None = None
         self._extensions_page: ExtensionsPage | None = None
         self._env_check_dialog: EnvCheckDialog | None = None
+        self._setup_wizard_dialog: SetupWizardDialog | None = None
 
         self._build_ui()
 
@@ -215,6 +217,39 @@ class AppShell(ft.Row):
     def get_chat_page(self) -> ChatPage | None:
         """Return the chat page instance for external wiring."""
         return self._chat_page
+
+    def show_setup_wizard(self) -> None:
+        """Show the setup wizard dialog on first launch."""
+        if not self.state.page:
+            return
+
+        self._setup_wizard_dialog = SetupWizardDialog(
+            state=self.state,
+            on_finish=self._dismiss_setup_wizard,
+            on_skip=self._dismiss_setup_wizard,
+        )
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            bgcolor=ft.Colors.SURFACE,
+            shape=ft.RoundedRectangleBorder(radius=22),
+            inset_padding=ft.Padding.symmetric(horizontal=24, vertical=20),
+            content_padding=ft.Padding.all(24),
+            actions_padding=0,
+            content=ft.Container(
+                content=self._setup_wizard_dialog,
+                width=520,
+            ),
+            actions=[],
+        )
+        self.state.page.show_dialog(dialog)
+
+    def _dismiss_setup_wizard(self) -> None:
+        """Dismiss the setup wizard dialog."""
+        if self.state.page:
+            with contextlib.suppress(AttributeError, RuntimeError):
+                self.state.page.pop_dialog()
+        self.state.update()
 
     def show_env_check_dialog(self) -> None:
         """Show the environment check dialog as an overlay on the page."""

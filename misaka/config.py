@@ -95,6 +95,7 @@ class SettingKeys:
     LANGUAGE = "language"
     ACCENT_COLOR = "accent_color"
     CHAT_GROUP_MODE = "chat_group_mode"
+    SETUP_WIZARD_COMPLETED = "setup_wizard_completed"
 
 
 # ---------------------------------------------------------------------------
