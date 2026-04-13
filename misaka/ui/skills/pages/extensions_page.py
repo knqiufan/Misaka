@@ -3,6 +3,9 @@
 Full skills management UI with a left panel showing skill list grouped
 by source (Global/Project/Installed/Plugin), and a right panel showing
 a skill editor. Supports CRUD operations on skill files.
+
+Includes an online skill market tab for searching, previewing, and
+installing skills from the skills.sh ecosystem.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from misaka.ui.common.theme import (
     make_text_field,
 )
 from misaka.ui.skills.pages.skill_editor_panel import SkillEditorPanel
+from misaka.ui.skills.pages.skill_market_panel import SkillMarketPanel
 from misaka.utils.platform import open_in_file_manager
 
 if TYPE_CHECKING:
@@ -48,8 +52,12 @@ class ExtensionsPage(ft.Column):
         self._editor_panel: SkillEditorPanel | None = None
         self._file_picker: ft.FilePicker | None = None
         self._initialized = False
-        # Build the UI skeleton without loading data yet.
-        # Data is loaded on first refresh() or when the page becomes visible.
+        self._current_tab = "local"  # "local" or "market"
+        self._market_panel: SkillMarketPanel | None = None
+        self._local_content: ft.Control | None = None
+        self._tab_content_container: ft.Container | None = None
+        self._tab_selector: ft.SegmentedButton | None = None
+        self._local_header_actions: ft.Row | None = None
         self._build_ui_skeleton()
 
     def _get_skill_service(self):
@@ -107,7 +115,6 @@ class ExtensionsPage(ft.Column):
             padding=ft.Padding.symmetric(horizontal=8, vertical=8),
             scroll=ft.ScrollMode.AUTO,
         )
-        # Show empty state initially
         self._skill_list.controls = [self._build_empty_list_indicator()]
 
         left_panel = self._build_left_panel(search_field)
@@ -131,15 +138,22 @@ class ExtensionsPage(ft.Column):
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
 
-        main_content = ft.Row(
+        self._local_content = ft.Row(
             controls=[left_panel, editor_wrapper],
             spacing=0,
             expand=True,
             vertical_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
+        self._market_panel = SkillMarketPanel(self.state)
+
+        self._tab_content_container = ft.Container(
+            content=self._local_content,
+            expand=True,
+        )
+
         inner = ft.Column(
-            controls=[header, main_content],
+            controls=[header, self._tab_content_container],
             spacing=0,
             expand=True,
         )
@@ -175,7 +189,48 @@ class ExtensionsPage(ft.Column):
         self.controls = [main_card]
 
     def _build_header(self) -> ft.Container:
-        """Build page header with icon, title, description and action buttons."""
+        """Build page header with icon, title, tab selector, and action buttons."""
+        self._tab_selector = ft.SegmentedButton(
+            selected=[self._current_tab],
+            allow_multiple_selection=False,
+            on_change=self._on_tab_change,
+            segments=[
+                ft.Segment(
+                    value="local",
+                    label=ft.Text(t("extensions.tab_local")),
+                    icon=ft.Icon(ft.Icons.FOLDER_OUTLINED),
+                ),
+                ft.Segment(
+                    value="market",
+                    label=ft.Text(t("extensions.tab_market")),
+                    icon=ft.Icon(ft.Icons.STORE_OUTLINED),
+                ),
+            ],
+            style=ft.ButtonStyle(padding=ft.Padding.symmetric(horizontal=16, vertical=6)),
+        )
+
+        self._local_header_actions = ft.Row(
+            controls=[
+                make_outlined_button(
+                    t("extensions.refresh_skills"),
+                    icon=ft.Icons.REFRESH,
+                    on_click=self._refresh_all_skills,
+                ),
+                make_button(
+                    t("extensions.new_skill"),
+                    icon=ft.Icons.ADD,
+                    on_click=self._show_create_skill_dialog,
+                ),
+                make_button(
+                    t("extensions.install_from_zip"),
+                    icon=ft.Icons.UPLOAD_FILE,
+                    on_click=self._pick_zip_and_install,
+                ),
+            ],
+            spacing=8,
+            visible=self._current_tab == "local",
+        )
+
         return ft.Container(
             content=ft.Row(
                 controls=[
@@ -205,29 +260,35 @@ class ExtensionsPage(ft.Column):
                             ),
                         ],
                         spacing=2,
-                        expand=True,
                     ),
-                    make_outlined_button(
-                        t("extensions.refresh_skills"),
-                        icon=ft.Icons.REFRESH,
-                        on_click=self._refresh_all_skills,
-                    ),
-                    make_button(
-                        t("extensions.new_skill"),
-                        icon=ft.Icons.ADD,
-                        on_click=self._show_create_skill_dialog,
-                    ),
-                    make_button(
-                        t("extensions.install_from_zip"),
-                        icon=ft.Icons.UPLOAD_FILE,
-                        on_click=self._pick_zip_and_install,
-                    ),
+                    ft.Container(expand=True),
+                    self._tab_selector,
+                    self._local_header_actions,
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=16,
             ),
             padding=ft.Padding.only(bottom=20),
         )
+
+    def _on_tab_change(self, e: ft.ControlEvent) -> None:
+        """Switch between local and market tabs."""
+        if not self._tab_selector:
+            return
+        sel = self._tab_selector.selected
+        selected = (sel[0] if sel else "local").strip()
+
+        if selected not in ("local", "market"):
+            return
+
+        self._current_tab = selected
+        if self._tab_content_container:
+            self._tab_content_container.content = (
+                self._local_content if selected == "local" else self._market_panel
+            )
+        if self._local_header_actions:
+            self._local_header_actions.visible = selected == "local"
+        self.state.update()
 
     def _build_left_panel(self, search_field: ft.TextField) -> ft.Container:
         """Build left panel with search and skill list, styled as card."""

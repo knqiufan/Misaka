@@ -43,6 +43,7 @@ from misaka.services.settings.cli_settings_service import CliSettingsService
 from misaka.services.settings.router_config_service import RouterConfigService
 from misaka.services.settings.settings_service import SettingsService
 from misaka.services.skills.env_check_service import EnvCheckService
+from misaka.services.skills.skill_market_service import SkillMarketService
 from misaka.services.skills.skill_service import SkillService
 from misaka.services.task.task_service import TaskService
 from misaka.state import AppState
@@ -158,6 +159,7 @@ class ServiceContainer:
         self.env_check_service = EnvCheckService()
         self.update_check_service = UpdateCheckService()
         self.skill_service = SkillService()
+        self.skill_market_service = SkillMarketService()
         self.session_import_service = SessionImportService()
         self.cli_settings_service = CliSettingsService()
         self.router_config_service = RouterConfigService(
