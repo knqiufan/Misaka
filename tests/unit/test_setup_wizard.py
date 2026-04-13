@@ -150,8 +150,15 @@ class TestSetupWizardDialog:
     def _create_wizard(self, env_result=None, **kwargs):
         """Helper to create a SetupWizardDialog with mocks."""
         state, settings_svc, router_svc = _make_mock_state(env_result)
-        # Patch flet to avoid real UI
-        with patch("misaka.ui.dialogs.setup_wizard_dialog.ft") as mock_ft:
+
+        with (
+            patch("misaka.ui.dialogs.setup_wizard_dialog.ft") as mock_ft,
+            patch.object(
+                __import__("flet", fromlist=["Column"]).Column,
+                "__init__",
+                lambda self, *a, **kw: None,
+            ),
+        ):
             mock_ft.Column = MagicMock()
             mock_ft.Container = MagicMock()
             mock_ft.Row = MagicMock()
@@ -173,18 +180,11 @@ class TestSetupWizardDialog:
             mock_ft.Divider = MagicMock()
 
             from misaka.ui.dialogs.setup_wizard_dialog import SetupWizardDialog
-            wizard = SetupWizardDialog.__new__(SetupWizardDialog)
-            wizard.state = state
-            wizard._on_finish = kwargs.get("on_finish")
-            wizard._on_skip = kwargs.get("on_skip")
-            wizard._current_step = 0
-            wizard._env_checking = False
-            wizard._provider_name = ""
-            wizard._provider_api_key = ""
-            wizard._provider_base_url = ""
-            wizard._workdir = ""
-            wizard.controls = []
-            wizard.expand = True
+            wizard = SetupWizardDialog(
+                state,
+                on_finish=kwargs.get("on_finish"),
+                on_skip=kwargs.get("on_skip"),
+            )
 
         return wizard, state, settings_svc, router_svc
 
