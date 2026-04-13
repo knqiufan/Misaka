@@ -232,13 +232,13 @@ class AppShell(ft.Row):
         dialog = ft.AlertDialog(
             modal=True,
             bgcolor=ft.Colors.SURFACE,
-            shape=ft.RoundedRectangleBorder(radius=22),
-            inset_padding=ft.Padding.symmetric(horizontal=24, vertical=20),
-            content_padding=ft.Padding.all(24),
+            shape=ft.RoundedRectangleBorder(radius=18),
+            content_padding=ft.Padding.symmetric(horizontal=28, vertical=24),
             actions_padding=0,
+            scrollable=True,
             content=ft.Container(
                 content=self._setup_wizard_dialog,
-                width=520,
+                width=480,
             ),
             actions=[],
         )

@@ -54,9 +54,8 @@ class SetupWizardDialog(ft.Column):
         on_skip: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            alignment=ft.MainAxisAlignment.CENTER,
-            expand=True,
+            spacing=12,
+            tight=True,
         )
         self.state = state
         self._on_finish = on_finish
@@ -81,28 +80,20 @@ class SetupWizardDialog(ft.Column):
 
     def _build_ui(self) -> None:
         step_content = self._build_step_content()
-
         stepper_indicators = self._build_stepper_indicators()
-
         nav_buttons = self._build_nav_buttons()
 
         self.controls = [
-            ft.Column(
-                controls=[
-                    self._build_header(),
-                    make_divider(),
-                    stepper_indicators,
-                    make_divider(),
-                    ft.Container(
-                        content=step_content,
-                        padding=ft.Padding.only(top=8, bottom=8),
-                    ),
-                    make_divider(),
-                    nav_buttons,
-                ],
-                spacing=12,
-                tight=True,
-            )
+            self._build_header(),
+            make_divider(),
+            stepper_indicators,
+            make_divider(),
+            ft.Container(
+                content=step_content,
+                padding=ft.Padding.only(top=4, bottom=4),
+            ),
+            make_divider(),
+            nav_buttons,
         ]
 
     def _build_header(self) -> ft.Control:
