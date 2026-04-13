@@ -167,7 +167,8 @@ class SetupWizardDialog(ft.Column):
             indicators.append(step_indicator)
 
             if i < len(step_labels) - 1:
-                line_color = SUCCESS_GREEN if is_done else ft.Colors.with_opacity(0.15, ft.Colors.ON_SURFACE)
+                default_line = ft.Colors.with_opacity(0.15, ft.Colors.ON_SURFACE)
+                line_color = SUCCESS_GREEN if is_done else default_line
                 indicators.append(
                     ft.Container(
                         height=2,
