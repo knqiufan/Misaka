@@ -1,178 +1,194 @@
-# Misaka
+<p align="center">
+  <img src="./assets/icon.svg" alt="Misaka Logo" width="120" />
+</p>
 
-[![License](https://img.shields.io/github/license/knqiufan/Misaka?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Flet](https://img.shields.io/badge/Flet-0.27+-blue?style=flat-square)](https://flet.dev)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-lightgrey?style=flat-square)](https://github.com/knqiufan/Misaka)
+<h1 align="center">Misaka</h1>
 
-[中文](README.md) · English
+<p align="center">
+  <strong>Desktop GUI Client for Claude Code</strong><br>
+  Unlock the full potential of Claude Code with a native desktop experience
+</p>
 
-**This project is fully open source and for learning purposes only. It is still in early stages with many areas needing continuous improvement. Welcome to star and contribute!**
+<p align="center">
+  <a href="https://github.com/knqiufan/Misaka/releases"><img src="https://img.shields.io/github/v/release/knqiufan/Misaka?style=flat-square&color=blue" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/knqiufan/Misaka?style=flat-square" alt="License"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python"></a>
+  <a href="https://flet.dev"><img src="https://img.shields.io/badge/Flet-0.27+-blue?style=flat-square" alt="Flet"></a>
+  <a href="https://github.com/knqiufan/Misaka"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-lightgrey?style=flat-square" alt="Platform"></a>
+</p>
 
-> A desktop GUI client for Claude Code, built with Python and [Flet](https://flet.dev).
-
-Misaka brings the power of Claude Code to a polished native desktop experience — multi-turn streaming conversations, session management, file tree browsing, MCP server integration, and more, all wrapped in a clean Material Design 3 interface.
-
-![image-20260313005835567](./image/image-20260313005835567.png)
+<p align="center">
+  <a href="README.md">中文</a> · English
+</p>
 
 ---
 
-## About the Name
+> **Fully open source — Stars and contributions welcome!** The project is under active development and we'd love your help.
 
-Misaka (御坂) — a tribute to *A Certain Scientific Railgun* (某科学的超电磁炮). The name evokes the Misaka Network's powerful computing and connectivity. I love it!
+## What is Misaka?
+
+**Misaka** is a **desktop GUI client for Claude Code** built with Python + [Flet](https://flet.dev) (Flutter). It solves the problem of Claude Code being CLI-only by wrapping multi-turn streaming conversations, session management, file browsing, MCP server integration, a skill marketplace, and more into a polished Material Design 3 native desktop app.
+
+**In one sentence:** Use Claude Code like you'd use VS Code — but lighter and more focused.
+
+![主界面](./image/主界面.png)
 
 ---
 
-## 🌟 Why Misaka?
+## Why Misaka?
 
-Misaka stands out with these **unique features**:
+### Problems It Solves
+
+- **No official GUI** — Claude Code only ships a CLI; Misaka gives it a full graphical interface
+- **Painful config switching** — Manually editing config files to switch providers and models? Misaka's Router does it in one click
+- **Complex initial setup** — Don't know where to start? The guided Setup Wizard detects and configures everything automatically
+- **No runtime visibility** — Token usage, MCP server health, session stats — all visible at a glance on the Dashboard
+
+### Unique Highlights
 
 | Feature | Description |
 |---------|-------------|
-| **🔍 Environment Check** | On startup, automatically detects Claude Code CLI, Node.js, Python, and Git. Missing tools? One-click install with platform-specific commands (winget/brew/apt). |
-| **📦 Version Check** | Checks for Claude Code CLI updates on startup. One-click upgrade via `npm install -g @anthropic-ai/claude-code@latest`. |
-| **🔀 Claude Code Router** | Manage multiple API configurations (different providers, models, Agent Team mode). Switch instantly — writes to `~/.claude/settings.json`. No other GUI offers this. |
-| **🖥️ Native Desktop** | Python + Flet (Flutter-based). Not a web app — runs as a true native window. |
-| **🛡️ Permission Control** | Fine-grained tool permission modes with interactive approval dialogs before file edits or shell commands. |
-| **📚 Skills Management** | View, install from ZIP, and refresh Claude Code Skills (Extensions) in the app. |
+| **Claude Code Router** | Manage multiple API configs (different providers / models / Agent Team mode) and switch instantly — writes to `~/.claude/settings.json`. **No other GUI tool offers this.** |
+| **Guided Setup Wizard** | First-launch walkthrough: CLI detection → API config → workspace selection. Zero-config onboarding. |
+| **Provider Doctor** | One-click diagnostics for CLI installation, API key validity, and environment variables. Pinpoints issues with severity levels and fix suggestions. |
+| **Unified Dashboard** | Environment status, MCP health, session stats, skill overview, cumulative token usage — full system visibility in one place. |
+| **Online Skill Market** | Browse, search, and one-click install community skills from skills.sh. |
+| **Thinking Visualization** | See the model's reasoning process in real-time with collapsible Thinking Blocks. |
+| **Native Desktop App** | Flutter-rendered, not a web app — fast startup, low overhead, native experience. |
 
 ---
 
-## ✨ Features
+## Feature Overview
 
-| Category | Details |
-|---|---|
-| **Multi-model chat** | Switch between Claude Sonnet, Opus, and Haiku via `/model` command |
-| **Streaming responses** | Real-time token-by-token rendering with abort support, thinking animation, and interruption error banner |
-| **Session management** | Create, rename, delete, and search conversation sessions |
-| **Three conversation modes** | `Code` · `Plan` · `Ask` — dropdown selector for Claude Code's native modes |
-| **Quick command send** | Commands like `/init` can be sent directly without opening a badge first |
-| **File tree browser** | Browse your project directory in the right panel with live file preview |
-| **MCP server support** | Load and manage Model Context Protocol servers with delete confirmation, refresh, and HTTP header support |
-| **Skill management** | View, install from ZIP, and refresh Claude Code skills (Extensions page) |
-| **Claude Code Router** | Multi-config system for managing different API providers and model presets |
-| **Import CLI sessions** | Import existing sessions from the Claude Code CLI with pagination and search |
-| **Multi-language UI** | English · 简体中文 · 繁體中文 |
-| **Theme switching** | Light / Dark / System — persisted across restarts, customizable accent color |
-| **API provider config** | Add and manage multiple Anthropic API providers with custom base URLs |
-| **Permission control** | Fine-grained tool permission modes with interactive approval dialogs |
-| **Update notifications** | Automatic check for Claude Code CLI updates on startup |
-| **Cross-platform** | Windows · macOS |
-| **Developer mode** | Hot reload and debug logging support for development |
+### Conversation & Interaction
 
----
+- **Streaming responses** — Real-time token-by-token rendering with abort support
+- **Three conversation modes** — `Code` · `Plan` · `Ask`, switchable via dropdown
+- **Multi-model switching** — Switch between Sonnet, Opus, and Haiku via `/model`
+- **Thinking Blocks** — Real-time display of model reasoning, collapsible for clean reading
+- **Slash commands** — `/init`, `/doctor`, and more, sent directly from the input
+- **Permission control** — Interactive approval dialogs before file edits or shell execution
+- **Message copying** — Right-click to copy both user messages and AI replies
 
-## 🛠 Tech Stack
+### Session Management
 
-| Category | Technology |
-|----------|------------|
-| **Language** | Python 3.10+ |
-| **UI Framework** | [Flet](https://flet.dev) (Flutter-based) |
-| **Claude Integration** | [claude-agent-sdk](https://pypi.org/project/claude-agent-sdk/) |
-| **Runtime** | Node.js (Claude Code CLI) |
-| **Syntax Highlighting** | Pygments |
-| **Image Handling** | Pillow |
-| **File Watching** | watchdog |
-| **Async I/O** | aiofiles · anyio |
+- **Create / rename / delete / search** sessions
+- **Group by project** — Session list supports grouping by working directory or by date
+- **Session archiving** — Archive sessions via right-click menu; restore anytime
+- **Import CLI sessions** — One-click import from Claude Code CLI history with pagination and search
 
----
+### Smart Diagnostics
 
-## 📋 Requirements
+- **Environment check** — Auto-detects Claude Code CLI, Node.js, Python, Git on startup; one-click install for missing tools
+- **Version check** — Auto-detects CLI updates; one-click upgrade
+- **Provider Doctor** — Structured diagnostic probes: CLI existence, API key validity, environment completeness. Severity-graded reports with fix suggestions
+- **Structured error classifier** — 16 error categories (network / auth / rate-limit / parsing / permission / timeout, etc.) with user-friendly messages and suggested actions
 
-- **Python** 3.10 or later
-- **Node.js** (for Claude Code CLI)
-- **Claude Code CLI** — install via npm:
-  ```bash
-  npm install -g @anthropic-ai/claude-code
-  ```
-- **Anthropic API key** — set via environment variable or configured in the Settings page
+### Data & Visualization
+
+- **Unified Dashboard** — Environment status, MCP health, session stats, skill stats, cumulative token overview
+- **Daily usage charts** — Per-day token aggregation with bar charts for input/output tokens
+- **Context usage indicator** — Real-time token consumption and context window progress in the chat footer
+- **Runtime logs** — In-memory ring buffer (200 entries) with auto-sanitization, viewable in Settings
+
+### Extension Ecosystem
+
+- **MCP server management** — Supports stdio / http / sse transport types; add via UI or config files
+- **Project-level MCP config** — Auto-loads `.mcp.json` from the project directory for per-project isolation
+- **Skill management** — Browse skills from four sources: Global / Project / Installed / Plugin
+- **Online skill market** — Search and install community skills from skills.sh
+- **Skill editor** — Two-pane layout: SKILL.md editor on the left, folder browser on the right
+
+### Personalization
+
+- **Multi-language** — English · 简体中文 · 繁體中文
+- **Theme switching** — Light / Dark / System, with customizable accent color
+- **Custom data directory** — Set via `MISAKA_DATA_DIR` environment variable
 
 ---
 
-## 🚀 Quick Start
+## Screenshots
+
+<details>
+<summary>Click to expand screenshots</summary>
+
+**Claude Code Router Configuration**
+
+![Router](./image/Router.png)
+
+**MCP Server Management**
+
+![MCP](./image/MCP.png)
+
+**Skill Management**
+
+![Skills](./image/Skill本地.png)
+
+![Skills](./image/Skill市场.png)
+
+**instrument panel**
+
+![仪表盘](./image/仪表盘.png)
+
+</details>
+
+---
+
+## Quick Start
+
+### Requirements
+
+| Dependency | Requirement |
+|------------|-------------|
+| Python | 3.10+ |
+| Node.js | Required for Claude Code CLI |
+| Claude Code CLI | `npm install -g @anthropic-ai/claude-code` |
+| API Key | Anthropic API key (env var or in-app config) |
+
+### Install & Run
 
 ```bash
-# 1. Clone the repository
+# Clone the repository
 git clone https://github.com/knqiufan/Misaka.git
 cd Misaka
 
-# 2. Install dependencies
+# Install dependencies
 pip install -e ".[dev]"
 
-# 3. Set your API key (or configure it in Settings)
-set ANTHROPIC_API_KEY=sk-ant-...   # Windows
+# Set your API key (or configure in Settings)
+set ANTHROPIC_API_KEY=sk-ant-...    # Windows
 export ANTHROPIC_API_KEY=sk-ant-... # macOS / Linux
 
-# 4. Launch Misaka
+# Launch
 misaka
 # or
 python -m misaka.main
 ```
 
-The application window opens at **1280 × 860** (minimum 800 × 600). All data — sessions, settings, and logs — is stored in `~/.misaka/`.
+The app window opens at **1280 × 860** (minimum 800 × 600). All data is stored in `~/.misaka/`.
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-### API Key
+### Claude Code Router
 
-Set the environment variable before launching, or add a provider in **Settings → API Providers**:
+Manage multiple API configurations and switch between them instantly — no manual file editing.
 
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+1. Go to **Settings → Claude Code Router** → click **Add Configuration**
+2. Fill in provider name, API key, base URL, and model IDs
+3. Click **Enable** — config is written to `~/.claude/settings.json` automatically
 
-### Claude Code Router — Quick Guide
-
-The **Claude Code Router** lets you manage multiple API configurations and switch between them instantly.
-
-![image-20260313011018935](./image/image-20260313011018935.png)
-
-**1. Add a configuration**
-
-- Go to **Settings → Claude Code Router**
-- Click **Add Configuration**
-- Fill in:
-  - **Provider Name** — e.g. "Anthropic Official", "Custom API"
-  - **API Key** — your Anthropic API key
-  - **Request URL** — leave empty for default, or use a custom base URL
-  - **Main / Haiku / Opus / Sonnet Model** — model IDs for each tier
-  - **Agent Team Mode** — toggle for Agent Teams feature
-
-**2. Enable a configuration**
-
-- Click **Enable** on the config you want to use
-- Misaka writes the config to `~/.claude/settings.json`
-- Claude Code CLI will use this config for all sessions
-
-**3. Use cases**
-
+**Use cases:**
 - Switch between official Anthropic API and third-party compatible endpoints
-- Use different models per project (e.g. Haiku for quick tasks, Opus for complex coding)
-- Separate configs for work vs personal API keys
+- Different models for different projects (Haiku for quick tasks, Opus for complex coding)
+- Separate work and personal API keys
 
-### Third-Party Plugins (MCP Servers) — Quick Guide
+### MCP Servers
 
-MCP (Model Context Protocol) servers extend Claude Code with tools like databases, APIs, and file systems.
+**Option A: Via UI** — Sidebar → Plugins → Add Server → choose transport type (stdio / http / sse)
 
-![image-20260313010921495](./image/image-20260313010921495.png)
-
-**Option A: Configure via Misaka UI**
-
-1. Open **Plugins** (MCP Servers) from the sidebar
-2. Click **Add Server**
-3. Choose **Transport Type**:
-   - **stdio** — local process (e.g. `npx -y @modelcontextprotocol/server-filesystem ~/Documents`)
-   - **http** — remote HTTP endpoint (e.g. `https://mcp.notion.com/mcp`)
-   - **sse** — legacy SSE endpoint
-4. For **stdio**: enter **Command** and **Arguments** (space-separated)
-5. For **http/sse**: enter **URL**
-6. Click **Add** — config is saved to `~/.claude.json` or `~/.claude/settings.json`
-
-**Option B: Configure via config files**
-
-Edit `~/.claude.json` or `~/.claude/settings.json`:
+**Option B: Via config files** — Edit `~/.claude.json` or `~/.claude/settings.json`:
 
 ```json
 {
@@ -189,40 +205,9 @@ Edit `~/.claude.json` or `~/.claude/settings.json`:
 }
 ```
 
-Then click **Reload Config** in the Plugins page. See [Claude Code MCP docs](https://code.claude.com/docs/en/mcp) for more examples.
-
-### Skills — Quick Guide
-
-Skills (Claude Code Extensions) are markdown files that provide reusable instructions and templates. Open **Skills** from the sidebar to create, edit, and manage them. You can browse folder contents in the skill detail view, and right-click any skill to open its folder in the system file explorer.
-
-![image-20260313011413318](./image/image-20260313011413318.png)
-
-**Skill sources**
-
-| Source | Path |
-|--------|------|
-| **Global** | `~/.claude/commands/*.md` — available everywhere |
-| **Project** | `./.claude/commands/*.md` — per-project skills |
-| **Installed** | `~/.claude/skills/*/SKILL.md` and `~/.agents/skills/*/SKILL.md` |
-| **Plugin** | `~/.claude/plugins/marketplaces/*/plugins/*/commands/*.md` |
-
-**1. View skills**
-
-- Open **Skills** from the sidebar. Skills are grouped by source (Global, Project, Installed, Plugin).
-- Use the search box to filter by name or description.
-
-**2. Install from ZIP**
-
-- Click **Install from ZIP** and select a local `.zip` file
-- The archive must contain directories with `SKILL.md`. They are copied to `~/.claude/skills/<package>/`
-
-**3. Refresh**
-
-- Click **Refresh** to reload all skills from disk after manual file changes.
+**Project-level config** — Place a `.mcp.json` in your project root; Misaka loads it automatically.
 
 ### Data Directory
-
-Override the default `~/.misaka/` storage location:
 
 ```bash
 export MISAKA_DATA_DIR=/path/to/custom/dir
@@ -230,7 +215,28 @@ export MISAKA_DATA_DIR=/path/to/custom/dir
 
 ---
 
-## 🛠 Development
+## Tech Stack
+
+| Category | Technology |
+|----------|------------|
+| **Language** | Python 3.10+ |
+| **UI Framework** | [Flet](https://flet.dev) (Flutter-based) |
+| **Claude Integration** | [claude-agent-sdk](https://pypi.org/project/claude-agent-sdk/) |
+| **Charts** | flet-charts |
+| **Syntax Highlighting** | Pygments |
+| **Image Handling** | Pillow |
+| **File Watching** | watchdog |
+| **Async I/O** | aiofiles · anyio |
+
+### Architecture
+
+```
+User Action → Flet UI Layer → AppState (single source of truth) → ServiceContainer → Database / Claude SDK
+```
+
+---
+
+## Development
 
 ```bash
 # Install with dev extras
@@ -239,43 +245,35 @@ pip install -e ".[dev]"
 # Run tests
 pytest
 
-# Lint (Ruff)
+# Lint
 ruff check misaka/
 
-# Type check (mypy)
+# Type check
 mypy misaka/
 
-# Run with hot reload (dev mode)
-python -m misaka.main
-# Or use flet run
+# Hot reload dev mode
 flet run -m misaka.main -d -r
 ```
 
-### Building a standalone executable
+### Building
 
 ```bash
 pip install -e ".[build]"
 pyinstaller misaka.spec
 ```
 
-The built executable runs as a GUI app without opening a console window. On Windows, subprocess calls (e.g. Claude Code CLI) are hidden to avoid console flicker.
+---
+
+## About the Name
+
+**Misaka** (御坂) — a tribute to *A Certain Scientific Railgun*. The name evokes the Misaka Network's powerful computing and connectivity.
 
 ---
 
-## 📦 Dependencies
+## Contributing
 
-| Package | Purpose |
-|---|---|
-| `flet >= 0.27` | Cross-platform Flutter-based UI framework |
-| `claude-agent-sdk >= 0.1.5` | Official Claude Code agent integration |
-| `Pygments >= 2.18` | Syntax highlighting in code blocks |
-| `watchdog >= 4.0` | File system event watching |
-| `aiofiles >= 24.0` | Async file I/O |
-| `anyio >= 4.0` | Async concurrency primitives |
-| `Pillow >= 10.0` | Image handling and preview |
+Issues and Pull Requests are welcome! The project is under active development and your participation is greatly appreciated.
 
----
-
-## 📄 License
+## License
 
 [Apache License 2.0](LICENSE)
