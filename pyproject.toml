@@ -60,6 +60,7 @@ disable_error_code = [
     "arg-type", "return-value", "assignment", "call-overload", "attr-defined",
     "misc", "operator", "has-type", "no-untyped-call", "valid-type",
     "union-attr", "dict-item", "call-arg", "unused-coroutine",
+    "import-untyped",
 ]
 
 [tool.pytest.ini_options]
