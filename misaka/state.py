@@ -178,6 +178,9 @@ class AppState:
         # --- Chat list grouping ---
         self.chat_group_mode: str = "date"  # "date" | "project"
 
+        # --- Notification state ---
+        self.notification_panel_open: bool = False
+
     # ----- Helpers -----
 
     def get_service(self, name: str) -> Any:

@@ -23,9 +23,11 @@ from misaka.ui.navigation.nav_rail import build_nav_rail
 from misaka.ui.pages.plugins_page import PluginsPage
 from misaka.ui.settings.pages.settings_page import SettingsPage
 from misaka.ui.skills.pages.extensions_page import ExtensionsPage
+from misaka.ui.status.notification_panel import NotificationPanel
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
+    from misaka.db.models import Notification
     from misaka.state import AppState
 
 
@@ -53,16 +55,24 @@ class AppShell(ft.Row):
         self._extensions_page: ExtensionsPage | None = None
         self._env_check_dialog: EnvCheckDialog | None = None
         self._setup_wizard_dialog: SetupWizardDialog | None = None
+        self._notification_panel: NotificationPanel | None = None
+        self._notification_overlay: ft.Container | None = None
 
         self._build_ui()
+        self._bind_notification_callback()
 
-    def _build_ui(self) -> None:
-        # Build navigation rail
-        self._nav_rail = build_nav_rail(
+    def _build_nav_rail(self) -> ft.Container:
+        """Build nav rail with all callbacks wired."""
+        return build_nav_rail(
             state=self.state,
             on_change=self._on_nav_change,
             on_theme_toggle=self._on_theme_toggle,
+            on_bell_click=self._on_bell_click,
         )
+
+    def _build_ui(self) -> None:
+        # Build navigation rail
+        self._nav_rail = self._build_nav_rail()
 
         # Build all pages
         self._build_pages()
@@ -152,11 +162,7 @@ class AppShell(ft.Row):
             self._content_area.content = current_page
 
         # Rebuild nav rail to update selected state
-        self._nav_rail = build_nav_rail(
-            state=self.state,
-            on_change=self._on_nav_change,
-            on_theme_toggle=self._on_theme_toggle,
-        )
+        self._nav_rail = self._build_nav_rail()
         self.controls[0] = self._nav_rail
 
         self.state.update()
@@ -182,11 +188,7 @@ class AppShell(ft.Row):
                 logging.getLogger(__name__).warning("Failed to persist theme: %s", exc)
 
         # Rebuild nav rail to update theme icon
-        self._nav_rail = build_nav_rail(
-            state=self.state,
-            on_change=self._on_nav_change,
-            on_theme_toggle=self._on_theme_toggle,
-        )
+        self._nav_rail = self._build_nav_rail()
         self.controls[0] = self._nav_rail
 
         self.state.update()
@@ -202,11 +204,7 @@ class AppShell(ft.Row):
         if self._content_area:
             self._content_area.content = current_page
         # Rebuild nav rail (labels change with locale)
-        self._nav_rail = build_nav_rail(
-            state=self.state,
-            on_change=self._on_nav_change,
-            on_theme_toggle=self._on_theme_toggle,
-        )
+        self._nav_rail = self._build_nav_rail()
         self.controls[0] = self._nav_rail
         self.state.update()
 
@@ -307,3 +305,83 @@ class AppShell(ft.Row):
                 self.state.update()
 
             self.state.page.run_task(_do_recheck)
+
+    # ------------------------------------------------------------------
+    # Notification panel
+    # ------------------------------------------------------------------
+
+    def _bind_notification_callback(self) -> None:
+        """Wire NotificationService.on_new to rebuild the nav-rail badge."""
+        notif_svc = self.state.get_service("notification_service")
+        if notif_svc:
+            notif_svc._on_new = self._on_new_notification
+
+    def _on_new_notification(self, _notif: Notification) -> None:
+        """Called by NotificationService whenever a new notification arrives."""
+        self._nav_rail = self._build_nav_rail()
+        self.controls[0] = self._nav_rail
+        if self._notification_panel and self.state.notification_panel_open:
+            self._notification_panel.refresh()
+        self.state.update()
+
+    def _on_bell_click(self) -> None:
+        """Toggle the notification panel overlay."""
+        self.state.notification_panel_open = not self.state.notification_panel_open
+        if self.state.notification_panel_open:
+            self._show_notification_panel()
+        else:
+            self._hide_notification_panel()
+
+    def _show_notification_panel(self) -> None:
+        """Add the notification panel as a page overlay."""
+        page = self.state.page
+        if not page:
+            return
+
+        self._notification_panel = NotificationPanel(
+            state=self.state,
+            on_close=self._hide_notification_panel,
+            on_navigate_session=self._navigate_to_session,
+        )
+
+        # Scrim: transparent clickable layer that closes the panel
+        scrim = ft.Container(
+            expand=True,
+            on_click=lambda _: self._hide_notification_panel(),
+        )
+
+        self._notification_overlay = ft.Stack(
+            controls=[
+                scrim,
+                ft.Container(
+                    content=self._notification_panel,
+                    left=68,
+                    bottom=8,
+                ),
+            ],
+            expand=True,
+        )
+
+        page.overlay.append(self._notification_overlay)
+        page.update()
+
+    def _hide_notification_panel(self) -> None:
+        """Remove the notification panel overlay."""
+        self.state.notification_panel_open = False
+        page = self.state.page
+        if page and self._notification_overlay:
+            with contextlib.suppress(ValueError):
+                page.overlay.remove(self._notification_overlay)
+        self._notification_overlay = None
+        self._notification_panel = None
+        # Rebuild nav rail so the badge refreshes
+        self._nav_rail = self._build_nav_rail()
+        self.controls[0] = self._nav_rail
+        self.state.update()
+
+    def _navigate_to_session(self, session_id: str) -> None:
+        """Switch to chat page and select the given session."""
+        if self.state.current_page != "chat":
+            self._on_nav_change("chat")
+        if self._chat_page and hasattr(self._chat_page, "_on_session_select"):
+            self._chat_page._on_session_select(session_id)

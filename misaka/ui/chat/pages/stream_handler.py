@@ -299,6 +299,16 @@ class StreamHandler:
                         "behavior": "deny",
                         "message": "Auto-denied: session is running in background",
                     })
+                notif_svc = self._state.get_service("notification_service")
+                if notif_svc:
+                    from misaka.i18n import t as _t
+                    notif_svc.publish(
+                        type="warning",
+                        title=_t("notifications.permission_denied"),
+                        message=payload.get("tool_name", ""),
+                        source="permission",
+                        session_id=ctx.session_id,
+                    )
                 return
             self._state.pending_permission = PermissionRequest(
                 id=payload.get("permission_id", ""),
@@ -657,6 +667,24 @@ class StreamHandler:
 
         # Mark as completed (dot changes from yellow to green)
         self._state.mark_background_completed(ctx.session_id)
+
+        # Publish a notification for the completed background stream
+        notif_svc = self._state.get_service("notification_service")
+        if notif_svc:
+            from misaka.i18n import t as _t
+            session_title = session.title or "New Chat"
+            notif_type = "error" if stream_error else "success"
+            notif_title = (
+                _t("notifications.bg_error") if stream_error
+                else _t("notifications.bg_complete")
+            )
+            notif_svc.publish(
+                type=notif_type,
+                title=notif_title,
+                message=session_title,
+                source="stream",
+                session_id=session.id,
+            )
 
         if self._on_background_status_change:
             self._on_background_status_change()

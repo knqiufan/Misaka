@@ -123,10 +123,54 @@ def _on_nav_hover(
     pill.update()
 
 
+def _build_notification_bell(
+    state: AppState,
+    on_bell_click: Callable[[], None] | None = None,
+) -> ft.Container:
+    """Build the notification bell icon with an unread-count badge."""
+    notif_svc = state.get_service("notification_service")
+    unread = notif_svc.unread_count if notif_svc else 0
+
+    def handle_bell(e: ft.ControlEvent) -> None:
+        if on_bell_click:
+            on_bell_click()
+
+    badge = ft.Container(
+        content=ft.Text(
+            str(min(unread, 99)),
+            size=8,
+            color=ft.Colors.WHITE,
+            weight=ft.FontWeight.BOLD,
+        ),
+        width=16,
+        height=16,
+        border_radius=8,
+        bgcolor=ft.Colors.ERROR,
+        alignment=ft.Alignment.CENTER,
+        visible=unread > 0,
+    )
+
+    bell_stack = ft.Stack(
+        controls=[
+            make_icon_button(
+                ft.Icons.NOTIFICATIONS_OUTLINED,
+                tooltip=t("notifications.title"),
+                on_click=handle_bell,
+            ),
+            ft.Container(content=badge, right=0, top=0),
+        ],
+        width=36,
+        height=36,
+    )
+
+    return ft.Container(content=bell_stack, alignment=ft.Alignment.CENTER)
+
+
 def build_nav_rail(
     state: AppState,
     on_change: Callable[[str], None] | None = None,
     on_theme_toggle: Callable[[], None] | None = None,
+    on_bell_click: Callable[[], None] | None = None,
 ) -> ft.Container:
     """Build the main navigation rail as a custom Column layout."""
     current_page = state.current_page
@@ -152,6 +196,8 @@ def build_nav_rail(
         for item in _NAV_ITEMS
     ]
 
+    notif_btn = _build_notification_bell(state, on_bell_click)
+
     theme_btn = ft.Container(
         content=make_icon_button(
             theme_icon,
@@ -167,6 +213,7 @@ def build_nav_rail(
                 ft.Container(height=6),
                 *nav_items,
                 ft.Container(expand=True),
+                notif_btn,
                 theme_btn,
                 ft.Container(height=4),
             ],

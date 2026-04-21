@@ -543,5 +543,19 @@
     "default_url": "默认 URL",
     "theme_label": "主题：{mode}",
     "confirm": "确认"
+  },
+  "notifications": {
+    "title": "通知",
+    "mark_all_read": "全部已读",
+    "clear_all": "清空",
+    "empty": "暂无通知",
+    "bg_complete": "后台任务已完成",
+    "bg_error": "后台任务出错",
+    "permission_denied": "权限已自动拒绝（后台）",
+    "update_available": "CLI 有可用更新",
+    "just_now": "刚刚",
+    "minutes_ago": "{n} 分钟前",
+    "hours_ago": "{n} 小时前",
+    "days_ago": "{n} 天前"
   }
 }

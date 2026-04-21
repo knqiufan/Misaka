@@ -38,6 +38,7 @@ from misaka.services.file.file_service import FileService
 from misaka.services.file.update_check_service import UpdateCheckService
 from misaka.services.images.image_service import ImageService
 from misaka.services.mcp.mcp_service import MCPService
+from misaka.services.notification.notification_service import NotificationService
 from misaka.services.session.session_import_service import SessionImportService
 from misaka.services.settings.cli_settings_service import CliSettingsService
 from misaka.services.settings.router_config_service import RouterConfigService
@@ -166,6 +167,8 @@ class ServiceContainer:
             db, self.cli_settings_service
         )
         self.dashboard_service = DashboardService(db)
+
+        self.notification_service = NotificationService()
 
         from misaka.services.doctor.provider_doctor_service import ProviderDoctorService
 
@@ -348,6 +351,17 @@ def _main(page: ft.Page) -> None:
     async def _run_update_check() -> None:
         result = await services.update_check_service.check_for_update()
         state.update_check_result = result
+        if result and getattr(result, "update_available", False):
+            services.notification_service.publish(
+                type="info",
+                title=i18n.t("notifications.update_available"),
+                message=i18n.t(
+                    "update.available",
+                    version=getattr(result, "latest_version", "?"),
+                    current=getattr(result, "current_version", "?"),
+                ),
+                source="update",
+            )
         state.update()
 
     page.run_task(_run_update_check)

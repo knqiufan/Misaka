@@ -543,5 +543,19 @@
     "default_url": "Default URL",
     "theme_label": "Theme: {mode}",
     "confirm": "Confirm"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "mark_all_read": "Mark all read",
+    "clear_all": "Clear all",
+    "empty": "No notifications",
+    "bg_complete": "Background task completed",
+    "bg_error": "Background task error",
+    "permission_denied": "Permission auto-denied (background)",
+    "update_available": "CLI update available",
+    "just_now": "just now",
+    "minutes_ago": "{n} min ago",
+    "hours_ago": "{n}h ago",
+    "days_ago": "{n}d ago"
   }
 }

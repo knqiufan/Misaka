@@ -252,6 +252,26 @@ class RouterConfig:
 
 
 # ---------------------------------------------------------------------------
+# Notification (in-memory only, not persisted to DB)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Notification:
+    """An application notification (stored in memory, not in the database)."""
+
+    id: str
+    type: Literal["info", "success", "warning", "error"]
+    title: str
+    message: str
+    timestamp: str  # ISO UTC
+    read: bool = False
+    source: str = ""  # "stream", "permission", "update", "mcp", "system"
+    session_id: str | None = None
+    action_label: str | None = None
+    action_data: dict[str, Any] | None = None
+
+
+# ---------------------------------------------------------------------------
 # MCP configuration
 # ---------------------------------------------------------------------------
 
