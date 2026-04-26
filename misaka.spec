@@ -16,6 +16,7 @@ Or via:
 import sys
 from pathlib import Path
 
+import certifi
 import flet
 import flet_desktop
 
@@ -39,12 +40,27 @@ if _cupertino_icons.exists():
     _flet_datas.append((str(_cupertino_icons), "flet/controls/cupertino"))
 
 # flet_desktop contains the Flutter desktop client binary (flet.exe + DLLs + data).
-# It MUST be bundled — otherwise the frozen app tries to pip-install it at runtime.
+# It MUST be bundled — otherwise the frozen app tries to download it at runtime,
+# which fails with SSL errors in some environments.
 _flet_desktop_path = Path(flet_desktop.__file__).parent
 _flet_desktop_app = _flet_desktop_path / "app"
 _flet_desktop_datas = []
 if _flet_desktop_app.exists():
     _flet_desktop_datas.append((str(_flet_desktop_app), "flet_desktop/app"))
+    _flet_exe = _flet_desktop_app / "flet" / "flet.exe"
+    if _flet_exe.exists():
+        print(f"[misaka.spec] Flet desktop client found: {_flet_exe}")
+    else:
+        print(f"[misaka.spec] WARNING: flet.exe not found at {_flet_exe}")
+else:
+    print(f"[misaka.spec] CRITICAL: flet_desktop/app directory not found at {_flet_desktop_app}")
+    print("[misaka.spec] The packaged app will fail to start! Run: pip install flet-desktop")
+
+# certifi CA bundle for SSL verification in frozen environments
+_certifi_pem = Path(certifi.where())
+_certifi_datas = [
+    (str(_certifi_pem), "certifi"),
+]
 
 _datas = [
     (str(_i18n_dir / "en.json"), "misaka/i18n"),
@@ -53,6 +69,7 @@ _datas = [
     (str(_assets_dir), "assets"),
     *_flet_datas,
     *_flet_desktop_datas,
+    *_certifi_datas,
 ]
 
 a = Analysis(
@@ -137,10 +154,14 @@ a = Analysis(
         "watchdog",
         "watchdog.observers",
         "sqlite3",
+        "certifi",
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=["runtime_hooks/suppress_console.py"],
+    runtime_hooks=[
+        "runtime_hooks/fix_ssl_certs.py",
+        "runtime_hooks/suppress_console.py",
+    ],
     excludes=[
         "tkinter",
         "matplotlib",
