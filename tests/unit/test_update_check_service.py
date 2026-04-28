@@ -159,16 +159,6 @@ class TestUpdateCheckService:
 
         with patch("shutil.which", return_value="C:/npm/npm.cmd"), \
              patch(
-                 "misaka.services.file.update_check_service.wrap_windows_script_command",
-                 return_value=[
-                     "cmd.exe",
-                     "/d",
-                     "/s",
-                     "/c",
-                     '"C:/npm/npm.cmd" install -g @anthropic-ai/claude-code@latest',
-                 ],
-             ) as mock_wrap, \
-             patch(
                  "misaka.services.file.update_check_service.build_background_subprocess_kwargs",
                  return_value={"creationflags": 1, "startupinfo": "hidden"},
              ) as mock_kwargs, \
@@ -176,17 +166,12 @@ class TestUpdateCheckService:
              patch("misaka.utils.platform.clear_claude_cache"):
             result = await service.perform_update(on_progress=progress_messages.append)
             assert result is True
-            mock_wrap.assert_called_once_with(
-                "C:/npm/npm.cmd",
-                ["install", "-g", "@anthropic-ai/claude-code@latest"],
-            )
             mock_kwargs.assert_called_once_with()
             mock_exec.assert_called_once_with(
-                "cmd.exe",
-                "/d",
-                "/s",
-                "/c",
-                '"C:/npm/npm.cmd" install -g @anthropic-ai/claude-code@latest',
+                "C:/npm/npm.cmd",
+                "install",
+                "-g",
+                "@anthropic-ai/claude-code@latest",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=1,
@@ -221,33 +206,18 @@ class TestUpdateCheckService:
 
         with patch("shutil.which", return_value="C:/npm/npm.cmd"), \
              patch(
-                 "misaka.services.file.update_check_service.wrap_windows_script_command",
-                 return_value=[
-                     "cmd.exe",
-                     "/d",
-                     "/s",
-                     "/c",
-                     '"C:/npm/npm.cmd" view @anthropic-ai/claude-code version',
-                 ],
-             ) as mock_wrap, \
-             patch(
                  "misaka.services.file.update_check_service.build_background_subprocess_kwargs",
                  return_value={"creationflags": 1, "startupinfo": "hidden"},
              ) as mock_kwargs, \
              patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
             version = await service._fetch_version_via_npm_cli("@anthropic-ai/claude-code")
             assert version == "1.2.3"
-            mock_wrap.assert_called_once_with(
-                "C:/npm/npm.cmd",
-                ["view", "@anthropic-ai/claude-code", "version"],
-            )
             mock_kwargs.assert_called_once_with()
             mock_exec.assert_called_once_with(
-                "cmd.exe",
-                "/d",
-                "/s",
-                "/c",
-                '"C:/npm/npm.cmd" view @anthropic-ai/claude-code version',
+                "C:/npm/npm.cmd",
+                "view",
+                "@anthropic-ai/claude-code",
+                "version",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=1,

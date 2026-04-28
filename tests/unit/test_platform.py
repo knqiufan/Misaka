@@ -20,19 +20,13 @@ from misaka.utils.platform import (
 
 class TestBackgroundSubprocessHelpers:
 
-    def test_wrap_windows_script_command_wraps_cmd_file(self) -> None:
+    def test_wrap_windows_script_command_returns_direct_command_for_cmd(self) -> None:
         with patch("misaka.utils.platform.IS_WINDOWS", True):
             command = wrap_windows_script_command(
                 "C:/Users/test/AppData/Roaming/npm/claude.cmd",
                 ["--version"],
             )
-        assert command == [
-            "cmd.exe",
-            "/d",
-            "/s",
-            "/c",
-            '"C:/Users/test/AppData/Roaming/npm/claude.cmd" --version',
-        ]
+        assert command == ["C:/Users/test/AppData/Roaming/npm/claude.cmd", "--version"]
 
     def test_wrap_windows_script_command_returns_direct_command_for_exe(self) -> None:
         with patch("misaka.utils.platform.IS_WINDOWS", True):

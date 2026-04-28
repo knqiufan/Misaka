@@ -60,12 +60,14 @@ def subprocess_creation_flags() -> dict[str, int]:
 
 
 def wrap_windows_script_command(binary_path: str, args: list[str]) -> list[str]:
-    """Wrap Windows script launchers so they run silently under cmd.exe."""
-    if IS_WINDOWS and binary_path.lower().endswith((".cmd", ".bat")):
-        quoted_binary = f'"{binary_path}"'
-        quoted_args = subprocess.list2cmdline(args)
-        cmdline = quoted_binary if not quoted_args else f"{quoted_binary} {quoted_args}"
-        return ["cmd.exe", "/d", "/s", "/c", cmdline]
+    """Build a command list for launching a binary on any platform.
+
+    On Windows, ``CreateProcess`` handles ``.cmd``/``.bat`` files natively,
+    so no ``cmd.exe`` wrapper is needed.  Previous versions wrapped script
+    launchers with ``cmd.exe /d /s /c "path" args``, but
+    ``subprocess.list2cmdline`` escapes the embedded quotes with backslashes,
+    causing ``cmd.exe`` to fail parsing the command.
+    """
     return [binary_path, *args]
 
 
