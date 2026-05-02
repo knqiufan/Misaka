@@ -27,6 +27,7 @@ if __package__ in {None, ""}:
 import flet as ft
 
 import misaka.i18n as i18n
+from misaka import config
 from misaka.config import LOG_PATH, SettingKeys, ensure_data_dir, get_assets_path
 from misaka.db.database import DatabaseBackend, create_database
 from misaka.services.chat.claude_service import ClaudeService
@@ -174,6 +175,17 @@ class ServiceContainer:
 
         self.doctor_service = ProviderDoctorService(db)
 
+        # Knowledge Base / RAG services
+        from misaka.services.knowledge.rag.factory import RAGComponentFactory
+        from misaka.services.knowledge.rag_orchestrator import RAGOrchestrator
+        from misaka.services.knowledge.kb_service import KnowledgeBaseService
+        from misaka.services.knowledge.document_service import DocumentService
+
+        rag_factory = RAGComponentFactory(str(config.DB_PATH), backend="langchain")
+        self.rag_orchestrator = RAGOrchestrator(rag_factory, db)
+        self.kb_service = KnowledgeBaseService(db, self.rag_orchestrator)
+        self.document_service = DocumentService(db, self.rag_orchestrator)
+
     async def close(self) -> None:
         """Release resources held by services."""
         # Abort any active Claude streaming
@@ -189,6 +201,12 @@ class ServiceContainer:
             await self.mcp_service.stop_all()
         except (OSError, RuntimeError) as exc:
             logger.warning("Error stopping MCP servers: %s", exc)
+
+        # Close RAG resources (vector store connections etc.)
+        try:
+            self.rag_orchestrator.close()
+        except (OSError, RuntimeError) as exc:
+            logger.warning("Error closing RAG orchestrator: %s", exc)
 
         # Close database connection
         try:

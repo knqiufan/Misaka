@@ -747,11 +747,39 @@ def _save_router(
     if is_edit and config and svc:
         svc.update(config.id, name=name, **kwargs)
     elif svc:
-        svc.create(name, **kwargs)
+        new_config = svc.create(name, **kwargs)
+        _save_new_config_models(svc, new_config.id, fields)
 
     refresh_router_list(state, router_list)
     page.pop_dialog()
     state.update()
+
+
+def _save_new_config_models(svc, config_id: str, fields: _FormFields) -> None:
+    """Persist models detected during new-config creation."""
+    all_cbs: list[tuple[str, str, bool]] = []
+    label_to_type = {
+        t("settings.router_models_llm"): "llm",
+        t("settings.router_models_embedding"): "embedding",
+        t("settings.router_models_reranker"): "reranker",
+    }
+    current_type = "llm"
+    for ctrl in fields.models_container.controls:
+        if not isinstance(ctrl, ft.Column):
+            continue
+        for child in ctrl.controls:
+            if isinstance(child, ft.Text) and child.value in label_to_type:
+                current_type = label_to_type[child.value]
+            elif isinstance(child, ft.Checkbox) and child.label:
+                all_cbs.append((child.label, current_type, bool(child.value)))
+
+    if not all_cbs:
+        return
+    models = [
+        {"model_id": mid, "model_type": mtype, "is_selected": 1 if sel else 0}
+        for mid, mtype, sel in all_cbs
+    ]
+    svc.save_detected_models(config_id, models)
 
 
 def _make_switch_tile(label: str, switch: ft.Switch) -> ft.Container:
