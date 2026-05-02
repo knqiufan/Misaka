@@ -79,21 +79,32 @@ def build_document_table(
     )
 
 
+def _hdr_cell(label_key: str, expand: int) -> ft.Text:
+    return ft.Text(
+        t(label_key),
+        size=10,
+        opacity=0.4,
+        weight=ft.FontWeight.W_600,
+        expand=expand,
+    )
+
+
 def _build_header_row() -> ft.Container:
+    border_color = ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE)
     return ft.Container(
         content=ft.Row(
             controls=[
-                ft.Text(t("kb.name"), size=10, opacity=0.4, weight=ft.FontWeight.W_600, expand=3),
-                ft.Text(t("kb.doc_type"), size=10, opacity=0.4, weight=ft.FontWeight.W_600, expand=1),
-                ft.Text(t("kb.doc_size"), size=10, opacity=0.4, weight=ft.FontWeight.W_600, expand=1),
-                ft.Text(t("kb.doc_chunks"), size=10, opacity=0.4, weight=ft.FontWeight.W_600, expand=1),
-                ft.Text(t("kb.doc_status"), size=10, opacity=0.4, weight=ft.FontWeight.W_600, expand=1),
+                _hdr_cell("kb.name", 3),
+                _hdr_cell("kb.doc_type", 1),
+                _hdr_cell("kb.doc_size", 1),
+                _hdr_cell("kb.doc_chunks", 1),
+                _hdr_cell("kb.doc_status", 1),
                 ft.Container(width=100),
             ],
             spacing=8,
         ),
         padding=ft.Padding(left=8, right=8, top=6, bottom=6),
-        border=ft.Border(bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.06, ft.Colors.ON_SURFACE))),
+        border=ft.Border(bottom=ft.BorderSide(1, border_color)),
     )
 
 

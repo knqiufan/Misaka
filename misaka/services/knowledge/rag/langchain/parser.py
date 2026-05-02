@@ -113,8 +113,8 @@ class _OpenpyxlLoader:
         self._file_path = file_path
 
     def load(self) -> list:
-        from langchain_core.documents import Document
         import openpyxl
+        from langchain_core.documents import Document
 
         path = Path(self._file_path)
         if not path.exists():

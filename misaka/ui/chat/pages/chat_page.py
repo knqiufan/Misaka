@@ -8,10 +8,11 @@ panel management.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import flet as ft
 
@@ -579,7 +580,7 @@ class ChatPage(ft.Stack):
         ``get_send_coroutine()`` without re-scheduling it.
         """
         augmented_text = text
-        search_results = []
+        search_results: list[Any] = []
         try:
             augmented_text, search_results = await self._do_rag_retrieve(
                 text, kb_ids,
@@ -600,12 +601,10 @@ class ChatPage(ft.Stack):
         """Show a snackbar when RAG retrieval fails."""
         from misaka.i18n import t
 
-        try:
+        with contextlib.suppress(Exception):
             self.state.page.open(
                 ft.SnackBar(content=ft.Text(t("chat.rag_retrieval_failed")), open=True),
             )
-        except Exception:
-            pass
 
     async def _do_rag_retrieve(
         self,

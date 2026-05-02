@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sqlite3
@@ -114,13 +115,11 @@ class LCSqliteVecStore(VectorStore):
             f"DELETE FROM [{table_name}] WHERE chunk_id IN ({placeholders})",
             chunk_ids,
         )
-        try:
+        with contextlib.suppress(sqlite3.OperationalError):
             conn.execute(
                 f"DELETE FROM [{meta_table}] WHERE chunk_id IN ({placeholders})",
                 chunk_ids,
             )
-        except sqlite3.OperationalError:
-            pass
         conn.commit()
 
     def drop_table(self, table_name: str) -> None:
@@ -178,7 +177,7 @@ class LCSqliteVecStore(VectorStore):
     ) -> None:
         rows = [
             (LCSqliteVecStore._get_chunk_id(c), _serialize_f32(emb))
-            for c, emb in zip(chunks, embeddings)
+            for c, emb in zip(chunks, embeddings, strict=False)
         ]
         conn.executemany(
             f"INSERT INTO [{table_name}](chunk_id, embedding) VALUES (?, ?)",
@@ -200,7 +199,8 @@ class LCSqliteVecStore(VectorStore):
             )
             for c in chunks
         ]
-        conn.executemany(
-            f"INSERT OR REPLACE INTO [{meta_table}](chunk_id, content, metadata_json) VALUES (?, ?, ?)",
-            rows,
+        ins_sql = (
+            f"INSERT OR REPLACE INTO [{meta_table}]"
+            "(chunk_id, content, metadata_json) VALUES (?, ?, ?)"
         )
+        conn.executemany(ins_sql, rows)

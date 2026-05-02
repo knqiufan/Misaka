@@ -233,7 +233,9 @@ def _add_result(
 
 def _find_embed_config(models: list, kb) -> dict | None:
     for m in models:
-        if m.model_id == kb.embedding_model_id and m.router_config_id == kb.embedding_router_config_id:
+        same_model = m.model_id == kb.embedding_model_id
+        same_router = m.router_config_id == kb.embedding_router_config_id
+        if same_model and same_router:
             return {
                 "model_id": m.model_id,
                 "base_url": m.base_url,

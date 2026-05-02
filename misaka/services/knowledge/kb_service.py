@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import shutil
 import uuid
@@ -246,10 +247,8 @@ class KnowledgeBaseService:
         for c in chunks:
             cid = str(c.metadata.get("chunk_db_id", f"chunk_{c.index}"))
             meta = "{}"
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 meta = json.dumps(c.metadata, ensure_ascii=False)
-            except (TypeError, ValueError):
-                pass
             db_chunks.append(KBChunk(
                 id=cid,
                 document_id=doc_id,

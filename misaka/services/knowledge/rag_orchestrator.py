@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from misaka.services.knowledge.rag.abstractions import (
-    ChunkData,
     EmbeddingConfig,
     IngestResult,
     RerankerConfig,

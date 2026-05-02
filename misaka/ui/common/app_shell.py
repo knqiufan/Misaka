@@ -19,10 +19,10 @@ from misaka.ui.common.theme import apply_theme
 from misaka.ui.dashboard.pages.dashboard_page import DashboardPage
 from misaka.ui.dialogs.env_check_dialog import EnvCheckDialog
 from misaka.ui.dialogs.setup_wizard_dialog import SetupWizardDialog
+from misaka.ui.knowledge.pages.knowledge_page import KnowledgePage
 from misaka.ui.navigation.nav_rail import build_nav_rail
 from misaka.ui.pages.plugins_page import PluginsPage
 from misaka.ui.settings.pages.settings_page import SettingsPage
-from misaka.ui.knowledge.pages.knowledge_page import KnowledgePage
 from misaka.ui.skills.pages.extensions_page import ExtensionsPage
 from misaka.ui.status.notification_panel import NotificationPanel
 

@@ -7,9 +7,9 @@ import logging
 import httpx
 
 from misaka.services.knowledge.rag.abstractions import (
+    Reranker,
     RerankerConfig,
     RetrievalResult,
-    Reranker,
 )
 
 logger = logging.getLogger(__name__)

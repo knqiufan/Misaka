@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
-from misaka.ui.common.theme import make_form_dialog, make_icon_button, make_text_button
+from misaka.ui.common.theme import make_form_dialog, make_text_button
 
 if TYPE_CHECKING:
     from misaka.state import AppState

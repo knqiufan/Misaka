@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
-from misaka.ui.common.theme import make_button, make_icon_button, make_text_button, make_text_field
+from misaka.ui.common.theme import make_button, make_text_button, make_text_field
 from misaka.ui.knowledge.components.document_list import build_document_table
 from misaka.ui.knowledge.components.document_upload_dialog import show_upload_dialog
 from misaka.ui.knowledge.components.document_viewer import show_document_viewer
@@ -297,7 +297,9 @@ class KBDetailPage(ft.Column):
 
 def _find_embed_config(models: list, kb) -> dict | None:
     for m in models:
-        if m.model_id == kb.embedding_model_id and m.router_config_id == kb.embedding_router_config_id:
+        same_model = m.model_id == kb.embedding_model_id
+        same_router = m.router_config_id == kb.embedding_router_config_id
+        if same_model and same_router:
             return {
                 "model_id": m.model_id,
                 "base_url": m.base_url,

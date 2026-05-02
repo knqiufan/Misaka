@@ -241,11 +241,12 @@ class MessageInput(ft.Container):
             tooltip=t("chat.kb_select_title"),
             on_click=self._toggle_kb_selector,
         )
-        self._kb_btn_container = ft.Stack(
+        kb_btn_stack = ft.Stack(
             controls=[kb_btn, ft.Container(content=kb_badge, right=0, top=0)],
             width=36,
             height=36,
         )
+        self._kb_btn_container = kb_btn_stack
         self._kb_badge = kb_badge
 
         # KB selector popup
@@ -267,9 +268,15 @@ class MessageInput(ft.Container):
         )
 
         input_row = ft.Row(
-            controls=[attach_btn, command_btn, self._kb_btn_container,
-                      self._model_indicator,
-                      self._badge_container, self._text_field, self._send_btn],
+            controls=[
+                attach_btn,
+                command_btn,
+                kb_btn_stack,
+                self._model_indicator,
+                self._badge_container,
+                self._text_field,
+                self._send_btn,
+            ],
             spacing=6,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )

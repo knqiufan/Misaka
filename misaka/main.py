@@ -176,10 +176,10 @@ class ServiceContainer:
         self.doctor_service = ProviderDoctorService(db)
 
         # Knowledge Base / RAG services
+        from misaka.services.knowledge.document_service import DocumentService
+        from misaka.services.knowledge.kb_service import KnowledgeBaseService
         from misaka.services.knowledge.rag.factory import RAGComponentFactory
         from misaka.services.knowledge.rag_orchestrator import RAGOrchestrator
-        from misaka.services.knowledge.kb_service import KnowledgeBaseService
-        from misaka.services.knowledge.document_service import DocumentService
 
         rag_factory = RAGComponentFactory(str(config.DB_PATH), backend="langchain")
         self.rag_orchestrator = RAGOrchestrator(rag_factory, db)

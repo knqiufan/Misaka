@@ -6,8 +6,9 @@ import hashlib
 import logging
 import shutil
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from misaka.config import get_kb_storage_dir
 from misaka.db.models import KBChunk, KBDocument

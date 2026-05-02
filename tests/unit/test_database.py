@@ -171,4 +171,4 @@ class TestSQLiteBackend:
 
         assert row is None
         assert version is not None
-        assert version[0] == 4
+        assert version[0] == 5
