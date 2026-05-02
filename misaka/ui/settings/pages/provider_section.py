@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import flet as ft
 
@@ -268,6 +268,14 @@ def show_router_form(
     fields = _create_form_fields(config, form_vals, default_json)
     _wire_field_sync(svc, fields)
 
+    if is_edit and config and svc:
+        _load_existing_models(svc, config.id, fields)
+
+    def on_detect(e: ft.ControlEvent):
+        _handle_detect_models(state, page, svc, config, fields)
+
+    fields.detect_btn.on_click = on_detect
+
     def save(ev):
         _save_router(
             svc, config, is_edit,
@@ -295,6 +303,9 @@ class _FormFields:
         "agent_team_switch", "high_effort_switch",
         "disable_autoupdater_switch", "hide_attribution_switch",
         "enable_tool_search_switch", "config_json",
+        # Model detection UI slots
+        "detect_btn", "detect_progress", "models_container",
+        "detected_models_cache",
     )
 
 
@@ -313,6 +324,23 @@ def _get_default_json(state: AppState, config, is_edit: bool) -> str:
             return json.dumps(default_data, indent=2, ensure_ascii=False)
         return "{}"
     return config.config_json if config else "{}"
+
+
+def _make_model_dropdown(label: str, value: str) -> ft.Dropdown:
+    """Create a compact dropdown for model selection.
+
+    Starts with a single option matching the current value (if any).
+    The full options list is populated later by ``_populate_model_dropdowns``.
+    """
+    options = [ft.dropdown.Option(key=value, text=value)] if value else []
+    return ft.Dropdown(
+        label=label,
+        value=value or None,
+        options=options,
+        dense=True,
+        text_size=12,
+        content_padding=ft.Padding.symmetric(horizontal=12, vertical=6),
+    )
 
 
 def _create_form_fields(config, form_vals: dict, default_json: str) -> _FormFields:
@@ -338,21 +366,21 @@ def _create_form_fields(config, form_vals: dict, default_json: str) -> _FormFiel
             or (config.base_url if config else "")
         ),
     )
-    f.main_model = _make_compact_field(
-        label=t("settings.router_main_model"),
-        value=str(form_vals.get("main_model", "")),
+    f.main_model = _make_model_dropdown(
+        t("settings.router_main_model"),
+        str(form_vals.get("main_model", "")),
     )
-    f.haiku_model = _make_compact_field(
-        label=t("settings.router_haiku_model"),
-        value=str(form_vals.get("haiku_model", "")),
+    f.haiku_model = _make_model_dropdown(
+        t("settings.router_haiku_model"),
+        str(form_vals.get("haiku_model", "")),
     )
-    f.opus_model = _make_compact_field(
-        label=t("settings.router_opus_model"),
-        value=str(form_vals.get("opus_model", "")),
+    f.opus_model = _make_model_dropdown(
+        t("settings.router_opus_model"),
+        str(form_vals.get("opus_model", "")),
     )
-    f.sonnet_model = _make_compact_field(
-        label=t("settings.router_sonnet_model"),
-        value=str(form_vals.get("sonnet_model", "")),
+    f.sonnet_model = _make_model_dropdown(
+        t("settings.router_sonnet_model"),
+        str(form_vals.get("sonnet_model", "")),
     )
     f.agent_team_switch = ft.Switch(
         value=bool(form_vals.get("agent_team", False)),
@@ -383,19 +411,27 @@ def _create_form_fields(config, form_vals: dict, default_json: str) -> _FormFiel
         text_size=12,
         content_padding=ft.Padding.symmetric(horizontal=12, vertical=10),
     )
+
+    f.detect_btn = make_outlined_button(
+        t("settings.router_detect_models"),
+        icon=ft.Icons.SEARCH,
+    )
+    f.detect_progress = ft.ProgressRing(width=16, height=16, stroke_width=2, visible=False)
+    f.models_container = ft.Column(spacing=6, tight=True)
+    f.detected_models_cache: dict[str, list[Any]] = {}
     return f
 
 
 def _wire_field_sync(svc, fields: _FormFields) -> None:
     """Wire bi-directional sync between form fields and the JSON textarea."""
-    model_fields = {
+    model_dropdowns = {
         "main_model": fields.main_model,
         "haiku_model": fields.haiku_model,
         "opus_model": fields.opus_model,
         "sonnet_model": fields.sonnet_model,
     }
 
-    def on_model_field_change(field_name: str):
+    def on_model_dropdown_change(field_name: str):
         def handler(e: ft.ControlEvent):
             if not svc:
                 return
@@ -405,8 +441,8 @@ def _wire_field_sync(svc, fields: _FormFields) -> None:
             fields.config_json.update()
         return handler
 
-    for fname, fld in model_fields.items():
-        fld.on_change = on_model_field_change(fname)
+    for fname, dd in model_dropdowns.items():
+        dd.on_change = on_model_dropdown_change(fname)
 
     def on_api_key_change(e: ft.ControlEvent):
         if not svc:
@@ -466,11 +502,12 @@ def _wire_field_sync(svc, fields: _FormFields) -> None:
             return
         raw = fields.config_json.value or "{}"
         vals = svc.sync_json_to_form(raw)
-        for fname, fld in model_fields.items():
+        for fname, dd in model_dropdowns.items():
             new_val = str(vals.get(fname, ""))
-            if fld.value != new_val:
-                fld.value = new_val
-                fld.update()
+            if dd.value != new_val:
+                _ensure_dropdown_option(dd, new_val)
+                dd.value = new_val or None
+                dd.update()
         new_agent = bool(vals.get("agent_team", False))
         if fields.agent_team_switch.value != new_agent:
             fields.agent_team_switch.value = new_agent
@@ -492,6 +529,196 @@ def _wire_field_sync(svc, fields: _FormFields) -> None:
     fields.config_json.on_blur = on_json_change
 
 
+def _ensure_dropdown_option(dropdown: ft.Dropdown, value: str) -> None:
+    """Add an option to the dropdown if not already present."""
+    if not value:
+        return
+    existing = {opt.key for opt in dropdown.options}
+    if value not in existing:
+        dropdown.options.append(ft.dropdown.Option(key=value, text=value))
+
+
+def _load_existing_models(svc, config_id: str, fields: _FormFields) -> None:
+    """Load previously detected models from the database."""
+    models = svc.get_models_by_config(config_id)
+    if not models:
+        fields.models_container.controls = [
+            ft.Text(t("settings.router_models_empty"), size=11, italic=True, opacity=0.5),
+        ]
+        return
+
+    grouped: dict[str, list] = {"llm": [], "embedding": [], "reranker": []}
+    for m in models:
+        grouped.setdefault(m.model_type, []).append(m)
+
+    _render_model_groups(svc, fields, grouped)
+    _populate_model_dropdowns(fields, [m.model_id for m in grouped.get("llm", [])])
+
+
+def _handle_detect_models(
+    state: AppState,
+    page: ft.Page,
+    svc,
+    config: RouterConfig | None,
+    fields: _FormFields,
+) -> None:
+    """Handle detect-models button click (launches async task)."""
+    base_url = (fields.base_url.value or "").strip()
+    api_key = (fields.api_key.value or "").strip()
+    if not base_url:
+        return
+
+    fields.detect_btn.disabled = True
+    fields.detect_progress.visible = True
+    fields.detect_btn.text = t("settings.router_detecting")
+    fields.detect_btn.update()
+    fields.detect_progress.update()
+
+    async def _run_detect():
+        result = await svc.detect_models(base_url, api_key)
+        fields.detect_btn.disabled = False
+        fields.detect_progress.visible = False
+        fields.detect_btn.text = t("settings.router_detect_models")
+
+        if result.error:
+            fields.models_container.controls = [
+                ft.Text(
+                    t("settings.router_detect_error").replace("{error}", result.error),
+                    size=11,
+                    color=ERROR_RED,
+                ),
+            ]
+        else:
+            grouped: dict[str, list] = {
+                "llm": [
+                    {"model_id": mid, "model_type": "llm"} for mid in result.llm
+                ],
+                "embedding": [
+                    {"model_id": mid, "model_type": "embedding"} for mid in result.embedding
+                ],
+                "reranker": [
+                    {"model_id": mid, "model_type": "reranker"} for mid in result.reranker
+                ],
+            }
+            if config:
+                all_models = []
+                for type_group in grouped.values():
+                    all_models.extend(type_group)
+                svc.save_detected_models(config.id, all_models)
+                saved = svc.get_models_by_config(config.id)
+                grouped = {"llm": [], "embedding": [], "reranker": []}
+                for m in saved:
+                    grouped.setdefault(m.model_type, []).append(m)
+
+            _render_model_groups(svc, fields, grouped)
+            llm_ids = [
+                (m.model_id if hasattr(m, "model_id") else m["model_id"])
+                for m in grouped.get("llm", [])
+            ]
+            _populate_model_dropdowns(fields, llm_ids)
+
+        fields.detect_btn.update()
+        fields.detect_progress.update()
+        fields.models_container.update()
+
+    page.run_task(_run_detect)
+
+
+def _render_model_groups(svc, fields: _FormFields, grouped: dict) -> None:
+    """Build the three-column model checkbox UI."""
+    sections: list[ft.Control] = []
+
+    label_map = {
+        "llm": t("settings.router_models_llm"),
+        "embedding": t("settings.router_models_embedding"),
+        "reranker": t("settings.router_models_reranker"),
+    }
+
+    for model_type in ("llm", "embedding", "reranker"):
+        items = grouped.get(model_type, [])
+        header = ft.Text(label_map[model_type], size=11, weight=ft.FontWeight.W_600, opacity=0.7)
+
+        if not items:
+            sections.append(ft.Column(
+                controls=[header, ft.Text(
+                    t("settings.router_models_none_in_group"),
+                    size=10, italic=True, opacity=0.4,
+                )],
+                spacing=2, tight=True,
+            ))
+            continue
+
+        checkboxes: list[ft.Control] = []
+        for m in items:
+            model_id = m.model_id if hasattr(m, "model_id") else m.get("model_id", "")
+            db_id = m.id if hasattr(m, "id") else None
+            is_selected = bool(m.is_selected) if hasattr(m, "is_selected") else True
+
+            cb = ft.Checkbox(
+                label=model_id,
+                value=is_selected,
+                label_style=ft.TextStyle(size=11),
+                scale=0.85,
+            )
+
+            if db_id and svc:
+                def _on_cb_change(e: ft.ControlEvent, mid=db_id):
+                    svc.update_model_selection(mid, e.data == "true")
+                    llm_models = [
+                        c.label for c in _get_llm_checkboxes(fields)
+                        if c.value
+                    ]
+                    _populate_model_dropdowns(fields, llm_models)
+                    _update_all_model_dropdowns(fields)
+                cb.on_change = _on_cb_change
+
+            checkboxes.append(cb)
+
+        sections.append(ft.Column(
+            controls=[header, *checkboxes],
+            spacing=2, tight=True,
+        ))
+
+    fields.models_container.controls = sections
+
+
+def _get_llm_checkboxes(fields: _FormFields) -> list[ft.Checkbox]:
+    """Extract LLM group checkboxes from the models container."""
+    result: list[ft.Checkbox] = []
+    in_llm_section = False
+    for ctrl in fields.models_container.controls:
+        if not isinstance(ctrl, ft.Column):
+            continue
+        for child in ctrl.controls:
+            if isinstance(child, ft.Text) and child.value == t("settings.router_models_llm"):
+                in_llm_section = True
+                continue
+            if isinstance(child, ft.Text) and child.weight == ft.FontWeight.W_600:
+                in_llm_section = False
+                continue
+            if in_llm_section and isinstance(child, ft.Checkbox):
+                result.append(child)
+    return result
+
+
+def _populate_model_dropdowns(fields: _FormFields, llm_model_ids: list[str]) -> None:
+    """Rebuild dropdown options from the selected LLM model list."""
+    options = [ft.dropdown.Option(key="", text="—")] + [
+        ft.dropdown.Option(key=mid, text=mid) for mid in sorted(llm_model_ids)
+    ]
+    for dd in (fields.main_model, fields.haiku_model, fields.opus_model, fields.sonnet_model):
+        current = dd.value
+        dd.options = list(options)
+        if current and current not in llm_model_ids:
+            dd.options.append(ft.dropdown.Option(key=current, text=current))
+
+
+def _update_all_model_dropdowns(fields: _FormFields) -> None:
+    """Call update on all four model dropdowns."""
+    for dd in (fields.main_model, fields.haiku_model, fields.opus_model, fields.sonnet_model):
+        dd.update()
+
+
 def _save_router(
     svc,
     config,
@@ -506,7 +733,7 @@ def _save_router(
     if not name:
         return
 
-    kwargs = {
+    kwargs: dict[str, Any] = {
         "api_key": fields.api_key.value or "",
         "base_url": fields.base_url.value or "",
         "main_model": fields.main_model.value or "",
@@ -576,11 +803,27 @@ def _build_dialog_form_groups(fields: _FormFields) -> list[ft.Control]:
         (t("settings.router_enable_tool_search"), fields.enable_tool_search_switch),
     ]
 
+    base_url_row = ft.Row(
+        controls=[
+            ft.Container(content=fields.base_url, expand=True),
+            fields.detect_progress,
+            fields.detect_btn,
+        ],
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        spacing=8,
+    )
+
+    models_section = _build_form_group(
+        t("settings.router_models_section"),
+        [fields.models_container],
+    )
+
     return [
         _build_form_group(
             t("settings.router_title"),
-            [fields.name, fields.api_key, fields.base_url],
+            [fields.name, fields.api_key, base_url_row],
         ),
+        models_section,
         _build_form_group(
             t("settings.default_model"),
             [

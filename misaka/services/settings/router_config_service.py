@@ -2,22 +2,30 @@
 
 Manages multiple Claude Code Router configurations with
 bidirectional binding between form fields and config JSON,
-activation (writing to ~/.claude/settings.json), and
-default config initialization.
+activation (writing to ~/.claude/settings.json), default
+config initialization, and API model detection.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import httpx
+
+from misaka.db.models import ModelDetectionResult
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
-    from misaka.db.models import RouterConfig
+    from misaka.db.models import ModelInfo, RouterConfig, RouterModel
     from misaka.services.settings.cli_settings_service import CliSettingsService
 
 logger = logging.getLogger(__name__)
+
+_DETECT_TIMEOUT = 15
+_EMBED_KEYWORDS = ("embed",)
+_RERANK_KEYWORDS = ("rerank", "ranker")
 
 # Mapping: form field name -> env var key in config_json
 _FIELD_TO_ENV_KEY: dict[str, str] = {
@@ -178,3 +186,76 @@ class RouterConfigService:
             is_active=1,
         )
         logger.info("Created default router config from ~/.claude/settings.json")
+
+    # ------------------------------------------------------------------
+    # Model detection & management
+    # ------------------------------------------------------------------
+
+    async def detect_models(
+        self, base_url: str, api_key: str,
+    ) -> ModelDetectionResult:
+        """Probe ``GET /v1/models`` and classify results by heuristic."""
+        url = base_url.rstrip("/") + "/v1/models"
+        headers: dict[str, str] = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        try:
+            async with httpx.AsyncClient(timeout=_DETECT_TIMEOUT) as client:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                payload = resp.json()
+        except httpx.TimeoutException:
+            return ModelDetectionResult(error=f"Request timed out ({_DETECT_TIMEOUT}s)")
+        except httpx.HTTPStatusError as exc:
+            return ModelDetectionResult(error=f"HTTP {exc.response.status_code}")
+        except Exception as exc:  # noqa: BLE001
+            return ModelDetectionResult(error=str(exc))
+
+        raw_models: list[dict[str, Any]] = payload.get("data", [])
+        return self._classify_models(raw_models)
+
+    @staticmethod
+    def _classify_models(raw_models: list[dict[str, Any]]) -> ModelDetectionResult:
+        llm: list[str] = []
+        embedding: list[str] = []
+        reranker: list[str] = []
+
+        for m in raw_models:
+            model_id: str = m.get("id", "")
+            if not model_id:
+                continue
+            lower_id = model_id.lower()
+            if any(kw in lower_id for kw in _RERANK_KEYWORDS):
+                reranker.append(model_id)
+            elif any(kw in lower_id for kw in _EMBED_KEYWORDS):
+                embedding.append(model_id)
+            else:
+                llm.append(model_id)
+
+        llm.sort()
+        embedding.sort()
+        reranker.sort()
+        return ModelDetectionResult(
+            llm=llm, embedding=embedding, reranker=reranker,
+            raw_models=raw_models,
+        )
+
+    def save_detected_models(
+        self, config_id: str, models: list[dict[str, Any]],
+    ) -> None:
+        """Replace detected models for a router config (idempotent)."""
+        self._db.save_router_models(config_id, models)
+
+    def update_model_selection(
+        self, model_id: str, is_selected: bool,
+    ) -> None:
+        self._db.update_router_model_selection(model_id, is_selected)
+
+    def get_models_by_config(self, config_id: str) -> list[RouterModel]:
+        return self._db.get_router_models(config_id)
+
+    def get_available_embedding_models(self) -> list[ModelInfo]:
+        return self._db.get_all_selected_models_by_type("embedding")
+
+    def get_available_reranker_models(self) -> list[ModelInfo]:
+        return self._db.get_all_selected_models_by_type("reranker")
