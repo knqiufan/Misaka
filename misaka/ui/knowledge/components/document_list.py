@@ -57,17 +57,25 @@ def build_document_table(
     on_reprocess: Callable[[str], None] | None = None,
     on_delete: Callable[[str], None] | None = None,
 ) -> ft.Container:
-    """Build a tabular document list."""
+    """Build a tabular document list with virtual scrolling."""
     header = _build_header_row()
     rows = [_build_doc_row(doc, on_view, on_reprocess, on_delete) for doc in docs]
 
+    list_view = ft.ListView(
+        controls=rows,
+        spacing=0,
+        item_extent=44,
+        expand=True,
+    )
+
     return ft.Container(
         content=ft.Column(
-            controls=[header, *rows],
+            controls=[header, list_view],
             spacing=0,
-            tight=True,
+            expand=True,
         ),
         padding=ft.Padding(left=24, right=24, top=0, bottom=16),
+        expand=True,
     )
 
 
@@ -165,6 +173,7 @@ def _build_doc_row(
             spacing=8,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         ),
+        height=44,
         padding=ft.Padding(left=8, right=8, top=8, bottom=8),
         border=ft.Border(
             bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.04, ft.Colors.ON_SURFACE)),

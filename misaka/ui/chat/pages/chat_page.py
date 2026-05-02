@@ -586,6 +586,7 @@ class ChatPage(ft.Stack):
             )
         except Exception as exc:
             logger.warning("RAG retrieval failed, sending without context: %s", exc)
+            self._notify_rag_failure()
 
         if search_results and user_msg:
             self.state.rag_results_cache[getattr(user_msg, "id", "")] = search_results
@@ -594,6 +595,17 @@ class ChatPage(ft.Stack):
         coro = send_tuple[0]
         args = send_tuple[1:]
         await coro(*args)
+
+    def _notify_rag_failure(self) -> None:
+        """Show a snackbar when RAG retrieval fails."""
+        from misaka.i18n import t
+
+        try:
+            self.state.page.open(
+                ft.SnackBar(content=ft.Text(t("chat.rag_retrieval_failed")), open=True),
+            )
+        except Exception:
+            pass
 
     async def _do_rag_retrieve(
         self,

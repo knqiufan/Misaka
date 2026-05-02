@@ -112,9 +112,11 @@ class KnowledgePage(ft.Column):
         )
 
     def _build_card_grid(self, kbs: list) -> ft.Column:
+        kb_svc = self.state.get_service("kb_service")
         cards = [
             build_kb_card(
                 kb,
+                warning=self._get_kb_warning(kb_svc, kb.id),
                 on_manage=lambda _, kid=kb.id: self._on_manage(kid),
                 on_edit=lambda _, kid=kb.id: self._on_edit(kid),
                 on_delete=lambda _, kid=kb.id: self._on_delete(kid),
@@ -138,6 +140,18 @@ class KnowledgePage(ft.Column):
             scroll=ft.ScrollMode.AUTO,
             expand=True,
         )
+
+    def _get_kb_warning(self, kb_svc, kb_id: str) -> str | None:
+        """Build a warning string if embedding/reranker models are unavailable."""
+        if not kb_svc:
+            return None
+        availability = kb_svc.check_model_availability(kb_id)
+        warnings: list[str] = []
+        if not availability["embedding_available"]:
+            warnings.append(t("kb.model_unavailable_warning"))
+        if not availability["reranker_available"]:
+            warnings.append(t("kb.reranker_unavailable_warning"))
+        return " ".join(warnings) if warnings else None
 
     # ── Actions ───────────────────────────────────────────────────────
 
@@ -168,9 +182,8 @@ class KnowledgePage(ft.Column):
         page = self.state.page
 
         def _do_delete(_: ft.ControlEvent) -> None:
-            svc.delete(kb_id)
             page.pop_dialog()
-            self._refresh_and_update()
+            page.run_task(self._async_delete_kb, kb_id)
 
         page.show_dialog(
             ft.AlertDialog(
@@ -190,6 +203,12 @@ class KnowledgePage(ft.Column):
                 ],
             ),
         )
+
+    async def _async_delete_kb(self, kb_id: str) -> None:
+        svc = self.state.get_service("kb_service")
+        if svc:
+            svc.delete(kb_id)
+        self._refresh_and_update()
 
     def _back_to_list(self) -> None:
         self._showing_detail = False

@@ -207,7 +207,18 @@ class RouterConfigService:
         except httpx.TimeoutException:
             return ModelDetectionResult(error=f"Request timed out ({_DETECT_TIMEOUT}s)")
         except httpx.HTTPStatusError as exc:
-            return ModelDetectionResult(error=f"HTTP {exc.response.status_code}")
+            code = exc.response.status_code
+            if code == 401:
+                return ModelDetectionResult(
+                    error="Authentication failed (401). Check your API key.",
+                )
+            if code == 403:
+                return ModelDetectionResult(
+                    error="Access forbidden (403). Check your API key permissions.",
+                )
+            return ModelDetectionResult(
+                error=f"HTTP {code}: {exc.response.reason_phrase}",
+            )
         except Exception as exc:  # noqa: BLE001
             return ModelDetectionResult(error=str(exc))
 

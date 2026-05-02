@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _BUF_SIZE = 65536
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 
 SUPPORTED_EXTENSIONS: dict[str, str] = {
     ".txt": "txt",
@@ -55,6 +56,14 @@ class DocumentService:
         """Upload a single file: validate → hash → dedup → ingest → persist."""
         src = Path(file_path)
         file_type = self._resolve_file_type(src)
+
+        file_size = src.stat().st_size
+        if file_size > MAX_FILE_SIZE:
+            raise ValueError(
+                f"File too large ({file_size / (1024*1024):.1f} MB). "
+                f"Maximum allowed size is {MAX_FILE_SIZE / (1024*1024):.0f} MB."
+            )
+
         file_hash = self._compute_hash(src)
 
         dup = self._db.get_kb_document_by_hash(kb_id, file_hash)

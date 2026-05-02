@@ -36,6 +36,7 @@ def _format_size(size_bytes: int) -> str:
 def build_kb_card(
     kb: KnowledgeBase,
     *,
+    warning: str | None = None,
     on_manage: Callable | None = None,
     on_edit: Callable | None = None,
     on_delete: Callable | None = None,
@@ -113,6 +114,7 @@ def build_kb_card(
                     max_lines=2,
                     overflow=ft.TextOverflow.ELLIPSIS,
                 ),
+                *(_build_warning_row(warning) if warning else []),
                 ft.Text(
                     f"📐 {model_text}",
                     size=10,
@@ -150,3 +152,28 @@ def _stat_chip(icon: str, value: str, label: str) -> ft.Row:
         spacing=4,
         tight=True,
     )
+
+
+def _build_warning_row(warning: str) -> list[ft.Control]:
+    return [
+        ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, size=13, color=ft.Colors.AMBER),
+                    ft.Text(
+                        warning,
+                        size=10,
+                        color=ft.Colors.AMBER,
+                        max_lines=2,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                        expand=True,
+                    ),
+                ],
+                spacing=4,
+                tight=True,
+            ),
+            padding=ft.Padding(left=4, right=4, top=2, bottom=2),
+            border_radius=4,
+            bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.AMBER),
+        ),
+    ]

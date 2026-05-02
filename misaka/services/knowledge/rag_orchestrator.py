@@ -160,6 +160,11 @@ class RAGOrchestrator:
     ) -> list[KBSearchResult]:
         """Retrieve across multiple knowledge bases, optionally reranking.
 
+        Groups knowledge bases by embedding model so each distinct model
+        only produces one ``embed_query`` call.  When no reranker is
+        available and results come from different embedding models, scores
+        are Min-Max normalised per group to a common [0, 1] range.
+
         Args:
             query: User query text.
             kb_ids: IDs of knowledge bases to search.
@@ -170,29 +175,37 @@ class RAGOrchestrator:
         self._ensure_components()
         all_results: list[RetrievalResult] = []
 
-        for kb_id in kb_ids:
-            config = embedding_configs.get(kb_id)
-            if config is None:
-                logger.warning("No embedding config for kb %s, skipping", kb_id)
-                continue
-            table_name = self._get_table_name(kb_id)
-            query_vec = await self._embedding.embed_query(query, config)
+        groups = self._group_by_embedding_model(kb_ids, embedding_configs)
 
-            results = await self._retriever.retrieve(
-                query=query,
-                query_embedding=query_vec,
-                table_name=table_name,
-                top_k=top_k * 2,
-            )
-            for r in results:
-                r.metadata["_kb_id"] = kb_id
-            all_results.extend(results)
+        for config, group_kb_ids in groups:
+            try:
+                query_vec = await self._embedding.embed_query(query, config)
+            except Exception as exc:
+                logger.warning(
+                    "Embedding query failed for model %s: %s", config.model_id, exc,
+                )
+                continue
+            for kb_id in group_kb_ids:
+                try:
+                    results = await self._retrieve_single_kb(
+                        query, query_vec, kb_id, top_k,
+                    )
+                    all_results.extend(results)
+                except Exception as exc:
+                    logger.warning("Retrieval failed for kb %s: %s", kb_id, exc)
+                    continue
 
         if reranker_config and reranker_config.model_id:
-            all_results = await self._reranker.rerank(
-                query, all_results, reranker_config,
-            )
+            try:
+                all_results = await self._reranker.rerank(
+                    query, all_results, reranker_config,
+                )
+            except Exception as exc:
+                logger.warning("Reranker failed, falling back to vector results: %s", exc)
+        elif len(groups) > 1:
+            all_results = self._normalize_scores(all_results)
 
+        all_results.sort(key=lambda r: r.score, reverse=True)
         return self._to_search_results(all_results[:top_k])
 
     def format_context(self, results: list[KBSearchResult]) -> str:
@@ -240,6 +253,77 @@ class RAGOrchestrator:
             self._vector_store.close()
 
     # ── Private helpers ───────────────────────────────────────────────
+
+    @staticmethod
+    def _group_by_embedding_model(
+        kb_ids: list[str],
+        embedding_configs: dict[str, EmbeddingConfig],
+    ) -> list[tuple[EmbeddingConfig, list[str]]]:
+        """Group knowledge bases by their embedding model.
+
+        Returns a list of ``(config, [kb_id, …])`` tuples so each
+        distinct model only needs one ``embed_query`` call.
+        """
+        groups: dict[str, tuple[EmbeddingConfig, list[str]]] = {}
+        for kb_id in kb_ids:
+            config = embedding_configs.get(kb_id)
+            if config is None:
+                logger.warning("No embedding config for kb %s, skipping", kb_id)
+                continue
+            key = f"{config.base_url}|{config.model_id}"
+            if key not in groups:
+                groups[key] = (config, [])
+            groups[key][1].append(kb_id)
+        return list(groups.values())
+
+    async def _retrieve_single_kb(
+        self,
+        query: str,
+        query_vec: list[float],
+        kb_id: str,
+        top_k: int,
+    ) -> list[RetrievalResult]:
+        """Retrieve from a single knowledge base and tag results."""
+        table_name = self._get_table_name(kb_id)
+        results = await self._retriever.retrieve(
+            query=query,
+            query_embedding=query_vec,
+            table_name=table_name,
+            top_k=top_k * 2,
+        )
+        for r in results:
+            r.metadata["_kb_id"] = kb_id
+        return results
+
+    @staticmethod
+    def _normalize_scores(
+        results: list[RetrievalResult],
+    ) -> list[RetrievalResult]:
+        """Min-Max normalise scores per ``_kb_id`` group to [0, 1].
+
+        When results come from knowledge bases using different embedding
+        models, the raw distance / similarity scores live on different
+        scales.  Normalising per group removes that bias before merging.
+        """
+        if not results:
+            return results
+
+        from collections import defaultdict
+
+        groups: dict[str, list[RetrievalResult]] = defaultdict(list)
+        for r in results:
+            groups[r.metadata.get("_kb_id", "")].append(r)
+
+        normalised: list[RetrievalResult] = []
+        for group_results in groups.values():
+            scores = [r.score for r in group_results]
+            min_s, max_s = min(scores), max(scores)
+            score_range = max_s - min_s
+            for r in group_results:
+                r.score = (r.score - min_s) / score_range if score_range > 0 else 1.0
+                normalised.append(r)
+
+        return normalised
 
     @staticmethod
     def _get_table_name(kb_id: str) -> str:

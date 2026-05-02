@@ -63,9 +63,23 @@ class KBDetailPage(ft.Column):
         kb = kb_svc.get(self._kb_id) if kb_svc else None
         kb_name = kb.name if kb else "—"
 
+        self._model_availability = (
+            kb_svc.check_model_availability(self._kb_id) if kb_svc else None
+        )
+        self._embedding_available = (
+            self._model_availability.get("embedding_available", True)
+            if self._model_availability
+            else True
+        )
+
         header = self._build_header(kb_name, kb)
+        warning_banner = self._build_warning_banner()
         doc_table = self._build_document_section()
-        self.controls = [header, doc_table]
+        controls: list[ft.Control] = [header]
+        if warning_banner:
+            controls.append(warning_banner)
+        controls.append(doc_table)
+        self.controls = controls
 
     def _build_header(self, kb_name: str, kb) -> ft.Container:
         stats = []
@@ -97,6 +111,7 @@ class KBDetailPage(ft.Column):
                                 t("kb.doc_upload"),
                                 icon=ft.Icons.UPLOAD_FILE,
                                 on_click=lambda _: self._on_upload(),
+                                disabled=not self._embedding_available,
                             ),
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -107,6 +122,37 @@ class KBDetailPage(ft.Column):
                 tight=True,
             ),
             padding=ft.Padding(left=16, right=24, top=16, bottom=8),
+        )
+
+    def _build_warning_banner(self) -> ft.Container | None:
+        """Build a warning banner if models are unavailable."""
+        if not self._model_availability:
+            return None
+        messages: list[str] = []
+        if not self._model_availability.get("embedding_available", True):
+            messages.append(t("kb.model_unavailable_warning"))
+        if not self._model_availability.get("reranker_available", True):
+            messages.append(t("kb.reranker_unavailable_warning"))
+        if not messages:
+            return None
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, size=16, color=ft.Colors.AMBER),
+                    ft.Text(
+                        " ".join(messages),
+                        size=12,
+                        color=ft.Colors.AMBER,
+                        expand=True,
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding(left=24, right=24, top=8, bottom=4),
+            margin=ft.Margin(left=0, right=0, top=0, bottom=0),
+            border_radius=6,
+            bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.AMBER),
         )
 
     def _build_document_section(self) -> ft.Control:
@@ -190,9 +236,18 @@ class KBDetailPage(ft.Column):
         if not embed_config:
             return
 
+        doc = doc_svc.get_document(doc_id)
+        doc_name = doc.file_name if doc else doc_id
+
         async def _run():
             from misaka.services.knowledge.rag.abstractions import EmbeddingConfig
             config = EmbeddingConfig(**embed_config)
+            self.state.page.open(
+                ft.SnackBar(
+                    content=ft.Text(t("kb.doc_processing").replace("{name}", doc_name)),
+                    open=True,
+                )
+            )
             await doc_svc.reprocess_document(doc_id, config)
             self.refresh()
 

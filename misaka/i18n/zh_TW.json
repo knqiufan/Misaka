@@ -209,6 +209,8 @@
     "router_models_reranker": "重排模型",
     "router_models_empty": "點擊「探測模型」發現可用模型",
     "router_models_none_in_group": "無",
+    "router_models_compact_hint": "依分頁切換類型；各清單在固定高度內捲動，避免整個表單被拉長。",
+    "router_default_models_hint": "選擇後立即同步到下方設定 JSON 的 env 欄位；亦可直接編輯 JSON，失焦後會回填此處。",
     "accent_color": "主題顏色",
     "accent_color_desc": "選擇全局主題強調色",
     "misaka_update": "Misaka 更新",
@@ -615,6 +617,7 @@
     "doc_viewer_title": "文件原文",
     "doc_viewer_copy": "複製",
     "doc_viewer_copied": "已複製",
+    "doc_viewer_load_more": "載入更多（剩餘 {remaining} 字元）",
     "doc_viewer_empty": "文件內容為空",
     "doc_status_pending": "等待中",
     "doc_status_parsing": "解析中",
@@ -633,7 +636,15 @@
     "doc_processing": "正在處理 {name}...",
     "doc_upload_success": "上傳成功：{count} 個檔案",
     "doc_upload_partial": "部分上傳完成：{success}/{total}",
+    "doc_file_too_large": "檔案過大（最大 100 MB）",
+    "doc_upload_error": "上傳失敗：{error}",
     "back_to_list": "返回列表",
-    "search_placeholder": "搜尋文件..."
+    "search_placeholder": "搜尋文件...",
+    "model_unavailable_warning": "嵌入模型不可用。關聯的供應商可能已被刪除。已有資料仍可檢索，但無法上傳新文件。",
+    "reranker_unavailable_warning": "重排模型不可用，檢索結果將不會進行重排。",
+    "embedding_model_changed": "嵌入模型已更改",
+    "embedding_model_changed_confirm": "更改嵌入模型需要重新嵌入所有文件，可能需要較長時間。是否繼續？",
+    "rebuilding_embeddings": "正在重新嵌入...",
+    "rebuild_complete": "重建完成：{success} 個成功，{errors} 個失敗"
   }
 }

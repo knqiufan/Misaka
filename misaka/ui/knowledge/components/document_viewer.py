@@ -1,4 +1,4 @@
-"""Document content viewer dialog."""
+"""Document content viewer dialog with chunked loading for large documents."""
 
 from __future__ import annotations
 
@@ -15,6 +15,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_INITIAL_CHARS = 20000
+_LOAD_MORE_CHARS = 20000
+
 
 def show_document_viewer(state: AppState, doc_id: str) -> None:
     """Show a dialog displaying the parsed plain-text content of a document."""
@@ -29,30 +32,31 @@ def show_document_viewer(state: AppState, doc_id: str) -> None:
 
     content_text = doc.content_text or ""
     file_info = _build_file_info(doc)
+    total_len = len(content_text)
 
     if not content_text.strip():
-        body = ft.Container(
-            content=ft.Text(
-                t("kb.doc_viewer_empty"),
-                size=13,
-                opacity=0.4,
-                italic=True,
-            ),
-            alignment=ft.Alignment.CENTER,
-            height=200,
-        )
+        body = _build_empty_body()
+        load_more_btn = ft.Container()
     else:
+        displayed = [min(_INITIAL_CHARS, total_len)]
+
+        text_ctrl = ft.Text(
+            content_text[:displayed[0]],
+            selectable=True,
+            size=12,
+            font_family="monospace",
+        )
+
         body = ft.Container(
-            content=ft.Text(
-                content_text,
-                selectable=True,
-                size=12,
-                font_family="monospace",
-            ),
+            content=text_ctrl,
             padding=12,
             border_radius=8,
             bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
             max_height=500,
+        )
+
+        load_more_btn = _build_load_more_button(
+            content_text, displayed, text_ctrl, total_len,
         )
 
     copy_btn_text = ft.Text(t("kb.doc_viewer_copy"), size=11)
@@ -82,6 +86,7 @@ def show_document_viewer(state: AppState, doc_id: str) -> None:
                 ],
             ),
             body,
+            load_more_btn,
         ],
         spacing=8,
         tight=True,
@@ -99,6 +104,73 @@ def show_document_viewer(state: AppState, doc_id: str) -> None:
         width=700,
     )
     page.show_dialog(dlg)
+
+
+def _build_empty_body() -> ft.Container:
+    """Build the placeholder body for empty document content."""
+    return ft.Container(
+        content=ft.Text(
+            t("kb.doc_viewer_empty"),
+            size=13,
+            opacity=0.4,
+            italic=True,
+        ),
+        alignment=ft.Alignment.CENTER,
+        height=200,
+    )
+
+
+def _build_load_more_button(
+    content_text: str,
+    displayed: list[int],
+    text_ctrl: ft.Text,
+    total_len: int,
+) -> ft.Container:
+    """Build a 'load more' button for chunked document display."""
+    if displayed[0] >= total_len:
+        return ft.Container()
+
+    remaining = total_len - displayed[0]
+    btn_text = ft.Text(
+        t("kb.doc_viewer_load_more").replace(
+            "{remaining}",
+            _format_char_count(remaining),
+        ),
+        size=11,
+        color=ft.Colors.PRIMARY,
+    )
+
+    def _on_load_more(_: ft.ControlEvent) -> None:
+        new_end = min(displayed[0] + _LOAD_MORE_CHARS, total_len)
+        text_ctrl.value = content_text[:new_end]
+        displayed[0] = new_end
+        text_ctrl.update()
+        if new_end >= total_len:
+            btn_text.value = ""
+            btn_text.update()
+        else:
+            remaining_now = total_len - new_end
+            btn_text.value = t("kb.doc_viewer_load_more").replace(
+                "{remaining}", _format_char_count(remaining_now),
+            )
+            btn_text.update()
+
+    return ft.Container(
+        content=ft.TextButton(
+            content=btn_text,
+            on_click=_on_load_more,
+        ),
+        alignment=ft.Alignment.CENTER,
+    )
+
+
+def _format_char_count(chars: int) -> str:
+    """Format character count for human-readable display."""
+    if chars < 1000:
+        return f"{chars}"
+    if chars < 1000000:
+        return f"{chars / 1000:.1f}K"
+    return f"{chars / 1000000:.1f}M"
 
 
 def _build_file_info(doc) -> ft.Row:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -44,6 +45,7 @@ def show_upload_dialog(
 
     status_text = ft.Text("", size=12, opacity=0.6)
     progress_ring = ft.ProgressRing(width=16, height=16, stroke_width=2, visible=False)
+    progress_bar = ft.ProgressBar(width=400, value=0, visible=False)
     results_column = ft.Column(controls=[], spacing=4, tight=True)
 
     dlg_content = ft.Column(
@@ -53,6 +55,7 @@ def show_upload_dialog(
                 spacing=8,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
+            progress_bar,
             results_column,
         ],
         spacing=12,
@@ -93,6 +96,10 @@ def show_upload_dialog(
             progress_ring.visible = True
             progress_ring.update()
 
+            progress_bar.visible = True
+            progress_bar.value = 0
+            progress_bar.update()
+
             for i, path in enumerate(file_paths):
                 import os
                 name = os.path.basename(path)
@@ -109,14 +116,16 @@ def show_upload_dialog(
                     else:
                         _add_result(results_column, name, "error", doc.error_message)
                 except Exception as exc:
-                    err_name = type(exc).__name__
-                    if "Duplicate" in err_name:
-                        _add_result(results_column, name, "duplicate")
-                    else:
-                        _add_result(results_column, name, "error", str(exc))
+                    _handle_upload_error(results_column, name, exc)
+
+                progress_bar.value = (i + 1) / total
+                progress_bar.update()
+                await asyncio.sleep(0)
 
             progress_ring.visible = False
             progress_ring.update()
+            progress_bar.visible = False
+            progress_bar.update()
 
             if success == total:
                 status_text.value = t("kb.doc_upload_success").replace("{count}", str(success))
@@ -141,6 +150,23 @@ def show_upload_dialog(
         allowed_extensions=[ext.lstrip("*.") for ext in _ALLOWED_EXTENSIONS],
         allow_multiple=True,
     )
+
+
+def _handle_upload_error(
+    column: ft.Column,
+    name: str,
+    exc: Exception,
+) -> None:
+    err_name = type(exc).__name__
+    err_str = str(exc)
+    if "Duplicate" in err_name:
+        _add_result(column, name, "duplicate")
+    elif "too large" in err_str.lower() or "maximum" in err_str.lower():
+        _add_result(column, name, "error", t("kb.doc_file_too_large"))
+    elif "Unsupported file type" in err_str:
+        _add_result(column, name, "error", t("kb.doc_unsupported"))
+    else:
+        _add_result(column, name, "error", err_str)
 
 
 def _add_result(

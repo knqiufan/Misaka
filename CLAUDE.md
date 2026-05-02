@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Misaka is a desktop GUI client for Claude Code, built with Python 3.10+ and [Flet](https://flet.dev) 0.80.x (Flutter-based UI framework). It wraps the `claude-agent-sdk` to provide multi-turn streaming conversations, session management, file browsing, MCP server integration, and skill management in a Material Design 3 interface.
+Misaka is a desktop GUI client for Claude Code, built with Python 3.10+ and [Flet](https://flet.dev) 0.80.x (Flutter-based UI framework). It wraps the `claude-agent-sdk` to provide multi-turn streaming conversations, session management, file browsing, MCP server integration, skill management, and **knowledge base (RAG)** capabilities in a Material Design 3 interface.
 
 **External runtime requirement:** Node.js + `@anthropic-ai/claude-code` CLI installed globally.
 
@@ -41,6 +41,14 @@ UI Layer (Flet) → AppState → ServiceContainer → Database / Claude SDK
 - **`misaka/main.py`** — Entry point: creates DatabaseBackend, ServiceContainer, AppState, AppShell
 - **`misaka/state.py`** — AppState: single mutable state, `state.update()` triggers re-render
 - **`misaka/config.py`** — Configuration and paths (`~/.misaka/`)
+
+### Knowledge Base Module
+- **`misaka/services/knowledge/kb_service.py`** — KB lifecycle CRUD, model availability checks, embedding rebuild
+- **`misaka/services/knowledge/document_service.py`** — Document upload (hash dedup), delete, reprocess
+- **`misaka/services/knowledge/rag_orchestrator.py`** — RAG pipeline: ingest (parse→chunk→embed→store) and retrieve (multi-KB, normalize, rerank)
+- **`misaka/services/knowledge/rag/abstractions.py`** — 6 ABC interfaces + data types (framework-agnostic)
+- **`misaka/services/knowledge/rag/langchain/`** — LangChain adapter implementations
+- **`misaka/ui/knowledge/`** — Knowledge base UI pages and components
 
 ## Key Conventions
 
