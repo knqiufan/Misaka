@@ -47,8 +47,12 @@ class KBDetailPage(ft.Column):
     def refresh(self) -> None:
         self._load_data()
         self._build_ui()
-        if self.page:
+        try:
             self.update()
+        except RuntimeError as e:
+            # Before the control is mounted (e.g. during __init__), ``page`` / ``update`` raise.
+            if "must be added to the page first" not in str(e).lower():
+                raise
 
     def _load_data(self) -> None:
         doc_svc = self.state.get_service("document_service")

@@ -39,8 +39,11 @@ class KnowledgePage(ft.Column):
     def _refresh_and_update(self) -> None:
         """Reload data, rebuild UI, and push the update to the page."""
         self.refresh()
-        if self.page:
+        try:
             self.update()
+        except RuntimeError as e:
+            if "must be added to the page first" not in str(e).lower():
+                raise
 
     def _load_data(self) -> None:
         svc = self.state.get_service("kb_service")

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
-from misaka.ui.common.theme import make_button, make_form_dialog, make_text_button
+from misaka.ui.common.theme import make_form_dialog, make_text_button
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -74,82 +74,110 @@ def show_upload_dialog(
     )
 
     def _close() -> None:
-        if picker in page.services:
-            page.services.remove(picker)
         page.pop_dialog()
         if on_done:
             on_done()
 
-    def _on_files_picked(e: ft.FilePickerResultEvent) -> None:
-        if not e.files:
+    async def _pick_and_upload() -> None:
+        picker = ft.FilePicker()
+        page.services.append(picker)
+        page.update()
+        try:
+            files = await picker.pick_files(
+                dialog_title=t("kb.doc_upload_title"),
+                file_type=ft.FilePickerFileType.CUSTOM,
+                allowed_extensions=[ext.lstrip("*.") for ext in _ALLOWED_EXTENSIONS],
+                allow_multiple=True,
+            )
+        finally:
+            if picker in page.services:
+                page.services.remove(picker)
+            page.update()
+
+        if not files:
             return
+        file_paths = [f.path for f in files if f.path]
+        if not file_paths:
+            return
+
         page.show_dialog(dlg)
+        await _upload_paths_async(
+            page,
+            doc_svc,
+            kb_svc,
+            kb_id,
+            embed_config,
+            status_text,
+            progress_ring,
+            progress_bar,
+            results_column,
+            file_paths,
+        )
 
-        async def _process():
-            from misaka.services.knowledge.rag.abstractions import EmbeddingConfig
-            config = EmbeddingConfig(**embed_config)
+    page.run_task(_pick_and_upload)
 
-            file_paths = [f.path for f in e.files if f.path]
-            total = len(file_paths)
-            success = 0
 
-            progress_ring.visible = True
-            progress_ring.update()
+async def _upload_paths_async(
+    page: ft.Page,
+    doc_svc,
+    kb_svc,
+    kb_id: str,
+    embed_config: dict,
+    status_text: ft.Text,
+    progress_ring: ft.ProgressRing,
+    progress_bar: ft.ProgressBar,
+    results_column: ft.Column,
+    file_paths: list[str],
+) -> None:
+    from misaka.services.knowledge.rag.abstractions import EmbeddingConfig
 
-            progress_bar.visible = True
-            progress_bar.value = 0
-            progress_bar.update()
+    config = EmbeddingConfig(**embed_config)
+    total = len(file_paths)
+    success = 0
 
-            for i, path in enumerate(file_paths):
-                import os
-                name = os.path.basename(path)
-                status_text.value = t("kb.doc_processing").replace("{name}", name)
-                status_text.update()
+    progress_ring.visible = True
+    progress_ring.update()
 
-                try:
-                    doc = await doc_svc.upload_document(
-                        kb_id, path, config,
-                    )
-                    if doc.status == "ready":
-                        success += 1
-                        _add_result(results_column, name, "ready")
-                    else:
-                        _add_result(results_column, name, "error", doc.error_message)
-                except Exception as exc:
-                    _handle_upload_error(results_column, name, exc)
+    progress_bar.visible = True
+    progress_bar.value = 0
+    progress_bar.update()
 
-                progress_bar.value = (i + 1) / total
-                progress_bar.update()
-                await asyncio.sleep(0)
+    for i, path in enumerate(file_paths):
+        import os
 
-            progress_ring.visible = False
-            progress_ring.update()
-            progress_bar.visible = False
-            progress_bar.update()
+        name = os.path.basename(path)
+        status_text.value = t("kb.doc_processing").replace("{name}", name)
+        status_text.update()
 
-            if success == total:
-                status_text.value = t("kb.doc_upload_success").replace("{count}", str(success))
+        try:
+            doc = await doc_svc.upload_document(kb_id, path, config)
+            if doc.status == "ready":
+                success += 1
+                _add_result(results_column, name, "ready")
             else:
-                status_text.value = (
-                    t("kb.doc_upload_partial")
-                    .replace("{success}", str(success))
-                    .replace("{total}", str(total))
-                )
-            status_text.update()
+                _add_result(results_column, name, "error", doc.error_message)
+        except Exception as exc:
+            _handle_upload_error(results_column, name, exc)
 
-            kb_svc.update_statistics(kb_id)
+        progress_bar.value = (i + 1) / total
+        progress_bar.update()
+        await asyncio.sleep(0)
 
-        page.run_task(_process)
+    progress_ring.visible = False
+    progress_ring.update()
+    progress_bar.visible = False
+    progress_bar.update()
 
-    picker = ft.FilePicker(on_result=_on_files_picked)
-    page.services.append(picker)
-    page.update()
-    picker.pick_files(
-        dialog_title=t("kb.doc_upload_title"),
-        file_type=ft.FilePickerFileType.CUSTOM,
-        allowed_extensions=[ext.lstrip("*.") for ext in _ALLOWED_EXTENSIONS],
-        allow_multiple=True,
-    )
+    if success == total:
+        status_text.value = t("kb.doc_upload_success").replace("{count}", str(success))
+    else:
+        status_text.value = (
+            t("kb.doc_upload_partial")
+            .replace("{success}", str(success))
+            .replace("{total}", str(total))
+        )
+    status_text.update()
+    kb_svc.update_statistics(kb_id)
 
 
 def _handle_upload_error(

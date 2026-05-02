@@ -295,6 +295,8 @@ def make_icon_button(
     **kwargs,
 ) -> ft.IconButton:
     """Consistent icon button with compact padding."""
+    if (legacy_size := kwargs.pop("size", None)) is not None:
+        icon_size = int(legacy_size)
     return ft.IconButton(
         icon=icon,
         tooltip=tooltip,
