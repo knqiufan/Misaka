@@ -8,6 +8,7 @@ instances are injected via :class:`RAGComponentFactory`.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import TYPE_CHECKING, Callable
 
 from misaka.services.knowledge.rag.abstractions import (
@@ -40,12 +41,24 @@ class RAGOrchestrator:
         db: DatabaseBackend,
     ) -> None:
         self._db = db
-        self._parser = factory.create_parser()
-        self._chunker = factory.create_chunker()
-        self._embedding = factory.create_embedding_provider()
-        self._vector_store = factory.create_vector_store()
-        self._retriever = factory.create_retriever(self._vector_store)
-        self._reranker = factory.create_reranker()
+        self._factory = factory
+        self._parser = None
+        self._chunker = None
+        self._embedding = None
+        self._vector_store = None
+        self._retriever = None
+        self._reranker = None
+
+    def _ensure_components(self) -> None:
+        """Lazily create all RAG components on first use."""
+        if self._parser is not None:
+            return
+        self._parser = self._factory.create_parser()
+        self._chunker = self._factory.create_chunker()
+        self._embedding = self._factory.create_embedding_provider()
+        self._vector_store = self._factory.create_vector_store()
+        self._retriever = self._factory.create_retriever(self._vector_store)
+        self._reranker = self._factory.create_reranker()
 
     # ── Ingest ────────────────────────────────────────────────────────
 
@@ -55,7 +68,6 @@ class RAGOrchestrator:
         file_type: str,
         kb: KnowledgeBase,
         embedding_config: EmbeddingConfig,
-        chunk_ids: list[str] | None = None,
         on_progress: Callable[[str], None] | None = None,
     ) -> IngestResult:
         """Full ingestion pipeline: parse → chunk → embed → store.
@@ -65,14 +77,15 @@ class RAGOrchestrator:
             file_type: File type identifier (txt/markdown/docx/xlsx/pdf).
             kb: The target knowledge base (carries chunking config).
             embedding_config: Embedding API connection info.
-            chunk_ids: Optional pre-generated chunk IDs (one per chunk).
-                When not provided, IDs are auto-generated as
-                ``chunk_{index}``.
             on_progress: Optional callback receiving status messages.
 
         Returns:
-            An :class:`IngestResult` summarising the operation.
+            An :class:`IngestResult` summarising the operation.  Each
+            chunk in ``IngestResult.chunks`` has a globally unique
+            ``chunk_db_id`` in its metadata, matching the ID used in
+            the vector store.
         """
+        self._ensure_components()
         try:
             _notify(on_progress, "parsing")
             parsed = await self._parser.parse(file_path, file_type)
@@ -102,9 +115,8 @@ class RAGOrchestrator:
                     dimensions=0,
                 )
 
-            if chunk_ids and len(chunk_ids) == len(chunks):
-                for cid, c in zip(chunk_ids, chunks):
-                    c.metadata["chunk_db_id"] = cid
+            for c in chunks:
+                c.metadata["chunk_db_id"] = str(uuid.uuid4())
 
             _notify(on_progress, "embedding")
             texts = [c.content for c in chunks]
@@ -155,6 +167,7 @@ class RAGOrchestrator:
             reranker_config: If provided, results are reranked.
             top_k: Final number of results to return.
         """
+        self._ensure_components()
         all_results: list[RetrievalResult] = []
 
         for kb_id in kb_ids:
@@ -206,6 +219,7 @@ class RAGOrchestrator:
 
     def drop_kb_vectors(self, kb_id: str) -> None:
         """Delete the vector table for a knowledge base."""
+        self._ensure_components()
         self._vector_store.drop_table(self._get_table_name(kb_id))
 
     def delete_chunks_from_vector_store(
@@ -215,13 +229,15 @@ class RAGOrchestrator:
     ) -> None:
         """Remove specific chunk vectors from the store."""
         if chunk_ids:
+            self._ensure_components()
             self._vector_store.delete_by_ids(
                 self._get_table_name(kb_id), chunk_ids,
             )
 
     def close(self) -> None:
         """Release all underlying resources."""
-        self._vector_store.close()
+        if self._vector_store is not None:
+            self._vector_store.close()
 
     # ── Private helpers ───────────────────────────────────────────────
 

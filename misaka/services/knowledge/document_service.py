@@ -87,13 +87,11 @@ class DocumentService:
         self._db.create_kb_document(doc)
 
         try:
-            chunk_ids = [str(uuid.uuid4()) for _ in range(4096)]
             result = await self._orchestrator.ingest_document(
                 file_path=str(dest),
                 file_type=file_type,
                 kb=kb,
                 embedding_config=embedding_config,
-                chunk_ids=chunk_ids,
                 on_progress=on_progress,
             )
 
@@ -103,7 +101,7 @@ class DocumentService:
                 doc.error_message = result.error
                 return doc
 
-            self._persist_chunks(doc_id, kb_id, result.chunks, chunk_ids)
+            self._persist_chunks(doc_id, kb_id, result.chunks)
             self._db.update_kb_document(
                 doc_id,
                 content_text=result.content_text,
@@ -241,13 +239,11 @@ class DocumentService:
 
         self._db.update_kb_document(doc_id, status="parsing", error_message="")
 
-        chunk_ids = [str(uuid.uuid4()) for _ in range(4096)]
         result = await self._orchestrator.ingest_document(
             file_path=doc.storage_path,
             file_type=doc.file_type,
             kb=kb,
             embedding_config=embedding_config,
-            chunk_ids=chunk_ids,
             on_progress=on_progress,
         )
 
@@ -256,7 +252,7 @@ class DocumentService:
                 doc_id, status="error", error_message=result.error,
             )
         else:
-            self._persist_chunks(doc_id, doc.knowledge_base_id, result.chunks, chunk_ids)
+            self._persist_chunks(doc_id, doc.knowledge_base_id, result.chunks)
             self._db.update_kb_document(
                 doc_id,
                 content_text=result.content_text,
@@ -281,12 +277,16 @@ class DocumentService:
         doc_id: str,
         kb_id: str,
         chunks: list,
-        chunk_ids: list[str],
     ) -> None:
-        """Write ChunkData objects to the kb_chunks table."""
+        """Write ChunkData objects to the kb_chunks table.
+
+        The chunk ID is derived from the same logic used by the vector
+        store, so that ``delete_document`` can reliably remove vectors by
+        ID later.
+        """
         db_chunks: list[KBChunk] = []
-        for i, c in enumerate(chunks):
-            cid = chunk_ids[i] if i < len(chunk_ids) else str(uuid.uuid4())
+        for c in chunks:
+            cid = str(c.metadata.get("chunk_db_id", f"chunk_{c.index}"))
             db_chunks.append(KBChunk(
                 id=cid,
                 document_id=doc_id,

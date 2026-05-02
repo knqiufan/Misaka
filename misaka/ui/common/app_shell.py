@@ -22,6 +22,7 @@ from misaka.ui.dialogs.setup_wizard_dialog import SetupWizardDialog
 from misaka.ui.navigation.nav_rail import build_nav_rail
 from misaka.ui.pages.plugins_page import PluginsPage
 from misaka.ui.settings.pages.settings_page import SettingsPage
+from misaka.ui.knowledge.pages.knowledge_page import KnowledgePage
 from misaka.ui.skills.pages.extensions_page import ExtensionsPage
 from misaka.ui.status.notification_panel import NotificationPanel
 
@@ -114,6 +115,8 @@ class AppShell(ft.Row):
 
         self._extensions_page = ExtensionsPage(state=self.state)
 
+        self._knowledge_page = KnowledgePage(state=self.state)
+
     def _wire_chat_callbacks(self) -> None:
         """Wire ChatPage send/abort callbacks to Claude integration."""
         if not self._chat_page:
@@ -137,6 +140,7 @@ class AppShell(ft.Row):
         page_map = {
             "dashboard": self._dashboard_page,
             "chat": self._chat_page,
+            "knowledge": self._knowledge_page,
             "settings": self._settings_page,
             "plugins": self._plugins_page,
             "extensions": self._extensions_page,
@@ -153,7 +157,7 @@ class AppShell(ft.Row):
         # Switch the content area
         current_page = self._get_current_page()
 
-        # Refresh the target page
+        # Refresh the target page (rebuilds controls list only, no update)
         should_refresh = page_name != "chat"
         if should_refresh and hasattr(current_page, 'refresh'):
             current_page.refresh()

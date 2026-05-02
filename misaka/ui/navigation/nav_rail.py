@@ -29,6 +29,12 @@ _NAV_ITEMS: list[dict] = [
         "label_key": "nav.chat",
     },
     {
+        "page": "knowledge",
+        "icon": ft.Icons.MENU_BOOK_OUTLINED,
+        "selected_icon": ft.Icons.MENU_BOOK,
+        "label_key": "nav.knowledge",
+    },
+    {
         "page": "plugins",
         "icon": ft.Icons.EXTENSION_OUTLINED,
         "selected_icon": ft.Icons.EXTENSION,

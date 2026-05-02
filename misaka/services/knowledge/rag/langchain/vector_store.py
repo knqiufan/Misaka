@@ -165,6 +165,11 @@ class LCSqliteVecStore(VectorStore):
         """)
 
     @staticmethod
+    def _get_chunk_id(chunk: ChunkData) -> str:
+        """Resolve the chunk ID: prefer ``chunk_db_id`` in metadata, fallback to index."""
+        return str(chunk.metadata.get("chunk_db_id", f"chunk_{chunk.index}"))
+
+    @staticmethod
     def _insert_vectors(
         conn: sqlite3.Connection,
         table_name: str,
@@ -172,7 +177,7 @@ class LCSqliteVecStore(VectorStore):
         embeddings: list[list[float]],
     ) -> None:
         rows = [
-            (f"chunk_{c.index}", _serialize_f32(emb))
+            (LCSqliteVecStore._get_chunk_id(c), _serialize_f32(emb))
             for c, emb in zip(chunks, embeddings)
         ]
         conn.executemany(
@@ -188,7 +193,11 @@ class LCSqliteVecStore(VectorStore):
     ) -> None:
         meta_table = f"{table_name}_meta"
         rows = [
-            (f"chunk_{c.index}", c.content, json.dumps(c.metadata, ensure_ascii=False))
+            (
+                LCSqliteVecStore._get_chunk_id(c),
+                c.content,
+                json.dumps(c.metadata, ensure_ascii=False),
+            )
             for c in chunks
         ]
         conn.executemany(

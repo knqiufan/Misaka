@@ -138,7 +138,7 @@ class AppState:
         self.right_panel_open: bool = True
 
         # --- Navigation ---
-        # "dashboard" | "chat" | "settings" | "plugins" | "extensions"
+        # "dashboard" | "chat" | "knowledge" | "settings" | "plugins" | "extensions"
         self.current_page: str = "chat"
 
         # --- Theme ---
@@ -180,6 +180,13 @@ class AppState:
 
         # --- Notification state ---
         self.notification_panel_open: bool = False
+
+        # --- Knowledge Base state ---
+        self.knowledge_bases: list[Any] = []
+        self.current_kb_id: str | None = None
+        self.kb_documents: list[Any] = []
+        self.selected_kb_ids: dict[str, list[str]] = {}
+        self.rag_results_cache: dict[str, list[Any]] = {}
 
     # ----- Helpers -----
 
