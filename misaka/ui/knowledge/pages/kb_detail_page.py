@@ -225,19 +225,32 @@ class KBDetailPage(ft.Column):
         show_document_viewer(self.state, doc_id)
 
     def _on_reprocess_doc(self, doc_id: str) -> None:
+        page = self.state.page
         doc_svc = self.state.get_service("document_service")
         router_svc = self.state.get_service("router_config_service")
         kb_svc = self.state.get_service("kb_service")
         if not doc_svc or not router_svc or not kb_svc:
+            page.open(ft.SnackBar(
+                content=ft.Text("Service not available, please restart the application"),
+                bgcolor=ft.Colors.ERROR,
+            ))
             return
 
         kb = kb_svc.get(self._kb_id)
         if not kb or not kb.embedding_model_id:
+            page.open(ft.SnackBar(
+                content=ft.Text(t("kb.no_embedding_models")),
+                bgcolor=ft.Colors.ERROR,
+            ))
             return
 
         embed_models = router_svc.get_available_embedding_models()
         embed_config = _find_embed_config(embed_models, kb)
         if not embed_config:
+            page.open(ft.SnackBar(
+                content=ft.Text(t("kb.embedding_config_not_found")),
+                bgcolor=ft.Colors.ERROR,
+            ))
             return
 
         doc = doc_svc.get_document(doc_id)
@@ -246,16 +259,23 @@ class KBDetailPage(ft.Column):
         async def _run():
             from misaka.services.knowledge.rag.abstractions import EmbeddingConfig
             config = EmbeddingConfig(**embed_config)
-            self.state.page.open(
+            page.open(
                 ft.SnackBar(
                     content=ft.Text(t("kb.doc_processing").replace("{name}", doc_name)),
-                    open=True,
                 )
             )
-            await doc_svc.reprocess_document(doc_id, config)
-            self.refresh()
+            try:
+                await doc_svc.reprocess_document(doc_id, config)
+            except Exception as exc:
+                logger.exception("Reprocess failed for doc %s", doc_id)
+                page.open(ft.SnackBar(
+                    content=ft.Text(f"Reprocess failed: {exc}"),
+                    bgcolor=ft.Colors.ERROR,
+                ))
+            finally:
+                self.refresh()
 
-        self.state.page.run_task(_run)
+        page.run_task(_run)
 
     def _on_delete_doc(self, doc_id: str) -> None:
         doc_svc = self.state.get_service("document_service")

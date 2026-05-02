@@ -57,4 +57,6 @@ class LCEmbeddingProvider(EmbeddingProvider):
             model=config.model_id,
             openai_api_base=config.base_url,
             openai_api_key=config.api_key,
+            timeout=60.0,
+            max_retries=1,
         )

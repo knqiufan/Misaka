@@ -35,7 +35,7 @@ def show_document_viewer(state: AppState, doc_id: str) -> None:
     total_len = len(content_text)
 
     if not content_text.strip():
-        body = _build_empty_body()
+        body = _build_empty_body(doc.status, doc.error_message)
         load_more_btn = ft.Container()
     else:
         displayed = [min(_INITIAL_CHARS, total_len)]
@@ -106,11 +106,19 @@ def show_document_viewer(state: AppState, doc_id: str) -> None:
     page.show_dialog(dlg)
 
 
-def _build_empty_body() -> ft.Container:
+def _build_empty_body(status: str = "", error_message: str = "") -> ft.Container:
     """Build the placeholder body for empty document content."""
+    if status == "error" and error_message:
+        message = error_message
+    elif status in ("parsing", "pending"):
+        message = t("kb.doc_viewer_processing")
+    elif status == "ready":
+        message = t("kb.doc_viewer_no_text")
+    else:
+        message = t("kb.doc_viewer_empty")
     return ft.Container(
         content=ft.Text(
-            t("kb.doc_viewer_empty"),
+            message,
             size=13,
             opacity=0.4,
             italic=True,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import shutil
@@ -129,6 +130,11 @@ class DocumentService:
             doc.content_length = result.content_length
             doc.chunk_count = result.chunk_count
 
+        except asyncio.CancelledError:
+            logger.warning("Upload cancelled for document %s", src.name)
+            self._db.update_kb_document(doc_id, status="error", error_message="Upload cancelled")
+            doc.status = "error"
+            raise
         except Exception as exc:
             logger.exception("Failed to process document %s", src.name)
             self._db.update_kb_document(doc_id, status="error", error_message=str(exc))

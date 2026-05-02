@@ -7,6 +7,7 @@ instances are injected via :class:`RAGComponentFactory`.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections.abc import Callable
@@ -96,6 +97,7 @@ class RAGOrchestrator:
                     chunk_count=0,
                     chunks=[],
                     dimensions=0,
+                    error="No extractable text content found in document",
                 )
 
             _notify(on_progress, "chunking")
@@ -137,6 +139,9 @@ class RAGOrchestrator:
                 dimensions=dimensions,
             )
 
+        except asyncio.CancelledError:
+            logger.warning("Ingest cancelled for %s", file_path)
+            raise
         except Exception as exc:
             logger.exception("Ingest failed for %s", file_path)
             return IngestResult(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -30,7 +31,7 @@ class LCDocumentParser(DocumentParser):
             )
 
         loader = self._select_loader(file_path, file_type)
-        lc_docs = loader.load()
+        lc_docs = await asyncio.to_thread(loader.load)
 
         if not lc_docs:
             return ParsedDocument(text="", metadata={"source": file_path})

@@ -75,13 +75,13 @@ def show_upload_dialog(
 
     def _close() -> None:
         page.pop_dialog()
-        if on_done:
-            on_done()
+
+    upload_started = False
 
     async def _pick_and_upload() -> None:
+        nonlocal upload_started
         picker = ft.FilePicker()
-        page.services.append(picker)
-        page.update()
+        page.overlay.append(picker)
         try:
             files = await picker.pick_files(
                 dialog_title=t("kb.doc_upload_title"),
@@ -90,9 +90,8 @@ def show_upload_dialog(
                 allow_multiple=True,
             )
         finally:
-            if picker in page.services:
-                page.services.remove(picker)
-            page.update()
+            if picker in page.overlay:
+                page.overlay.remove(picker)
 
         if not files:
             return
@@ -100,6 +99,7 @@ def show_upload_dialog(
         if not file_paths:
             return
 
+        upload_started = True
         page.show_dialog(dlg)
         await _upload_paths_async(
             page,
@@ -114,7 +114,10 @@ def show_upload_dialog(
             file_paths,
         )
 
-    page.run_task(_pick_and_upload)
+    task = page.run_task(_pick_and_upload)
+    task.add_done_callback(
+        lambda _: page.run_thread(lambda: (on_done() if on_done else None))
+    )
 
 
 async def _upload_paths_async(
