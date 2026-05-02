@@ -99,7 +99,13 @@
     "unarchive": "取消归档",
     "archived": "已归档",
     "show_archived": "显示已归档",
-    "no_archived_sessions": "没有已归档的会话"
+    "no_archived_sessions": "没有已归档的会话",
+    "kb_select_title": "知识库",
+    "kb_select_all": "全选/取消",
+    "kb_no_available": "暂无可用知识库，请先创建并上传文档。",
+    "kb_searching": "正在检索知识库...",
+    "rag_sources": "参考来源 ({count} 条)",
+    "rag_retrieval_failed": "知识库检索失败，将不使用上下文发送"
   },
   "settings": {
     "title": "设置",

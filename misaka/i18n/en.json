@@ -99,7 +99,13 @@
     "unarchive": "Unarchive",
     "archived": "Archived",
     "show_archived": "Show archived",
-    "no_archived_sessions": "No archived sessions"
+    "no_archived_sessions": "No archived sessions",
+    "kb_select_title": "Knowledge Base",
+    "kb_select_all": "Toggle All",
+    "kb_no_available": "No knowledge bases available. Create one with embedded documents first.",
+    "kb_searching": "Searching knowledge base...",
+    "rag_sources": "References ({count})",
+    "rag_retrieval_failed": "Knowledge base retrieval failed, sending without context"
   },
   "settings": {
     "title": "Settings",

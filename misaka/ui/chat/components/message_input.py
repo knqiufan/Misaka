@@ -22,6 +22,7 @@ from misaka.db.models import FileTreeNode, PendingImage
 from misaka.i18n import t
 from misaka.ui.chat.components.image_preview_bar import ImagePreviewBar
 from misaka.ui.common.theme import MONO_FONT_FAMILY
+from misaka.ui.knowledge.components.kb_selector import KBSelector
 
 if TYPE_CHECKING:
     from misaka.state import AppState
@@ -101,6 +102,13 @@ class MessageInput(ft.Container):
         self._guard_in_progress: bool = False
         self._file_hint_row: ft.Row | None = None
         self._file_hint_container: ft.Container | None = None
+        # Knowledge base selector
+        self._kb_selector: KBSelector | None = None
+        self._kb_selector_container: ft.Container | None = None
+        self._kb_badge: ft.Container | None = None
+        self._kb_badge_text: ft.Text | None = None
+        self._kb_btn_container: ft.Container | None = None
+        self._kb_selected_bar: ft.Container | None = None
         self._build_ui()
 
     async def _do_focus(self) -> None:
@@ -217,8 +225,50 @@ class MessageInput(ft.Container):
             on_view_image=self._handle_view_image,
         )
 
+        # Knowledge base button with badge
+        self._kb_badge_text = ft.Text("", size=8, color=ft.Colors.WHITE)
+        kb_badge = ft.Container(
+            content=self._kb_badge_text,
+            bgcolor=ft.Colors.PRIMARY,
+            border_radius=7,
+            width=14,
+            height=14,
+            alignment=ft.Alignment.CENTER,
+            visible=False,
+        )
+        kb_btn = self._build_utility_button(
+            icon=ft.Icons.MENU_BOOK_ROUNDED,
+            tooltip=t("chat.kb_select_title"),
+            on_click=self._toggle_kb_selector,
+        )
+        self._kb_btn_container = ft.Stack(
+            controls=[kb_btn, ft.Container(content=kb_badge, right=0, top=0)],
+            width=36,
+            height=36,
+        )
+        self._kb_badge = kb_badge
+
+        # KB selector popup
+        self._kb_selector = KBSelector(
+            self.state,
+            on_change=self._on_kb_selection_change,
+        )
+        self._kb_selector_container = ft.Container(
+            content=self._kb_selector,
+            visible=False,
+            margin=ft.Margin.only(left=52, bottom=8),
+        )
+
+        # Selected KB names bar (below input)
+        self._kb_selected_bar = ft.Container(
+            content=ft.Row(controls=[], spacing=4, wrap=True, run_spacing=4),
+            visible=False,
+            padding=ft.Padding.only(left=14, right=14, top=2, bottom=4),
+        )
+
         input_row = ft.Row(
-            controls=[attach_btn, command_btn, self._model_indicator,
+            controls=[attach_btn, command_btn, self._kb_btn_container,
+                      self._model_indicator,
                       self._badge_container, self._text_field, self._send_btn],
             spacing=6,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -245,13 +295,15 @@ class MessageInput(ft.Container):
             padding=ft.Padding.only(left=14, right=14, top=2, bottom=4),
         )
 
-        # Content column: menus, image preview bar, file hints, input shell
+        # Content column: menus, KB selector, image preview, file hints, KB bar, input shell
         content_column = ft.Column(
             controls=[
                 self._command_menu_container,
                 self._file_menu_container,
+                self._kb_selector_container,
                 self._image_preview_bar,
                 self._file_hint_container,
+                self._kb_selected_bar,
                 self._input_shell,
             ],
             spacing=0,
@@ -332,17 +384,19 @@ class MessageInput(ft.Container):
             self._hide_command_menu()
 
     def _handle_focus(self, e: ft.ControlEvent) -> None:
-        """Close file menu when the text field regains focus (e.g. user clicks inside)."""
+        """Close overlay menus when the text field regains focus."""
         if self._suppress_focus_close:
             self._suppress_focus_close = False
             return
         if self._file_menu_active:
             self._hide_file_menu()
+        self._hide_kb_selector()
 
     def _handle_shell_click(self, e: ft.ControlEvent) -> None:
-        """Close file menu when the input shell area is clicked."""
+        """Close overlay menus when the input shell area is clicked."""
         if self._file_menu_active:
             self._hide_file_menu()
+        self._hide_kb_selector()
 
     def _show_command_menu(self, commands: list[SlashCommand]) -> None:
         if not self._command_menu or not self._command_menu_container:
@@ -988,6 +1042,109 @@ class MessageInput(ft.Container):
             self._badge_container.update()
 
     # ------------------------------------------------------------------
+    # Knowledge base selector
+    # ------------------------------------------------------------------
+
+    def _toggle_kb_selector(self, e: ft.ControlEvent) -> None:
+        """Show or hide the knowledge base selector popup."""
+        if not self._kb_selector_container:
+            return
+        if self._kb_selector_container.visible:
+            self._hide_kb_selector()
+        else:
+            self._show_kb_selector()
+        self._schedule_focus(e.page if e else None)
+
+    def _show_kb_selector(self) -> None:
+        if not self._kb_selector_container or not self._kb_selector:
+            return
+        self._kb_selector.refresh()
+        self._kb_selector_container.visible = True
+        with contextlib.suppress(Exception):
+            self._kb_selector_container.update()
+
+    def _hide_kb_selector(self) -> None:
+        if self._kb_selector_container and self._kb_selector_container.visible:
+            self._kb_selector_container.visible = False
+            with contextlib.suppress(Exception):
+                self._kb_selector_container.update()
+
+    def _on_kb_selection_change(self) -> None:
+        """Called when KB checkbox selection changes."""
+        self._refresh_kb_badge()
+        self._refresh_kb_selected_bar()
+
+    def _refresh_kb_badge(self) -> None:
+        """Update the badge count on the KB button."""
+        if not self._kb_selector or not self._kb_badge or not self._kb_badge_text:
+            return
+        count = self._kb_selector.get_selected_count()
+        self._kb_badge.visible = count > 0
+        self._kb_badge_text.value = str(count) if count > 0 else ""
+        with contextlib.suppress(Exception):
+            self._kb_badge.update()
+            self._kb_badge_text.update()
+
+    def _refresh_kb_selected_bar(self) -> None:
+        """Show selected KB names below the input area.
+
+        Reuses the KB list already cached by the ``KBSelector`` to
+        avoid a redundant database query on every selection change.
+        """
+        if not self._kb_selected_bar:
+            return
+
+        session_id = self.state.current_session_id or "__global__"
+        selected_ids = set(self.state.selected_kb_ids.get(session_id, []))
+        if not selected_ids:
+            self._kb_selected_bar.visible = False
+            with contextlib.suppress(Exception):
+                self._kb_selected_bar.update()
+            return
+
+        chips: list[ft.Control] = []
+        available = self._kb_selector._kb_list if self._kb_selector else []
+        if not available:
+            kb_svc = self.state.get_service("kb_service")
+            if kb_svc:
+                available = kb_svc.get_kb_for_chat_selection()
+        for kb in available:
+            if kb["id"] in selected_ids:
+                chips.append(self._build_kb_chip(kb["name"]))
+
+        row = self._kb_selected_bar.content
+        if isinstance(row, ft.Row):
+            row.controls = chips
+        self._kb_selected_bar.visible = bool(chips)
+        with contextlib.suppress(Exception):
+            self._kb_selected_bar.update()
+
+    @staticmethod
+    def _build_kb_chip(name: str) -> ft.Control:
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.MENU_BOOK_ROUNDED, size=10, color=ft.Colors.PRIMARY),
+                    ft.Text(
+                        name,
+                        size=10,
+                        weight=ft.FontWeight.W_500,
+                        color=ft.Colors.PRIMARY,
+                        max_lines=1,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
+                ],
+                spacing=4,
+                tight=True,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding.only(left=6, right=8, top=2, bottom=2),
+            border_radius=10,
+            bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY)),
+        )
+
+    # ------------------------------------------------------------------
     # Send / action handling
     # ------------------------------------------------------------------
 
@@ -1132,6 +1289,7 @@ class MessageInput(ft.Container):
         self._text_field.update()
         self._hide_command_menu()
         self._hide_file_menu()
+        self._hide_kb_selector()
         self._clear_file_references()
 
         if self._image_preview_bar:
@@ -1386,7 +1544,7 @@ class MessageInput(ft.Container):
     # ------------------------------------------------------------------
 
     def refresh(self) -> None:
-        """Update send/stop button appearance based on streaming state."""
+        """Update send/stop button and KB badge based on current state."""
         if self._send_btn:
             is_streaming = self.state.is_streaming
             self._send_btn.icon = (
@@ -1395,6 +1553,8 @@ class MessageInput(ft.Container):
             self._send_btn.tooltip = t("chat.stop") if is_streaming else t("chat.send")
             self._send_btn.bgcolor = ft.Colors.ERROR if is_streaming else ft.Colors.PRIMARY
             self._send_btn.update()
+        self._refresh_kb_badge()
+        self._refresh_kb_selected_bar()
 
     def focus(self) -> None:
         self._schedule_focus()

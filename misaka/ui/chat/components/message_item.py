@@ -18,7 +18,7 @@ from typing import cast
 import flet as ft
 
 from misaka.config import get_assets_path
-from misaka.db.models import Message, MessageContentBlock
+from misaka.db.models import KBSearchResult, Message, MessageContentBlock
 from misaka.i18n import t
 from misaka.ui.chat.components.code_block import CodeBlock
 from misaka.ui.chat.components.image_block import ImageBlock
@@ -44,11 +44,13 @@ class MessageItem(ft.Container):
         *,
         assistant_label: str = "Claude",
         on_regenerate: object = None,
+        rag_sources: list[KBSearchResult] | None = None,
     ) -> None:
         super().__init__()
         self._message = message
         self._assistant_label = assistant_label
         self._on_regenerate = on_regenerate
+        self._rag_sources: list[KBSearchResult] = rag_sources or []
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -81,8 +83,11 @@ class MessageItem(ft.Container):
         else:
             header = self._build_header()
             body = self._wrap_assistant_content(content_controls, blocks)
+            col_controls = [header, body]
+            if self._rag_sources:
+                col_controls.append(self._build_rag_sources_panel())
             self.content = ft.Column(
-                controls=[header, body],
+                controls=col_controls,
                 spacing=8,
             )
 
@@ -324,6 +329,130 @@ class MessageItem(ft.Container):
             ),
             border_radius=8,
         )
+
+    def _build_rag_sources_panel(self) -> ft.Control:
+        """Build a collapsible panel showing RAG retrieval sources."""
+        count = len(self._rag_sources)
+        source_items = self._build_source_items()
+
+        detail_container = ft.Container(
+            content=ft.Column(controls=source_items, spacing=4, tight=True),
+            padding=ft.Padding.only(left=12, top=8, right=8, bottom=8),
+            visible=False,
+        )
+        chevron = ft.Icon(ft.Icons.CHEVRON_RIGHT_ROUNDED, size=14, opacity=0.5)
+
+        def toggle(_: ft.ControlEvent) -> None:
+            detail_container.visible = not detail_container.visible
+            chevron.name = (
+                ft.Icons.EXPAND_MORE_ROUNDED if detail_container.visible
+                else ft.Icons.CHEVRON_RIGHT_ROUNDED
+            )
+            with contextlib.suppress(Exception):
+                detail_container.update()
+                chevron.update()
+
+        header = ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(
+                        ft.Icons.MENU_BOOK_ROUNDED,
+                        size=14,
+                        color=ft.Colors.PRIMARY,
+                    ),
+                    ft.Text(
+                        t("chat.rag_sources", count=count),
+                        size=11,
+                        weight=ft.FontWeight.W_500,
+                        color=ft.Colors.PRIMARY,
+                    ),
+                    chevron,
+                ],
+                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            on_click=toggle,
+            ink=True,
+            border_radius=6,
+            padding=ft.Padding.symmetric(horizontal=8, vertical=5),
+        )
+
+        return ft.Container(
+            content=ft.Column(
+                controls=[header, detail_container],
+                spacing=0,
+                tight=True,
+            ),
+            bgcolor=ft.Colors.with_opacity(0.04, ft.Colors.PRIMARY),
+            border=ft.Border.all(
+                1, ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
+            ),
+            border_radius=8,
+        )
+
+    def _build_source_items(self) -> list[ft.Control]:
+        """Build individual source citation rows."""
+        items: list[ft.Control] = []
+        for src in self._rag_sources:
+            doc_name = src.document_name
+            chunk_idx = src.chunk_index + 1
+            score = src.score
+            raw_content = src.content or ""
+            content_preview = raw_content[:120]
+            if len(raw_content) > 120:
+                content_preview += "..."
+
+            items.append(
+                ft.Container(
+                    content=ft.Column(
+                        controls=[
+                            ft.Row(
+                                controls=[
+                                    ft.Icon(
+                                        ft.Icons.DESCRIPTION_OUTLINED,
+                                        size=12,
+                                        opacity=0.5,
+                                    ),
+                                    ft.Text(
+                                        doc_name,
+                                        size=11,
+                                        weight=ft.FontWeight.W_500,
+                                        expand=True,
+                                        max_lines=1,
+                                        overflow=ft.TextOverflow.ELLIPSIS,
+                                    ),
+                                    ft.Text(
+                                        f"#{chunk_idx}",
+                                        size=10,
+                                        opacity=0.4,
+                                    ),
+                                    ft.Text(
+                                        f"{score:.2f}",
+                                        size=10,
+                                        opacity=0.4,
+                                        color=ft.Colors.PRIMARY,
+                                    ),
+                                ],
+                                spacing=6,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
+                            ft.Text(
+                                content_preview,
+                                size=10,
+                                opacity=0.5,
+                                max_lines=2,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                        ],
+                        spacing=2,
+                        tight=True,
+                    ),
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+                    border_radius=6,
+                    bgcolor=ft.Colors.with_opacity(0.03, ft.Colors.ON_SURFACE),
+                )
+            )
+        return items
 
     def _extract_markdown_from_blocks(
         self, blocks: list[MessageContentBlock]

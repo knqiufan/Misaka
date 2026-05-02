@@ -131,14 +131,38 @@ class MessageList(ft.Column):
     def _get_or_create_item(self, message: Message) -> MessageItem:
         cached = self._item_cache.get(message.id)
         if cached is None:
+            rag_sources = self._find_rag_sources(message)
             cached = MessageItem(
                 message,
                 assistant_label=self._model_display_name,
                 on_regenerate=self._on_regenerate,
+                rag_sources=rag_sources,
             )
             cached.key = message.id
             self._item_cache[message.id] = cached
         return cached
+
+    def _find_rag_sources(self, message: Message) -> list:
+        """Find RAG sources for an assistant message.
+
+        RAG results are cached by the preceding user message ID.
+        For assistant messages, walk backwards to find the user message
+        that triggered the RAG retrieval.
+        """
+        if message.role != "assistant":
+            return []
+        cache = self.state.rag_results_cache
+        if not cache:
+            return []
+        messages = self.state.messages
+        try:
+            idx = next(i for i, m in enumerate(messages) if m.id == message.id)
+        except StopIteration:
+            return []
+        for i in range(idx - 1, -1, -1):
+            if messages[i].role == "user":
+                return cache.get(messages[i].id, [])
+        return []
 
     def _prune_cache(self, current_ids: set[str]) -> None:
         stale_ids = [mid for mid in self._item_cache if mid not in current_ids]

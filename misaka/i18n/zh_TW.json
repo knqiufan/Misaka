@@ -99,7 +99,13 @@
     "unarchive": "取消封存",
     "archived": "已封存",
     "show_archived": "顯示已封存",
-    "no_archived_sessions": "沒有已封存的會話"
+    "no_archived_sessions": "沒有已封存的會話",
+    "kb_select_title": "知識庫",
+    "kb_select_all": "全選/取消",
+    "kb_no_available": "暫無可用知識庫，請先建立並上傳文件。",
+    "kb_searching": "正在檢索知識庫...",
+    "rag_sources": "參考來源 ({count} 條)",
+    "rag_retrieval_failed": "知識庫檢索失敗，將不使用上下文傳送"
   },
   "settings": {
     "title": "設定",
