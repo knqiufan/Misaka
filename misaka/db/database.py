@@ -13,8 +13,13 @@ from typing import Any
 
 from misaka.db.models import (
     ChatSession,
+    KBChunk,
+    KBDocument,
+    KnowledgeBase,
     Message,
+    ModelInfo,
     RouterConfig,
+    RouterModel,
     TaskItem,
 )
 
@@ -201,6 +206,113 @@ class DatabaseBackend(ABC):
     @abstractmethod
     def activate_router_config(self, config_id: str) -> bool:
         """Set a router config as active (deactivating all others). Return True if found."""
+
+    # ----- Router Models -----
+
+    @abstractmethod
+    def save_router_models(
+        self,
+        config_id: str,
+        models: list[dict[str, Any]],
+    ) -> None:
+        """Replace all detected models for a router config.
+
+        Each dict in *models* must contain ``model_id`` and ``model_type``.
+        Existing models for *config_id* are deleted first.
+        """
+
+    @abstractmethod
+    def get_router_models(self, config_id: str) -> list[RouterModel]:
+        """Return all models detected under a router config."""
+
+    @abstractmethod
+    def update_router_model_selection(self, model_id: str, is_selected: bool) -> None:
+        """Toggle selection state of a detected model."""
+
+    @abstractmethod
+    def delete_router_models_by_config(self, config_id: str) -> None:
+        """Delete all detected models for a router config."""
+
+    @abstractmethod
+    def get_all_selected_models_by_type(
+        self,
+        model_type: str,
+    ) -> list[ModelInfo]:
+        """Return selected models of a given type across all router configs.
+
+        Performs a JOIN with ``router_configs`` to include ``base_url``
+        and ``api_key`` in the returned :class:`ModelInfo` objects.
+        """
+
+    # ----- Knowledge Bases -----
+
+    @abstractmethod
+    def create_knowledge_base(self, kb: KnowledgeBase) -> None:
+        """Insert a new knowledge base record."""
+
+    @abstractmethod
+    def get_knowledge_base(self, kb_id: str) -> KnowledgeBase | None:
+        """Return a knowledge base by ID, or None."""
+
+    @abstractmethod
+    def get_all_knowledge_bases(self) -> list[KnowledgeBase]:
+        """Return all knowledge bases ordered by updated_at descending."""
+
+    @abstractmethod
+    def update_knowledge_base(self, kb_id: str, **kwargs: Any) -> None:
+        """Update knowledge base fields. Only provided kwargs are changed."""
+
+    @abstractmethod
+    def delete_knowledge_base(self, kb_id: str) -> None:
+        """Delete a knowledge base and cascade-delete its documents and chunks."""
+
+    # ----- KB Documents -----
+
+    @abstractmethod
+    def create_kb_document(self, doc: KBDocument) -> None:
+        """Insert a new knowledge base document record."""
+
+    @abstractmethod
+    def get_kb_document(self, doc_id: str) -> KBDocument | None:
+        """Return a KB document by ID, or None."""
+
+    @abstractmethod
+    def get_kb_documents_by_kb(self, kb_id: str) -> list[KBDocument]:
+        """Return all documents belonging to a knowledge base."""
+
+    @abstractmethod
+    def update_kb_document(self, doc_id: str, **kwargs: Any) -> None:
+        """Update document fields. Only provided kwargs are changed."""
+
+    @abstractmethod
+    def delete_kb_document(self, doc_id: str) -> None:
+        """Delete a document and cascade-delete its chunks."""
+
+    @abstractmethod
+    def get_kb_document_by_hash(self, kb_id: str, file_hash: str) -> KBDocument | None:
+        """Find an existing document with the same content hash (dedup)."""
+
+    # ----- KB Chunks -----
+
+    @abstractmethod
+    def create_kb_chunks_batch(self, chunks: list[KBChunk]) -> None:
+        """Bulk-insert text chunks for a document."""
+
+    @abstractmethod
+    def get_kb_chunks_by_document(self, doc_id: str) -> list[KBChunk]:
+        """Return all chunks for a specific document, ordered by chunk_index."""
+
+    @abstractmethod
+    def get_kb_chunks_by_kb(self, kb_id: str) -> list[KBChunk]:
+        """Return all chunks for a knowledge base, ordered by chunk_index."""
+
+    @abstractmethod
+    def delete_kb_chunks_by_document(self, doc_id: str) -> None:
+        """Delete all chunks belonging to a specific document."""
+
+    @abstractmethod
+    def update_kb_chunk_embedded(self, chunk_ids: list[str]) -> None:
+        """Mark chunks as embedded (``is_embedded = 1``)."""
 
     # ----- Dashboard aggregation -----
 

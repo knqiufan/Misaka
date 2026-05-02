@@ -285,3 +285,150 @@ class MCPServerConfig:
     type: Literal["stdio", "sse", "http"] = "stdio"
     url: str = ""
     headers: dict[str, str] = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Router model (detected models per router config)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RouterModel:
+    """A model discovered under a Router configuration.
+
+    Persisted in the ``router_models`` table — independently of
+    ``RouterConfig.config_json`` which is reserved for Claude Code CLI
+    settings only.
+    """
+
+    id: str
+    router_config_id: str
+    model_id: str
+    model_type: Literal["llm", "embedding", "reranker"]
+    is_selected: int = 1
+    created_at: str = ""
+
+
+@dataclass
+class ModelInfo:
+    """Aggregated model info with Router context.
+
+    Built from a JOIN of ``router_models`` and ``router_configs``.
+    Not persisted — used as a query result DTO.
+    """
+
+    model_id: str
+    model_type: Literal["llm", "embedding", "reranker"]
+    router_config_id: str
+    router_name: str
+    base_url: str
+    api_key: str
+
+
+@dataclass
+class ModelDetectionResult:
+    """Result of probing ``GET /v1/models`` on an API endpoint."""
+
+    llm: list[str] = field(default_factory=list)
+    embedding: list[str] = field(default_factory=list)
+    reranker: list[str] = field(default_factory=list)
+    raw_models: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Knowledge base
+# ---------------------------------------------------------------------------
+
+@dataclass
+class KnowledgeBase:
+    """A knowledge base that holds documents for RAG retrieval."""
+
+    id: str
+    name: str
+    description: str = ""
+
+    # Embedding model (required)
+    embedding_model_id: str = ""
+    embedding_router_config_id: str = ""
+    embedding_dimensions: int = 0
+
+    # Reranker model (optional)
+    reranker_model_id: str = ""
+    reranker_router_config_id: str = ""
+
+    # Chunking strategy
+    chunk_size: int = 512
+    chunk_overlap: int = 64
+
+    # Retrieval configuration
+    top_k: int = 5
+    similarity_threshold: float = 0.0
+    reranker_top_k: int = 3
+
+    # Statistics (computed from related rows)
+    document_count: int = 0
+    chunk_count: int = 0
+
+    status: Literal["active", "building", "error"] = "active"
+
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass
+class KBDocument:
+    """A document uploaded to a knowledge base."""
+
+    id: str
+    knowledge_base_id: str
+
+    file_name: str = ""
+    file_type: Literal["txt", "markdown", "docx", "xlsx", "pdf"] = "txt"
+    file_size: int = 0
+    file_hash: str = ""
+    storage_path: str = ""
+
+    content_text: str = ""
+    content_length: int = 0
+    chunk_count: int = 0
+
+    status: Literal["pending", "parsing", "embedding", "ready", "error"] = "pending"
+    error_message: str = ""
+
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass
+class KBChunk:
+    """A text chunk belonging to a knowledge base document."""
+
+    id: str
+    document_id: str
+    knowledge_base_id: str
+
+    content: str = ""
+    chunk_index: int = 0
+
+    start_char: int = 0
+    end_char: int = 0
+    metadata_json: str = "{}"
+
+    is_embedded: int = 0
+
+    created_at: str = ""
+
+
+@dataclass
+class KBSearchResult:
+    """A single RAG retrieval result (runtime model, not persisted)."""
+
+    chunk_id: str
+    document_id: str
+    knowledge_base_id: str
+    knowledge_base_name: str
+    document_name: str
+    content: str
+    score: float
+    chunk_index: int
+    metadata: dict[str, Any] = field(default_factory=dict)

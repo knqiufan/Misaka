@@ -17,6 +17,21 @@ dependencies = [
     "Pygments>=2.18.0",
     "anyio>=4.0.0",
     "Pillow>=10.0.0",
+    # RAG adapter framework (isolated behind abstraction layer)
+    "langchain>=0.3.0",
+    "langchain-community>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langchain-text-splitters>=0.3.0",
+    # Vector database
+    "sqlite-vec>=0.1.6",
+    # Document parsing
+    "pymupdf>=1.25.0",
+    "docx2txt>=0.8",
+    "openpyxl>=3.1.0",
+    # Hybrid retrieval
+    "rank-bm25>=0.2.2",
+    # HTTP client for model detection & reranker API
+    "httpx>=0.27.0",
 ]
 
 [project.optional-dependencies]

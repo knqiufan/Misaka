@@ -12,7 +12,7 @@ import sqlite3
 logger = logging.getLogger(__name__)
 
 # Current schema version. Increment when adding new migrations.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def run_migrations(conn: sqlite3.Connection) -> None:
@@ -36,6 +36,9 @@ def run_migrations(conn: sqlite3.Connection) -> None:
 
     if current < 4:
         _migrate_v4(conn)
+
+    if current < 5:
+        _migrate_v5(conn)
 
     _set_version(conn, SCHEMA_VERSION)
     conn.commit()
@@ -135,3 +138,141 @@ def _migrate_v4(conn: sqlite3.Connection) -> None:
     """Migration v4: Remove the legacy api_providers table."""
     logger.info("Running migration v4")
     conn.execute("DROP TABLE IF EXISTS api_providers")
+
+
+def _migrate_v5(conn: sqlite3.Connection) -> None:
+    """Migration v5: Add Knowledge Base infrastructure tables.
+
+    Creates four new tables:
+    - router_models: detected models (LLM / embedding / reranker) per router config
+    - knowledge_bases: top-level KB metadata
+    - kb_documents: uploaded documents per KB
+    - kb_chunks: text chunks per document
+    """
+    logger.info("Running migration v5")
+
+    existing_tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+
+    if "router_models" not in existing_tables:
+        conn.execute("""
+            CREATE TABLE router_models (
+                id TEXT PRIMARY KEY,
+                router_config_id TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                model_type TEXT NOT NULL DEFAULT 'llm'
+                    CHECK(model_type IN ('llm', 'embedding', 'reranker')),
+                is_selected INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (router_config_id)
+                    REFERENCES router_configs(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_router_models_config_id
+                ON router_models(router_config_id)
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_router_models_unique_model
+                ON router_models(router_config_id, model_id)
+        """)
+
+    if "knowledge_bases" not in existing_tables:
+        conn.execute("""
+            CREATE TABLE knowledge_bases (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+
+                embedding_model_id TEXT NOT NULL DEFAULT '',
+                embedding_router_config_id TEXT NOT NULL DEFAULT '',
+                embedding_dimensions INTEGER NOT NULL DEFAULT 0,
+
+                reranker_model_id TEXT NOT NULL DEFAULT '',
+                reranker_router_config_id TEXT NOT NULL DEFAULT '',
+
+                chunk_size INTEGER NOT NULL DEFAULT 512,
+                chunk_overlap INTEGER NOT NULL DEFAULT 64,
+
+                top_k INTEGER NOT NULL DEFAULT 5,
+                similarity_threshold REAL NOT NULL DEFAULT 0.0,
+                reranker_top_k INTEGER NOT NULL DEFAULT 3,
+
+                document_count INTEGER NOT NULL DEFAULT 0,
+                chunk_count INTEGER NOT NULL DEFAULT 0,
+
+                status TEXT NOT NULL DEFAULT 'active'
+                    CHECK(status IN ('active', 'building', 'error')),
+
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+
+    if "kb_documents" not in existing_tables:
+        conn.execute("""
+            CREATE TABLE kb_documents (
+                id TEXT PRIMARY KEY,
+                knowledge_base_id TEXT NOT NULL,
+
+                file_name TEXT NOT NULL DEFAULT '',
+                file_type TEXT NOT NULL DEFAULT 'txt'
+                    CHECK(file_type IN ('txt', 'markdown', 'docx', 'xlsx', 'pdf')),
+                file_size INTEGER NOT NULL DEFAULT 0,
+                file_hash TEXT NOT NULL DEFAULT '',
+                storage_path TEXT NOT NULL DEFAULT '',
+
+                content_text TEXT NOT NULL DEFAULT '',
+                content_length INTEGER NOT NULL DEFAULT 0,
+                chunk_count INTEGER NOT NULL DEFAULT 0,
+
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending', 'parsing', 'embedding', 'ready', 'error')),
+                error_message TEXT NOT NULL DEFAULT '',
+
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (knowledge_base_id)
+                    REFERENCES knowledge_bases(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_kb_documents_kb_id
+                ON kb_documents(knowledge_base_id)
+        """)
+
+    if "kb_chunks" not in existing_tables:
+        conn.execute("""
+            CREATE TABLE kb_chunks (
+                id TEXT PRIMARY KEY,
+                document_id TEXT NOT NULL,
+                knowledge_base_id TEXT NOT NULL,
+
+                content TEXT NOT NULL DEFAULT '',
+                chunk_index INTEGER NOT NULL DEFAULT 0,
+
+                start_char INTEGER NOT NULL DEFAULT 0,
+                end_char INTEGER NOT NULL DEFAULT 0,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+
+                is_embedded INTEGER NOT NULL DEFAULT 0,
+
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (document_id)
+                    REFERENCES kb_documents(id) ON DELETE CASCADE,
+                FOREIGN KEY (knowledge_base_id)
+                    REFERENCES knowledge_bases(id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_kb_chunks_document_id
+                ON kb_chunks(document_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_kb_chunks_kb_id
+                ON kb_chunks(knowledge_base_id)
+        """)

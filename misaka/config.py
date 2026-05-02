@@ -48,16 +48,25 @@ LOG_PATH: Path = DATA_DIR / "misaka.log"
 ATTACHMENTS_DIR: Path = DATA_DIR / "attachments"
 """Root directory for image attachments (organized by session_id)."""
 
+KNOWLEDGE_BASE_DIR: Path = DATA_DIR / "knowledge_base"
+"""Root directory for knowledge base file storage (organized by kb_id)."""
+
 
 def get_session_attachments_dir(session_id: str) -> Path:
     """Return the attachments directory for a specific session."""
     return ATTACHMENTS_DIR / session_id
 
 
+def get_kb_storage_dir(kb_id: str) -> Path:
+    """Return the file storage directory for a specific knowledge base."""
+    return KNOWLEDGE_BASE_DIR / kb_id
+
+
 def ensure_data_dir() -> None:
     """Create the data directory if it does not exist."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    KNOWLEDGE_BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------

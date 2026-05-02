@@ -16,10 +16,24 @@ from pathlib import Path
 from typing import Any
 
 from misaka.db.database import DatabaseBackend
-from misaka.db.models import ChatSession, Message, RouterConfig, TaskItem
+from misaka.db.models import (
+    ChatSession,
+    KBChunk,
+    KBDocument,
+    KnowledgeBase,
+    Message,
+    ModelInfo,
+    RouterConfig,
+    RouterModel,
+    TaskItem,
+)
 from misaka.db.row_mappers import (
+    row_to_kb_chunk,
+    row_to_kb_document,
+    row_to_knowledge_base,
     row_to_message,
     row_to_router_config,
+    row_to_router_model,
     row_to_session,
     row_to_task,
 )
@@ -523,6 +537,291 @@ class SQLiteBackend(DatabaseBackend):
         )
         conn.commit()
         return True
+
+    # ----- Router Models -----
+
+    def save_router_models(
+        self,
+        config_id: str,
+        models: list[dict[str, Any]],
+    ) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "DELETE FROM router_models WHERE router_config_id = ?",
+            (config_id,),
+        )
+        if models:
+            now = _now()
+            rows = [
+                (
+                    _generate_id(),
+                    config_id,
+                    m["model_id"],
+                    m.get("model_type", "llm"),
+                    m.get("is_selected", 1),
+                    now,
+                )
+                for m in models
+            ]
+            conn.executemany(
+                """INSERT INTO router_models
+                   (id, router_config_id, model_id, model_type, is_selected, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                rows,
+            )
+        conn.commit()
+
+    def get_router_models(self, config_id: str) -> list[RouterModel]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM router_models WHERE router_config_id = ? ORDER BY model_type, model_id",
+            (config_id,),
+        ).fetchall()
+        return [row_to_router_model(r) for r in rows]
+
+    def update_router_model_selection(self, model_id: str, is_selected: bool) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE router_models SET is_selected = ? WHERE id = ?",
+            (1 if is_selected else 0, model_id),
+        )
+        conn.commit()
+
+    def delete_router_models_by_config(self, config_id: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "DELETE FROM router_models WHERE router_config_id = ?",
+            (config_id,),
+        )
+        conn.commit()
+
+    def get_all_selected_models_by_type(self, model_type: str) -> list[ModelInfo]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT rm.model_id, rm.model_type,
+                      rc.id AS router_config_id, rc.name AS router_name,
+                      rc.base_url, rc.api_key
+               FROM router_models rm
+               JOIN router_configs rc ON rm.router_config_id = rc.id
+               WHERE rm.model_type = ? AND rm.is_selected = 1
+               ORDER BY rc.name, rm.model_id""",
+            (model_type,),
+        ).fetchall()
+        return [
+            ModelInfo(
+                model_id=r["model_id"],
+                model_type=r["model_type"],
+                router_config_id=r["router_config_id"],
+                router_name=r["router_name"],
+                base_url=r["base_url"],
+                api_key=r["api_key"],
+            )
+            for r in rows
+        ]
+
+    # ----- Knowledge Bases -----
+
+    def create_knowledge_base(self, kb: KnowledgeBase) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO knowledge_bases
+               (id, name, description,
+                embedding_model_id, embedding_router_config_id, embedding_dimensions,
+                reranker_model_id, reranker_router_config_id,
+                chunk_size, chunk_overlap,
+                top_k, similarity_threshold, reranker_top_k,
+                document_count, chunk_count,
+                status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                kb.id, kb.name, kb.description,
+                kb.embedding_model_id, kb.embedding_router_config_id, kb.embedding_dimensions,
+                kb.reranker_model_id, kb.reranker_router_config_id,
+                kb.chunk_size, kb.chunk_overlap,
+                kb.top_k, kb.similarity_threshold, kb.reranker_top_k,
+                kb.document_count, kb.chunk_count,
+                kb.status, kb.created_at or _now(), kb.updated_at or _now(),
+            ),
+        )
+        conn.commit()
+
+    def get_knowledge_base(self, kb_id: str) -> KnowledgeBase | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM knowledge_bases WHERE id = ?", (kb_id,)
+        ).fetchone()
+        return row_to_knowledge_base(row) if row else None
+
+    def get_all_knowledge_bases(self) -> list[KnowledgeBase]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM knowledge_bases ORDER BY updated_at DESC"
+        ).fetchall()
+        return [row_to_knowledge_base(r) for r in rows]
+
+    def update_knowledge_base(self, kb_id: str, **kwargs: Any) -> None:
+        if not kwargs:
+            return
+        conn = self._get_conn()
+        allowed = {
+            "name", "description",
+            "embedding_model_id", "embedding_router_config_id", "embedding_dimensions",
+            "reranker_model_id", "reranker_router_config_id",
+            "chunk_size", "chunk_overlap",
+            "top_k", "similarity_threshold", "reranker_top_k",
+            "document_count", "chunk_count", "status",
+        }
+        sets: list[str] = ["updated_at = ?"]
+        params: list[Any] = [_now()]
+        for col in allowed:
+            if col in kwargs:
+                sets.append(f"{col} = ?")
+                params.append(kwargs[col])
+        params.append(kb_id)
+        conn.execute(
+            f"UPDATE knowledge_bases SET {', '.join(sets)} WHERE id = ?",  # noqa: S608
+            params,
+        )
+        conn.commit()
+
+    def delete_knowledge_base(self, kb_id: str) -> None:
+        conn = self._get_conn()
+        conn.execute("DELETE FROM knowledge_bases WHERE id = ?", (kb_id,))
+        conn.commit()
+
+    # ----- KB Documents -----
+
+    def create_kb_document(self, doc: KBDocument) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO kb_documents
+               (id, knowledge_base_id,
+                file_name, file_type, file_size, file_hash, storage_path,
+                content_text, content_length, chunk_count,
+                status, error_message,
+                created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                doc.id, doc.knowledge_base_id,
+                doc.file_name, doc.file_type, doc.file_size,
+                doc.file_hash, doc.storage_path,
+                doc.content_text, doc.content_length, doc.chunk_count,
+                doc.status, doc.error_message,
+                doc.created_at or _now(), doc.updated_at or _now(),
+            ),
+        )
+        conn.commit()
+
+    def get_kb_document(self, doc_id: str) -> KBDocument | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM kb_documents WHERE id = ?", (doc_id,)
+        ).fetchone()
+        return row_to_kb_document(row) if row else None
+
+    def get_kb_documents_by_kb(self, kb_id: str) -> list[KBDocument]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM kb_documents WHERE knowledge_base_id = ? ORDER BY created_at DESC",
+            (kb_id,),
+        ).fetchall()
+        return [row_to_kb_document(r) for r in rows]
+
+    def update_kb_document(self, doc_id: str, **kwargs: Any) -> None:
+        if not kwargs:
+            return
+        conn = self._get_conn()
+        allowed = {
+            "file_name", "file_type", "file_size", "file_hash", "storage_path",
+            "content_text", "content_length", "chunk_count",
+            "status", "error_message",
+        }
+        sets: list[str] = ["updated_at = ?"]
+        params: list[Any] = [_now()]
+        for col in allowed:
+            if col in kwargs:
+                sets.append(f"{col} = ?")
+                params.append(kwargs[col])
+        params.append(doc_id)
+        conn.execute(
+            f"UPDATE kb_documents SET {', '.join(sets)} WHERE id = ?",  # noqa: S608
+            params,
+        )
+        conn.commit()
+
+    def delete_kb_document(self, doc_id: str) -> None:
+        conn = self._get_conn()
+        conn.execute("DELETE FROM kb_documents WHERE id = ?", (doc_id,))
+        conn.commit()
+
+    def get_kb_document_by_hash(self, kb_id: str, file_hash: str) -> KBDocument | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM kb_documents WHERE knowledge_base_id = ? AND file_hash = ?",
+            (kb_id, file_hash),
+        ).fetchone()
+        return row_to_kb_document(row) if row else None
+
+    # ----- KB Chunks -----
+
+    def create_kb_chunks_batch(self, chunks: list[KBChunk]) -> None:
+        if not chunks:
+            return
+        conn = self._get_conn()
+        now = _now()
+        rows = [
+            (
+                c.id, c.document_id, c.knowledge_base_id,
+                c.content, c.chunk_index,
+                c.start_char, c.end_char, c.metadata_json,
+                c.is_embedded, c.created_at or now,
+            )
+            for c in chunks
+        ]
+        conn.executemany(
+            """INSERT INTO kb_chunks
+               (id, document_id, knowledge_base_id,
+                content, chunk_index,
+                start_char, end_char, metadata_json,
+                is_embedded, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        conn.commit()
+
+    def get_kb_chunks_by_document(self, doc_id: str) -> list[KBChunk]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM kb_chunks WHERE document_id = ? ORDER BY chunk_index ASC",
+            (doc_id,),
+        ).fetchall()
+        return [row_to_kb_chunk(r) for r in rows]
+
+    def get_kb_chunks_by_kb(self, kb_id: str) -> list[KBChunk]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM kb_chunks WHERE knowledge_base_id = ? ORDER BY chunk_index ASC",
+            (kb_id,),
+        ).fetchall()
+        return [row_to_kb_chunk(r) for r in rows]
+
+    def delete_kb_chunks_by_document(self, doc_id: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "DELETE FROM kb_chunks WHERE document_id = ?", (doc_id,)
+        )
+        conn.commit()
+
+    def update_kb_chunk_embedded(self, chunk_ids: list[str]) -> None:
+        if not chunk_ids:
+            return
+        conn = self._get_conn()
+        placeholders = ", ".join("?" for _ in chunk_ids)
+        conn.execute(
+            f"UPDATE kb_chunks SET is_embedded = 1 WHERE id IN ({placeholders})",  # noqa: S608
+            chunk_ids,
+        )
+        conn.commit()
 
     # ----- Dashboard aggregation -----
 
