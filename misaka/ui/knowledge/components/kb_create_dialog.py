@@ -79,30 +79,18 @@ def show_kb_create_dialog(
     )
 
     # ── Advanced settings (collapsible) ───────────────────────────────
-    chunk_size_field = make_text_field(
-        label=t("kb.chunk_size"),
-        value=str(kb.chunk_size if kb else 512),
-        keyboard_type=ft.KeyboardType.NUMBER,
+    chunk_size_field = _make_advanced_number_field(
+        "kb.chunk_size", kb.chunk_size if kb else 512,
     )
-    chunk_overlap_field = make_text_field(
-        label=t("kb.chunk_overlap"),
-        value=str(kb.chunk_overlap if kb else 64),
-        keyboard_type=ft.KeyboardType.NUMBER,
+    chunk_overlap_field = _make_advanced_number_field(
+        "kb.chunk_overlap", kb.chunk_overlap if kb else 64,
     )
-    top_k_field = make_text_field(
-        label=t("kb.top_k"),
-        value=str(kb.top_k if kb else 5),
-        keyboard_type=ft.KeyboardType.NUMBER,
+    top_k_field = _make_advanced_number_field("kb.top_k", kb.top_k if kb else 5)
+    threshold_field = _make_advanced_number_field(
+        "kb.similarity_threshold", kb.similarity_threshold if kb else 0.0,
     )
-    threshold_field = make_text_field(
-        label=t("kb.similarity_threshold"),
-        value=str(kb.similarity_threshold if kb else 0.0),
-        keyboard_type=ft.KeyboardType.NUMBER,
-    )
-    reranker_top_k_field = make_text_field(
-        label=t("kb.reranker_top_k"),
-        value=str(kb.reranker_top_k if kb else 3),
-        keyboard_type=ft.KeyboardType.NUMBER,
+    reranker_top_k_field = _make_advanced_number_field(
+        "kb.reranker_top_k", kb.reranker_top_k if kb else 3,
     )
 
     advanced_icon = ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=16, opacity=0.5)
@@ -215,6 +203,16 @@ def show_kb_create_dialog(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
+
+def _make_advanced_number_field(label_key: str, value: int | float) -> ft.TextField:
+    """Create a numeric advanced setting field that fits paired rows."""
+    return make_text_field(
+        label=t(label_key),
+        value=str(value),
+        keyboard_type=ft.KeyboardType.NUMBER,
+        expand=True,
+    )
+
 
 def _build_model_options(models: list) -> list[ft.dropdown.Option]:
     options: list[ft.dropdown.Option] = []
