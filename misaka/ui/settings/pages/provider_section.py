@@ -14,6 +14,8 @@ from misaka.ui.common.theme import (
     SUCCESS_GREEN,
     make_badge,
     make_button,
+    make_danger_button,
+    make_dialog,
     make_dropdown,
     make_form_dialog,
     make_icon_button,
@@ -136,7 +138,7 @@ def refresh_router_list(state: AppState, router_list: ft.Column) -> None:
             config,
             on_activate=lambda cid: activate_router(state, cid, router_list),
             on_edit=lambda c: show_edit_router_dialog(state, c, router_list),
-            on_delete=lambda cid: delete_router(state, cid, router_list),
+            on_delete=lambda c: show_delete_router_dialog(state, c, router_list),
         )
         for config in configs
     ]
@@ -146,7 +148,7 @@ def _build_router_card(
     config: RouterConfig,
     on_activate: Callable[[str], None],
     on_edit: Callable[[RouterConfig], None],
-    on_delete: Callable[[str], None],
+    on_delete: Callable[[RouterConfig], None],
 ) -> ft.Control:
     is_active = config.is_active == 1
 
@@ -201,7 +203,7 @@ def _build_router_card(
                             ft.Icons.DELETE,
                             tooltip=t("common.delete"),
                             icon_color=ERROR_RED,
-                            on_click=lambda e, cid=config.id: on_delete(cid),
+                            on_click=lambda e, c=config: on_delete(c),
                             icon_size=20,
                         ),
                     ],
@@ -244,6 +246,31 @@ def delete_router(
     svc.delete(config_id)
     refresh_router_list(state, router_list)
     state.update()
+
+
+def show_delete_router_dialog(
+    state: AppState,
+    config: RouterConfig,
+    router_list: ft.Column,
+) -> None:
+    """Show a confirmation dialog before deleting a router config."""
+    page = state.page
+    if not page:
+        return
+
+    def do_delete(ev: ft.ControlEvent):
+        page.pop_dialog()
+        delete_router(state, config.id, router_list)
+
+    dialog = make_dialog(
+        title=t("settings.router_delete_title"),
+        content=ft.Text(t("settings.router_delete_confirm", name=config.name), size=13),
+        actions=[
+            make_text_button(t("common.cancel"), on_click=lambda ev: page.pop_dialog()),
+            make_danger_button(t("common.delete"), on_click=do_delete),
+        ],
+    )
+    page.show_dialog(dialog)
 
 
 def show_edit_router_dialog(

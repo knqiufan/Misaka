@@ -197,6 +197,8 @@
     "router_enable": "啟用",
     "router_in_use": "使用中",
     "router_default": "Default",
+    "router_delete_title": "刪除 Router 設定",
+    "router_delete_confirm": "確定要刪除 Claude Code Router 設定「{name}」嗎？此操作無法復原。",
     "router_activate_confirm": "確認啟用此設定？這將覆寫 ~/.claude/settings.json",
     "router_no_configs": "暫無設定，點擊新增按鈕建立",
     "router_detect_models": "探測模型",

@@ -197,6 +197,8 @@
     "router_enable": "Enable",
     "router_in_use": "In Use",
     "router_default": "Default",
+    "router_delete_title": "Delete Router Configuration",
+    "router_delete_confirm": "Are you sure you want to delete the Claude Code Router configuration \"{name}\"? This action cannot be undone.",
     "router_activate_confirm": "Activate this configuration? This will overwrite ~/.claude/settings.json",
     "router_no_configs": "No configurations yet. Click the add button to create one",
     "router_detect_models": "Detect Models",
