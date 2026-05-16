@@ -61,6 +61,35 @@ UI Layer (Flet) → AppState → ServiceContainer → Database / Claude SDK
 2. **Flet 0.80.x**: Use `flet` module, not `flutter`; prefer built-in components
 3. **Async UI**: Use `page.run_task()` for async operations from sync handlers
 
+## Code Navigation
+
+When the user asks to modify a feature but does not specify exact file paths, **do not search the entire project blindly**. Instead:
+
+1. Read the architecture document at [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) to identify which module handles the described feature
+2. Use the "Module Guide: What Each Folder Does" section to locate the relevant `services/` subfolder (business logic) and `ui/` subfolder (interface)
+3. Search only within the identified module for the specific code to modify
+
+**Module-to-feature mapping** (quick reference):
+
+| Feature Area | Service Module | UI Module |
+|---|---|---|
+| Chat / Conversation / Messages | `services/chat/` | `ui/chat/` |
+| Knowledge Base / RAG / Documents | `services/knowledge/` | `ui/knowledge/` |
+| Settings / Theme / Language | `services/settings/` | `ui/settings/` |
+| Skills / Extensions / Marketplace | `services/skills/` | `ui/skills/` |
+| MCP Servers / Plugins | `services/mcp/` | `ui/pages/plugins_page.py` |
+| File Browser / File Tree | `services/file/` | `ui/file/` |
+| Tasks | `services/task/` | `ui/task/` |
+| Session Import | `services/session/` | `ui/dialogs/import_session_dialog.py` |
+| Dashboard / Statistics | `services/dashboard/` | `ui/dashboard/` |
+| Provider Diagnostics | `services/doctor/` | `ui/dialogs/doctor_dialog.py` |
+| Images / Thumbnails | `services/images/` | `ui/components/image_overlay.py` |
+| Notifications | `services/notification/` | `ui/status/notification_panel.py` |
+| Permissions | `services/chat/permission_service.py` | `ui/dialogs/permission_dialog.py` |
+| Update Check | `services/file/update_check_service.py` | `ui/status/update_banner.py` |
+| Database / Migrations / Models | `db/` | — |
+| Navigation / Layout / Theme | — | `ui/common/`, `ui/navigation/` |
+
 ## i18n
 
 JSON locale files in `misaka/i18n/` (en, zh_CN, zh_TW). Locale change rebuilds all pages via `AppShell.rebuild_for_locale_change()`.
