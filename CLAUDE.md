@@ -30,7 +30,7 @@ pyinstaller misaka.spec
 
 ## Architecture
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
+See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for detailed architecture documentation.
 
 ### Core Flow
 ```
@@ -52,12 +52,12 @@ UI Layer (Flet) → AppState → ServiceContainer → Database / Claude SDK
 
 ## Key Conventions
 
-- See [docs/CONVENTIONS.md](docs/CONVENTIONS.md) for full code conventions
-- See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for UI performance guidelines
+- See [docs/architecture/CONVENTIONS.md](docs/architecture/CONVENTIONS.md) for full code conventions
+- See [docs/architecture/PERFORMANCE.md](docs/architecture/PERFORMANCE.md) for UI performance guidelines
 
 ### Critical Rules
 
-1. **UI Performance First**: Always prioritize GUI runtime performance — see [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
+1. **UI Performance First**: Always prioritize GUI runtime performance — see [docs/architecture/PERFORMANCE.md](docs/architecture/PERFORMANCE.md)
 2. **Flet 0.80.x**: Use `flet` module, not `flutter`; prefer built-in components
 3. **Async UI**: Use `page.run_task()` for async operations from sync handlers
 

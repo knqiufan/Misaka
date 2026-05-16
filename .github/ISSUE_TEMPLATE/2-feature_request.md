@@ -10,7 +10,7 @@ assignees: []
 (Brief description of the feature)
 
 ## Source
-(Optional) e.g. docs/demand/桌面端修改内容20260307.txt
+(Optional) e.g. docs/demand/桌面端修改内容20260307.txt (中文需求文档位于 docs/demand/)
 
 ## Acceptance Criteria
 - [ ] Criterion 1
