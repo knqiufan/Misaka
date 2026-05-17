@@ -26,7 +26,6 @@ from misaka.config import SettingKeys
 from misaka.db.database import DatabaseBackend
 from misaka.errors import ErrorClassifier
 from misaka.services.chat.permission_service import PermissionService
-from misaka.services.common.claude_env_builder import build_claude_env
 from misaka.utils.perf import perf_timer
 from misaka.utils.platform import find_claude_sdk_binary
 
@@ -98,7 +97,8 @@ class ClaudeService:
     def _build_env(self) -> dict[str, str]:
         """Build the subprocess environment for the Claude CLI."""
         with perf_timer("env_build", 1.0):
-            return build_claude_env(self._db)
+            from misaka.services.common.claude_env_builder import _env_cache
+            return _env_cache.get(self._db)
 
     def _build_options(
         self,

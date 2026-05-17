@@ -1563,5 +1563,16 @@ class MessageInput(ft.Container):
         self._refresh_kb_badge()
         self._refresh_kb_selected_bar()
 
+    def set_streaming_state(self, is_streaming: bool) -> None:
+        """Lightweight streaming state update - only toggles send/stop button."""
+        if self._send_btn:
+            self._send_btn.icon = (
+                ft.Icons.STOP_CIRCLE_ROUNDED if is_streaming else ft.Icons.SEND_ROUNDED
+            )
+            self._send_btn.tooltip = t("chat.stop") if is_streaming else t("chat.send")
+            self._send_btn.bgcolor = ft.Colors.ERROR if is_streaming else ft.Colors.PRIMARY
+            with contextlib.suppress(Exception):
+                self._send_btn.update()
+
     def focus(self) -> None:
         self._schedule_focus()

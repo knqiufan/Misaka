@@ -73,6 +73,7 @@ class ChatPage(ft.Stack):
             ui_refresh=self._refresh_stream_ui,
             on_title_changed=self._on_title_changed,
             on_background_status_change=self._on_background_status_change,
+            ui_refresh_finalize=self._refresh_stream_finalize,
         )
 
         self._file_tree_cache: dict[str, tuple] = {}
@@ -1082,6 +1083,11 @@ class ChatPage(ft.Stack):
         """Refresh message list, send/stop button, and connection status after stream events."""
         if self._chat_view:
             self._chat_view.refresh_streaming()
+
+    def _refresh_stream_finalize(self) -> None:
+        """Refresh components that only need updating when streaming ends."""
+        if self._chat_view:
+            self._chat_view.refresh_streaming_finalize()
 
     def _load_file_tree(self, session: ChatSession) -> None:
         wd = (session.working_directory or "").strip()

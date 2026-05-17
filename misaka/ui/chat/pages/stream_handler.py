@@ -77,12 +77,14 @@ class StreamHandler:
         ui_refresh: Callable[[], None],
         on_title_changed: Callable[[], None] | None = None,
         on_background_status_change: Callable[[], None] | None = None,
+        ui_refresh_finalize: Callable[[], None] | None = None,
     ) -> None:
         self._state = state
         self._db = db
         self._ui_refresh = ui_refresh
         self._on_title_changed = on_title_changed
         self._on_background_status_change = on_background_status_change
+        self._ui_refresh_finalize = ui_refresh_finalize
         self._send_override: Any = None
         self._abort_override: Any = None
         self._always_allowed_tools: set[str] = set()
@@ -646,6 +648,9 @@ class StreamHandler:
                 self._state.error_message = stream_error
             self.reset_stream_state()
             self._ui_refresh()
+            # Finalize refresh for components that only need updating when streaming ends
+            if self._ui_refresh_finalize:
+                self._ui_refresh_finalize()
 
     def _finalize_background(
         self,

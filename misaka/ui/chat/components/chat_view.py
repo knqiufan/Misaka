@@ -484,20 +484,24 @@ class ChatView(ft.Column):
             self._connection_status.set_status(is_streaming=self.state.is_streaming)
 
     def refresh_streaming(self) -> None:
-        """Refresh streaming-related UI: message list, send/stop button, connection status.
-
-        Used during streaming deltas and when stream completes, so the
-        send button correctly reverts from stop (red) to send (primary).
-        """
+        """Called during streaming at ~30fps. Only updates components that change per-frame."""
         with perf_timer("chat_view_streaming_refresh", 1.0):
             if self._message_list:
                 self._message_list.refresh_streaming()
             if self._message_input:
-                self._message_input.refresh()
-            if self._connection_status:
-                self._connection_status.set_status(is_streaming=self.state.is_streaming)
-            if self._token_usage_bar:
-                self._token_usage_bar.refresh()
+                self._message_input.set_streaming_state(self.state.is_streaming)
+            # Skip: token_usage_bar — only changes when streaming ends
+            # Skip: connection_status — doesn't change during streaming
+            # Skip: KB badge/selected bar — doesn't change during streaming
+
+    def refresh_streaming_finalize(self) -> None:
+        """Called once when streaming ends. Updates all components."""
+        if self._token_usage_bar:
+            self._token_usage_bar.refresh()
+        if self._connection_status:
+            self._connection_status.set_status(is_streaming=False)
+        if self._message_input:
+            self._message_input.refresh()
 
     def insert_file_path(self, path: str) -> None:
         """Insert a file path into the message input field."""

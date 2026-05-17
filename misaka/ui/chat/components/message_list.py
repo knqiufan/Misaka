@@ -189,11 +189,12 @@ class MessageList(ft.Column):
         *,
         auto_scroll: bool = False,
         anchor_key: str | None = None,
+        content_grew: bool = False,
     ) -> None:
         with perf_timer("list_view_update", 1.0):
             with contextlib.suppress(Exception):
                 self._list_view.update()
-            if auto_scroll:
+            if auto_scroll and content_grew:
                 with contextlib.suppress(Exception):
                     self._list_view.scroll_to(offset=-1, duration=0)
             if anchor_key:
@@ -259,7 +260,7 @@ class MessageList(ft.Column):
         self._prune_cache(current_ids)
         self._rendered_message_ids = [msg.id for msg in self.state.messages]
         self._list_view.controls = self._build_items_from_state()
-        self._update_list_view(auto_scroll=auto_scroll_to_bottom)
+        self._update_list_view(auto_scroll=auto_scroll_to_bottom, content_grew=True)
 
     def _get_load_more_button(self) -> ft.Control:
         """Return cached load-more button to avoid rebuilding on every sync."""
@@ -327,7 +328,7 @@ class MessageList(ft.Column):
             self._streaming_msg.refresh()
             controls.insert(self._get_message_insert_index(), self._streaming_msg)
         self._sync_permission_card()
-        self._update_list_view(auto_scroll=scroll_to_bottom)
+        self._update_list_view(auto_scroll=scroll_to_bottom, content_grew=True)
 
     def append_new_user_message(self, new_message: Message) -> None:
         """Append only the new user message to avoid full rebuild on send.
@@ -357,7 +358,7 @@ class MessageList(ft.Column):
             insert_idx += 1
             new_ids.append(msg.id)
         self._rendered_message_ids = new_ids + self._rendered_message_ids
-        self._update_list_view(anchor_key=anchor_key)
+        self._update_list_view(anchor_key=anchor_key, content_grew=True)
 
     def remove_message(self, message_id: str) -> None:
         """Remove a rendered message item without rebuilding the full list."""
@@ -401,14 +402,16 @@ class MessageList(ft.Column):
                     self.append_message(last_message)
                     return
             self._sync_visibility()
-            self._update_list_view()
+            self._update_list_view(content_grew=True)
             return
 
         self._was_streaming = self.state.is_streaming
         self._sync_visibility()
+        prev_count = len(self._list_view.controls)
         self._streaming_msg.refresh()
         controls = self._list_view.controls
         if self.state.is_streaming and self._streaming_msg not in controls:
             controls.insert(self._get_message_insert_index(), self._streaming_msg)
         self._sync_permission_card()
-        self._update_list_view(auto_scroll=self.state.is_streaming)
+        grew = len(controls) > prev_count
+        self._update_list_view(auto_scroll=self.state.is_streaming, content_grew=grew)
