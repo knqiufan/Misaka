@@ -11,7 +11,6 @@ import json
 import os
 import secrets
 import sqlite3
-from collections.abc import Generator
 from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
