@@ -2,7 +2,7 @@
 
 Displays a checkbox list of active knowledge bases with embedded chunks,
 allowing the user to select one or more KBs for the current chat session.
-Selection state is stored per session in ``state.selected_kb_ids``.
+Selection state is stored per session in ``state.kb.selected_kb_ids``.
 """
 
 from __future__ import annotations
@@ -195,11 +195,14 @@ class KBSelector(ft.Container):
 
     def _get_selected_ids(self) -> set[str]:
         sid = self._get_session_id()
-        return set(self.state.selected_kb_ids.get(sid, []))
+        if self.state.kb:
+            return set(self.state.kb.selected_kb_ids.get(sid, []))
+        return set()
 
     def _set_selected_ids(self, ids: list[str]) -> None:
         sid = self._get_session_id()
-        self.state.selected_kb_ids[sid] = ids
+        kb = self.state.ensure_kb_state()
+        kb.selected_kb_ids[sid] = ids
 
     def _handle_toggle(self, kb_id: str, e: ft.ControlEvent) -> None:
         selected = self._get_selected_ids()

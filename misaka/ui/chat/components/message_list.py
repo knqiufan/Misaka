@@ -163,7 +163,7 @@ class MessageList(ft.Column):
         """
         if message.role != "assistant":
             return []
-        cache = self.state.rag_results_cache
+        cache = self.state.kb.rag_results_cache if self.state.kb else {}
         if not cache:
             return []
         messages = self.state.messages

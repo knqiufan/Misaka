@@ -58,7 +58,8 @@ class KBDetailPage(ft.Column):
         doc_svc = self.state.get_service("document_service")
         kb_svc = self.state.get_service("kb_service")
         if doc_svc:
-            self.state.kb_documents = doc_svc.get_documents(self._kb_id)
+            kb = self.state.ensure_kb_state()
+            kb.kb_documents = doc_svc.get_documents(self._kb_id)
         if kb_svc:
             kb_svc.update_statistics(self._kb_id)
 
@@ -160,7 +161,7 @@ class KBDetailPage(ft.Column):
         )
 
     def _build_document_section(self) -> ft.Control:
-        docs = self.state.kb_documents
+        docs = self.state.kb.kb_documents if self.state.kb else []
         filtered = self._filter_docs(docs)
 
         if not docs:

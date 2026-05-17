@@ -1102,7 +1102,10 @@ class MessageInput(ft.Container):
             return
 
         session_id = self.state.current_session_id or "__global__"
-        selected_ids = set(self.state.selected_kb_ids.get(session_id, []))
+        selected_ids = (
+            set(self.state.kb.selected_kb_ids.get(session_id, []))
+            if self.state.kb else set()
+        )
         if not selected_ids:
             self._kb_selected_bar.visible = False
             with contextlib.suppress(Exception):

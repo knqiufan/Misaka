@@ -121,6 +121,21 @@ class TokenUsageInfo:
 # AppState
 # ---------------------------------------------------------------------------
 
+@dataclass
+class KBState:
+    """Grouped state for the Knowledge Base feature.
+
+    Set to ``None`` on ``AppState`` when the KB feature is not enabled.
+    Access via ``state.kb.<attribute>`` with a ``if state.kb:`` guard.
+    """
+
+    knowledge_bases: list[Any] = field(default_factory=list)
+    current_kb_id: str | None = None
+    kb_documents: list[Any] = field(default_factory=list)
+    selected_kb_ids: dict[str, list[str]] = field(default_factory=dict)
+    rag_results_cache: dict[str, list[Any]] = field(default_factory=dict)
+
+
 class AppState:
     """Centralized application state.
 
@@ -208,12 +223,16 @@ class AppState:
         # --- Notification state ---
         self.notification_panel_open: bool = False
 
-        # --- Knowledge Base state ---
-        self.knowledge_bases: list[Any] = []
-        self.current_kb_id: str | None = None
-        self.kb_documents: list[Any] = []
-        self.selected_kb_ids: dict[str, list[str]] = {}
-        self.rag_results_cache: dict[str, list[Any]] = {}
+        # --- Feature state (grouped) ---
+        self.kb: KBState | None = None
+
+    # ----- KB state helpers -----
+
+    def ensure_kb_state(self) -> KBState:
+        """Lazily create and return the KB state sub-object."""
+        if self.kb is None:
+            self.kb = KBState()
+        return self.kb
 
     # ----- Helpers -----
 
