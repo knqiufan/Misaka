@@ -12,7 +12,7 @@ import os
 import secrets
 import sqlite3
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -74,7 +74,7 @@ class SQLiteBackend(DatabaseBackend):
             self._get_conn().commit()
 
     @contextmanager
-    def transaction(self) -> Generator[None, None, None]:
+    def transaction(self) -> AbstractContextManager[None]:
         """Context manager for batching multiple DB operations in a single transaction.
 
         While active, individual write methods skip auto-commit.  On

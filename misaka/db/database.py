@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Generator
+from contextlib import AbstractContextManager
 from typing import Any
 
 from misaka.db.models import (
@@ -47,7 +47,7 @@ class DatabaseBackend(ABC):
     # ----- Transactions -----
 
     @abstractmethod
-    def transaction(self) -> Generator[None, None, None]:
+    def transaction(self) -> AbstractContextManager[None]:
         """Context manager for batching multiple operations in a single transaction.
 
         Usage::
