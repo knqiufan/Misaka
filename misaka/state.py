@@ -23,14 +23,41 @@ from misaka.db.models import ChatSession, Message, TaskItem
 
 @dataclass
 class StreamingTextBlock:
-    """Accumulated text content from a streaming response."""
-    text: str = ""
+    """Accumulated text content from a streaming response.
+
+    Uses ``text_parts`` (list of str deltas) for O(1) append during
+    streaming.  Call ``get_text()`` to obtain the full string — this
+    is O(n) but happens only at read/render points, not per-delta.
+    """
+    text_parts: list[str] = field(default_factory=list)
+
+    def get_text(self) -> str:
+        """Return the full accumulated text (computed on demand)."""
+        return "".join(self.text_parts)
+
+    @property
+    def text(self) -> str:
+        """Backward-compatible property that returns the full text."""
+        return self.get_text()
 
 
 @dataclass
 class StreamingThinkingBlock:
-    """Accumulated thinking/reasoning content from extended thinking."""
-    thinking: str = ""
+    """Accumulated thinking/reasoning content from extended thinking.
+
+    Uses ``thinking_parts`` (list of str deltas) for O(1) append.
+    Call ``get_thinking()`` or the ``thinking`` property for full text.
+    """
+    thinking_parts: list[str] = field(default_factory=list)
+
+    def get_thinking(self) -> str:
+        """Return the full accumulated thinking text (computed on demand)."""
+        return "".join(self.thinking_parts)
+
+    @property
+    def thinking(self) -> str:
+        """Backward-compatible property that returns the full thinking text."""
+        return self.get_thinking()
 
 
 @dataclass

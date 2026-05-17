@@ -297,6 +297,47 @@ class SQLiteBackend(DatabaseBackend):
             created_at=now, token_usage=token_usage, _rowid=cursor.lastrowid,
         )
 
+    def create_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        token_usage: str | None = None,
+    ) -> Message:
+        """Create a Message model without writing to the database.
+
+        Used for optimistic UI display; persist later via ``add_message_from_model``.
+        """
+        mid = _generate_id()
+        now = _now()
+        if isinstance(content, list):
+            content = json.dumps(content, ensure_ascii=False)
+        return Message(
+            id=mid, session_id=session_id, role=role, content=content,
+            created_at=now, token_usage=token_usage,
+        )
+
+    def add_message_from_model(self, message: Message) -> None:
+        """Persist an already-created Message object to the database."""
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO messages (id, session_id, role, content, created_at, token_usage)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                message.id,
+                message.session_id,
+                message.role,
+                message.content,
+                message.created_at or _now(),
+                message.token_usage,
+            ),
+        )
+        conn.execute(
+            "UPDATE chat_sessions SET updated_at = ? WHERE id = ?",
+            (message.created_at or _now(), message.session_id),
+        )
+        conn.commit()
+
     def add_messages_batch(
         self,
         session_id: str,

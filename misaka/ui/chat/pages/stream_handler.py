@@ -90,6 +90,8 @@ class StreamHandler:
         self._always_allowed_tools: set[str] = set()
         # Per-invocation stream context (foreground)
         self._active_ctx: _StreamContext | None = None
+        # Pending user message awaiting async DB write
+        self._pending_user_msg: Message | None = None
         # Detached contexts still running in background
         self._detached_contexts: dict[str, _StreamContext] = {}
         # Throttling: limit UI refreshes to ~30fps during streaming
@@ -152,7 +154,10 @@ class StreamHandler:
         text: str,
         images: list | None = None,
     ) -> Message | None:
-        """Save a user message to the DB, append to state, and start streaming.
+        """Create a user message optimistically (no DB write) and start streaming.
+
+        The message is shown in the UI immediately. The actual DB write is
+        deferred to ``send_to_claude()`` via ``_persist_user_message_to_db()``.
 
         Args:
             text: The text content of the message.
@@ -183,12 +188,26 @@ class StreamHandler:
                 content_blocks.append({"type": "text", "text": text})
 
             content_json = json.dumps(content_blocks)
-            msg = self._db.add_message(
+            # Create an optimistic Message without writing to DB.
+            # The DB write will happen asynchronously in send_to_claude().
+            msg = self._db.create_message(
                 self._state.current_session_id, "user", content_json,
             )
             self._state.messages.append(msg)
+            self._pending_user_msg = msg
             self.start_streaming()
             return msg
+
+    def _persist_user_message_to_db(self, msg: Message) -> None:
+        """Synchronous DB write for a previously created user message.
+
+        Designed to be called via ``asyncio.to_thread`` so the DB write
+        does not block the UI.  Errors are logged but do not crash.
+        """
+        try:
+            self._db.add_message_from_model(msg)
+        except Exception:
+            logger.exception("Failed to persist user message %s to DB", msg.id)
 
     async def send_to_claude(
         self,
@@ -202,6 +221,12 @@ class StreamHandler:
             images: Optional list of PendingImage objects to send as multimodal content.
         """
         with perf_timer("send_to_claude_total", 1.0):
+            # Async DB write for the user message (optimistic UI already shown)
+            pending = self._pending_user_msg
+            if pending is not None:
+                self._pending_user_msg = None
+                await asyncio.to_thread(self._persist_user_message_to_db, pending)
+
             session = self._state.current_session
             claude = self._state.get_service("claude_service")
             if not session or not claude:
@@ -225,9 +250,9 @@ class StreamHandler:
             def _append_thinking_to_ctx(text: str) -> None:
                 """Append thinking text to the context's block list."""
                 if ctx.blocks and isinstance(ctx.blocks[-1], StreamingThinkingBlock):
-                    ctx.blocks[-1].thinking += text
+                    ctx.blocks[-1].thinking_parts.append(text)
                     return
-                ctx.blocks.append(StreamingThinkingBlock(thinking=text))
+                ctx.blocks.append(StreamingThinkingBlock(thinking_parts=[text]))
 
             def _append_text_to_ctx(text: str) -> None:
                 """Append text to the context's block list."""
@@ -235,9 +260,9 @@ class StreamHandler:
                     ctx.blocks.append(StreamingTextBlock())
                 last = ctx.blocks[-1]
                 if isinstance(last, StreamingTextBlock):
-                    last.text += text
+                    last.text_parts.append(text)
                     return
-                ctx.blocks.append(StreamingTextBlock(text=text))
+                ctx.blocks.append(StreamingTextBlock(text_parts=[text]))
 
             def _append_tool_use_to_ctx(payload: dict) -> None:
                 ctx.blocks.append(
@@ -554,18 +579,18 @@ class StreamHandler:
     def _append_stream_thinking(self, text: str) -> None:
         blocks = self._state.streaming_blocks
         if blocks and isinstance(blocks[-1], StreamingThinkingBlock):
-            blocks[-1].thinking += text
+            blocks[-1].thinking_parts.append(text)
             return
-        blocks.append(StreamingThinkingBlock(thinking=text))
+        blocks.append(StreamingThinkingBlock(thinking_parts=[text]))
 
     def _append_stream_text(self, text: str) -> None:
         if not self._state.streaming_blocks:
             self._state.streaming_blocks.append(StreamingTextBlock())
         last = self._state.streaming_blocks[-1]
         if isinstance(last, StreamingTextBlock):
-            last.text += text
+            last.text_parts.append(text)
             return
-        self._state.streaming_blocks.append(StreamingTextBlock(text=text))
+        self._state.streaming_blocks.append(StreamingTextBlock(text_parts=[text]))
 
     def _append_tool_use(self, payload: dict) -> None:
         self._state.streaming_blocks.append(

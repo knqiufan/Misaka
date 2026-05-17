@@ -126,6 +126,27 @@ class DatabaseBackend(ABC):
         """Insert a message and update the session timestamp."""
 
     @abstractmethod
+    def create_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        token_usage: str | None = None,
+    ) -> Message:
+        """Create a Message object without writing to the database.
+
+        Used for optimistic UI display — the message can be shown
+        immediately and persisted later via ``add_message_from_model()``.
+        """
+
+    @abstractmethod
+    def add_message_from_model(self, message: Message) -> None:
+        """Persist an already-created Message object to the database.
+
+        Counterpart to ``create_message()`` for deferred writes.
+        """
+
+    @abstractmethod
     def add_messages_batch(
         self,
         session_id: str,

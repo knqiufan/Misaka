@@ -557,7 +557,7 @@ class ChatPage(ft.Stack):
         if selected_kb_ids and text.strip():
             msg = self._stream_handler.persist_user_message(text, images)
             if msg and self._chat_view:
-                self._chat_view.refresh_messages_minimal(msg)
+                self._chat_view.append_user_message_lightweight(msg)
             self.state.page.run_task(
                 self._send_with_rag, text, images, list(selected_kb_ids), msg,
             )
@@ -565,7 +565,7 @@ class ChatPage(ft.Stack):
         msg = self._stream_handler.persist_user_message(text, images)
         self.state.page.run_task(*self._stream_handler.get_send_coroutine(text, images))
         if msg and self._chat_view:
-            self._chat_view.refresh_messages_minimal(msg)
+            self._chat_view.append_user_message_lightweight(msg)
 
     async def _send_with_rag(
         self,

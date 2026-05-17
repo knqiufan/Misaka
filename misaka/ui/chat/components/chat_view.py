@@ -459,6 +459,19 @@ class ChatView(ft.Column):
                 self._connection_status.set_status(is_streaming=self.state.is_streaming)
             self._refresh_error_banner()
 
+    def append_user_message_lightweight(self, message: Message) -> None:
+        """Ultra-lightweight append for user message during send.
+
+        Only appends the message to the list and toggles the streaming
+        button state.  Skips connection_status refresh, error_banner
+        refresh, and full message_input rebuild.
+        """
+        with perf_timer("append_user_lightweight", 1.0):
+            if self._message_list:
+                self._message_list.append_message(message)
+            if self._message_input:
+                self._message_input.set_streaming_state(True)
+
     def prepend_older_messages(self, older_messages: list[Message]) -> None:
         """Insert older history at the top without rebuilding the list."""
         if self._message_list:
