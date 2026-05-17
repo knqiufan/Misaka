@@ -51,6 +51,7 @@ class MessageList(ft.Column):
         self._streaming_msg = StreamingMessage(state)
         self._item_cache: dict[str, MessageItem] = {}
         self._rendered_message_ids: list[str] = []
+        self._message_id_index: dict[str, int] = {}
         self._load_more_button: ft.Control | None = None
         self._was_streaming: bool = False
         self._model_display_name: str = "Claude"
@@ -106,8 +107,15 @@ class MessageList(ft.Column):
     def _build_ui(self) -> None:
         self._item_cache.clear()
         self._rendered_message_ids.clear()
+        self._rebuild_message_id_index()
         self.controls = [self._empty_view, self._list_view]
         self._rebuild_from_state()
+
+    def _rebuild_message_id_index(self) -> None:
+        """Rebuild the message_id -> position index for O(1) lookups in _find_rag_sources."""
+        self._message_id_index = {
+            msg.id: i for i, msg in enumerate(self.state.messages)
+        }
 
     def _resolve_model_display_name_once(self) -> None:
         """Resolve model display name only when session changes. Avoids repeated reads."""
@@ -149,6 +157,9 @@ class MessageList(ft.Column):
         RAG results are cached by the preceding user message ID.
         For assistant messages, walk backwards to find the user message
         that triggered the RAG retrieval.
+
+        Uses a pre-built message_id -> index mapping for O(1) lookup
+        instead of scanning the list each time.
         """
         if message.role != "assistant":
             return []
@@ -156,9 +167,8 @@ class MessageList(ft.Column):
         if not cache:
             return []
         messages = self.state.messages
-        try:
-            idx = next(i for i, m in enumerate(messages) if m.id == message.id)
-        except StopIteration:
+        idx = self._message_id_index.get(message.id)
+        if idx is None:
             return []
         for i in range(idx - 1, -1, -1):
             if messages[i].role == "user":
@@ -256,6 +266,7 @@ class MessageList(ft.Column):
         self._sync_visibility()
 
         self._resolve_model_display_name_once()
+        self._rebuild_message_id_index()
         current_ids = {msg.id for msg in self.state.messages}
         self._prune_cache(current_ids)
         self._rendered_message_ids = [msg.id for msg in self.state.messages]
@@ -358,6 +369,7 @@ class MessageList(ft.Column):
             insert_idx += 1
             new_ids.append(msg.id)
         self._rendered_message_ids = new_ids + self._rendered_message_ids
+        self._rebuild_message_id_index()
         self._update_list_view(anchor_key=anchor_key, content_grew=True)
 
     def remove_message(self, message_id: str) -> None:
