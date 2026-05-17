@@ -68,26 +68,73 @@ class ClaudeService:
         self._saw_text_delta_in_turn: bool = False
         self._saw_thinking_delta_in_turn: bool = False
 
+        # Cache SDK types to avoid repeated suppress+import blocks per message
+        self._sdk_types: dict[str, type] = {}
+        with contextlib.suppress(ImportError, AttributeError):
+            from claude_agent_sdk import (
+                AssistantMessage,
+                ResultMessage,
+                SystemMessage,
+                UserMessage,
+            )
+
+            self._sdk_types.update({
+                "AssistantMessage": AssistantMessage,
+                "ResultMessage": ResultMessage,
+                "SystemMessage": SystemMessage,
+                "UserMessage": UserMessage,
+            })
+        with contextlib.suppress(ImportError, AttributeError):
+            from claude_agent_sdk.types import (
+                StreamEvent,
+                TextBlock,
+                ThinkingBlock,
+                ToolResultBlock,
+                ToolUseBlock,
+            )
+
+            self._sdk_types.update({
+                "StreamEvent": StreamEvent,
+                "TextBlock": TextBlock,
+                "ThinkingBlock": ThinkingBlock,
+                "ToolResultBlock": ToolResultBlock,
+                "ToolUseBlock": ToolUseBlock,
+            })
+
+        # Debug log file-check cache (avoids reading config.json per message)
+        self._debug_log_cache: bool | None = None
+        self._debug_log_cache_time: float = 0.0
+
     def _is_debug_log_enabled(self) -> bool:
         """Return whether Claude SDK debug logging is enabled.
 
         Enabled via environment variable MISAKA_CLAUDE_DEBUG_LOG=true
-        or via config file (~/.misaka/config.json).
+        or via config file (~/.misaka/config.json).  File check is
+        cached for 30 seconds to avoid reading config.json per message.
         """
-        # Check environment variable first
-        if os.environ.get("MISAKA_CLAUDE_DEBUG_LOG", "").lower() == "true":
+        # Check environment variable first (no cache needed)
+        env_val = os.environ.get("MISAKA_CLAUDE_DEBUG_LOG", "").lower()
+        if env_val in ("1", "true", "yes"):
             return True
+        if env_val in ("0", "false", "no"):
+            return False
+        # Cache file check for 30 seconds
+        now = time.monotonic()
+        if self._debug_log_cache is not None and (now - self._debug_log_cache_time) < 30.0:
+            return self._debug_log_cache
         # Check config file
         config_path = Path.home() / ".misaka" / "config.json"
+        result = False
         if config_path.exists():
             try:
                 with open(config_path, encoding="utf-8") as f:
                     config = json.load(f)
-                if config.get("claude_debug_log", False):
-                    return True
+                result = bool(config.get("claude_debug_log", False))
             except (json.JSONDecodeError, OSError):
                 pass
-        return False
+        self._debug_log_cache = result
+        self._debug_log_cache_time = now
+        return result
 
     def _debug_log(self, message: str, *args: Any) -> None:
         """Write concise Claude SDK debug logs when enabled."""
@@ -417,18 +464,20 @@ class ClaudeService:
             self._saw_text_delta_in_turn = False
             self._saw_thinking_delta_in_turn = False
 
-    @staticmethod
-    def _classify_message_kind(message: Any) -> str:
+    def _classify_message_kind(self, message: Any) -> str:
         """Classify SDK message into a stable, concise label."""
-        name = type(message).__name__
-        mapping = {
-            "AssistantMessage": "assistant",
-            "UserMessage": "user",
-            "ResultMessage": "result",
-            "SystemMessage": "system",
-            "StreamEvent": "stream_event",
-        }
-        return mapping.get(name, "other")
+        types = self._sdk_types
+        if types.get("AssistantMessage") and isinstance(message, types["AssistantMessage"]):
+            return "assistant"
+        if types.get("ResultMessage") and isinstance(message, types["ResultMessage"]):
+            return "result"
+        if types.get("SystemMessage") and isinstance(message, types["SystemMessage"]):
+            return "system"
+        if types.get("UserMessage") and isinstance(message, types["UserMessage"]):
+            return "user"
+        if types.get("StreamEvent") and isinstance(message, types["StreamEvent"]):
+            return "stream_event"
+        return "other"
 
     def _make_permission_callback(
         self,
@@ -496,17 +545,11 @@ class ClaudeService:
         on_result: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """Dispatch a single SDK message to the appropriate callback."""
-        AssistantMessage = ResultMessage = SystemMessage = UserMessage = None  # noqa: N806
-        StreamEvent = None  # noqa: N806
-        with contextlib.suppress(ImportError, AttributeError):
-            from claude_agent_sdk import (
-                AssistantMessage,
-                ResultMessage,
-                SystemMessage,
-                UserMessage,
-            )
-        with contextlib.suppress(ImportError, AttributeError):
-            from claude_agent_sdk.types import StreamEvent
+        AssistantMessage = self._sdk_types.get("AssistantMessage")
+        ResultMessage = self._sdk_types.get("ResultMessage")
+        SystemMessage = self._sdk_types.get("SystemMessage")
+        UserMessage = self._sdk_types.get("UserMessage")
+        StreamEvent = self._sdk_types.get("StreamEvent")
 
         if AssistantMessage and isinstance(message, AssistantMessage):
             self._handle_assistant_message(
@@ -564,9 +607,9 @@ class ClaudeService:
             msg_content = getattr(message, "message", None)
             content = getattr(msg_content, "content", []) if msg_content else []
 
-        TextBlock = ToolUseBlock = ThinkingBlock = None  # noqa: N806
-        with contextlib.suppress(ImportError, AttributeError):
-            from claude_agent_sdk.types import TextBlock, ThinkingBlock, ToolUseBlock
+        TextBlock = self._sdk_types.get("TextBlock")
+        ToolUseBlock = self._sdk_types.get("ToolUseBlock")
+        ThinkingBlock = self._sdk_types.get("ThinkingBlock")
 
         for block in content:
             if ThinkingBlock and isinstance(block, ThinkingBlock):
@@ -627,9 +670,7 @@ class ClaudeService:
         if isinstance(content, str) or not isinstance(content, list):
             return
 
-        ToolResultBlock = None  # noqa: N806
-        with contextlib.suppress(ImportError, AttributeError):
-            from claude_agent_sdk.types import ToolResultBlock
+        ToolResultBlock = self._sdk_types.get("ToolResultBlock")
 
         for block in content:
             if ToolResultBlock and isinstance(block, ToolResultBlock):
