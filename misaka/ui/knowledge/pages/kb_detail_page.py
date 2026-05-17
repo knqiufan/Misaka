@@ -231,7 +231,11 @@ class KBDetailPage(ft.Column):
         router_svc = self.state.get_service("router_config_service")
         kb_svc = self.state.get_service("kb_service")
         if not doc_svc or not router_svc or not kb_svc:
-            show_snackbar(page, "Service not available, please restart the application", bgcolor=ft.Colors.ERROR)
+            show_snackbar(
+                page,
+                "Service not available, please restart the application",
+                bgcolor=ft.Colors.ERROR,
+            )
             return
 
         kb = kb_svc.get(self._kb_id)

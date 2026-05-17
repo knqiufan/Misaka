@@ -11,10 +11,11 @@ import json
 import os
 import secrets
 import sqlite3
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 from misaka.db.database import DatabaseBackend
 from misaka.db.models import (

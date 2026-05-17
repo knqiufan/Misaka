@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
-from misaka.utils.perf import perf_timer
 from misaka.ui.chat.components.message_item import MessageItem
 from misaka.ui.chat.components.permission_card import PermissionCard
 from misaka.ui.chat.components.streaming_message import StreamingMessage
+from misaka.utils.perf import perf_timer
 
 if TYPE_CHECKING:
     from misaka.db.models import Message

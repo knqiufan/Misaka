@@ -176,7 +176,9 @@ class ClaudeService:
             env = self._build_env()
 
             # Check for bypass permissions setting
-            skip_permissions = self._db.get_setting(SettingKeys.DANGEROUSLY_SKIP_PERMISSIONS) == "true"
+            skip_permissions = (
+                self._db.get_setting(SettingKeys.DANGEROUSLY_SKIP_PERMISSIONS) == "true"
+            )
 
             # Determine final SDK permission_mode and disallowed_tools based on session_mode
             final_permission_mode: str
@@ -545,11 +547,11 @@ class ClaudeService:
         on_result: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """Dispatch a single SDK message to the appropriate callback."""
-        AssistantMessage = self._sdk_types.get("AssistantMessage")
-        ResultMessage = self._sdk_types.get("ResultMessage")
-        SystemMessage = self._sdk_types.get("SystemMessage")
-        UserMessage = self._sdk_types.get("UserMessage")
-        StreamEvent = self._sdk_types.get("StreamEvent")
+        AssistantMessage = self._sdk_types.get("AssistantMessage")  # noqa: N806
+        ResultMessage = self._sdk_types.get("ResultMessage")  # noqa: N806
+        SystemMessage = self._sdk_types.get("SystemMessage")  # noqa: N806
+        UserMessage = self._sdk_types.get("UserMessage")  # noqa: N806
+        StreamEvent = self._sdk_types.get("StreamEvent")  # noqa: N806
 
         if AssistantMessage and isinstance(message, AssistantMessage):
             self._handle_assistant_message(
@@ -607,9 +609,9 @@ class ClaudeService:
             msg_content = getattr(message, "message", None)
             content = getattr(msg_content, "content", []) if msg_content else []
 
-        TextBlock = self._sdk_types.get("TextBlock")
-        ToolUseBlock = self._sdk_types.get("ToolUseBlock")
-        ThinkingBlock = self._sdk_types.get("ThinkingBlock")
+        TextBlock = self._sdk_types.get("TextBlock")  # noqa: N806
+        ToolUseBlock = self._sdk_types.get("ToolUseBlock")  # noqa: N806
+        ThinkingBlock = self._sdk_types.get("ThinkingBlock")  # noqa: N806
 
         for block in content:
             if ThinkingBlock and isinstance(block, ThinkingBlock):
@@ -670,7 +672,7 @@ class ClaudeService:
         if isinstance(content, str) or not isinstance(content, list):
             return
 
-        ToolResultBlock = self._sdk_types.get("ToolResultBlock")
+        ToolResultBlock = self._sdk_types.get("ToolResultBlock")  # noqa: N806
 
         for block in content:
             if ToolResultBlock and isinstance(block, ToolResultBlock):

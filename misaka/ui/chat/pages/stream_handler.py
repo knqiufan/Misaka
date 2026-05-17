@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from misaka.errors import ErrorClassifier
-from misaka.utils.perf import perf_timer
 from misaka.state import (
     PermissionRequest,
     StreamingBlock,
@@ -26,6 +25,7 @@ from misaka.state import (
     StreamingToolUseBlock,
     TokenUsageInfo,
 )
+from misaka.utils.perf import perf_timer
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -232,7 +232,9 @@ class StreamHandler:
             if not session or not claude:
                 from misaka.i18n import t
                 classified = ErrorClassifier.classify_error_string("Claude service unavailable")
-                self._state.error_message = ErrorClassifier.format_user_message(classified, translate=t)
+                self._state.error_message = ErrorClassifier.format_user_message(
+                    classified, translate=t
+                )
                 self.reset_stream_state()
                 self._ui_refresh()
                 return

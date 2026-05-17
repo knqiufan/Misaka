@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
-from misaka.utils.perf import perf_timer
 from misaka.ui.chat.components.message_input import MessageInput
 from misaka.ui.chat.components.message_list import MessageList
 from misaka.ui.chat.components.token_usage_bar import TokenUsageBar
@@ -22,6 +21,7 @@ from misaka.ui.common.theme import ACCENT_BLUE, SUCCESS_GREEN, WARNING_AMBER, ma
 from misaka.ui.panels.offset_menu import OffsetMenu, OffsetMenuOption
 from misaka.ui.status.connection_status import ConnectionStatus
 from misaka.ui.status.update_banner import UpdateBanner
+from misaka.utils.perf import perf_timer
 
 if TYPE_CHECKING:
     from misaka.db.models import Message
