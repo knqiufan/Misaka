@@ -23,14 +23,41 @@ from misaka.db.models import ChatSession, Message, TaskItem
 
 @dataclass
 class StreamingTextBlock:
-    """Accumulated text content from a streaming response."""
-    text: str = ""
+    """Accumulated text content from a streaming response.
+
+    Uses ``text_parts`` (list of str deltas) for O(1) append during
+    streaming.  Call ``get_text()`` to obtain the full string — this
+    is O(n) but happens only at read/render points, not per-delta.
+    """
+    text_parts: list[str] = field(default_factory=list)
+
+    def get_text(self) -> str:
+        """Return the full accumulated text (computed on demand)."""
+        return "".join(self.text_parts)
+
+    @property
+    def text(self) -> str:
+        """Backward-compatible property that returns the full text."""
+        return self.get_text()
 
 
 @dataclass
 class StreamingThinkingBlock:
-    """Accumulated thinking/reasoning content from extended thinking."""
-    thinking: str = ""
+    """Accumulated thinking/reasoning content from extended thinking.
+
+    Uses ``thinking_parts`` (list of str deltas) for O(1) append.
+    Call ``get_thinking()`` or the ``thinking`` property for full text.
+    """
+    thinking_parts: list[str] = field(default_factory=list)
+
+    def get_thinking(self) -> str:
+        """Return the full accumulated thinking text (computed on demand)."""
+        return "".join(self.thinking_parts)
+
+    @property
+    def thinking(self) -> str:
+        """Backward-compatible property that returns the full thinking text."""
+        return self.get_thinking()
 
 
 @dataclass
@@ -93,6 +120,21 @@ class TokenUsageInfo:
 # ---------------------------------------------------------------------------
 # AppState
 # ---------------------------------------------------------------------------
+
+@dataclass
+class KBState:
+    """Grouped state for the Knowledge Base feature.
+
+    Set to ``None`` on ``AppState`` when the KB feature is not enabled.
+    Access via ``state.kb.<attribute>`` with a ``if state.kb:`` guard.
+    """
+
+    knowledge_bases: list[Any] = field(default_factory=list)
+    current_kb_id: str | None = None
+    kb_documents: list[Any] = field(default_factory=list)
+    selected_kb_ids: dict[str, list[str]] = field(default_factory=dict)
+    rag_results_cache: dict[str, list[Any]] = field(default_factory=dict)
+
 
 class AppState:
     """Centralized application state.
@@ -181,12 +223,16 @@ class AppState:
         # --- Notification state ---
         self.notification_panel_open: bool = False
 
-        # --- Knowledge Base state ---
-        self.knowledge_bases: list[Any] = []
-        self.current_kb_id: str | None = None
-        self.kb_documents: list[Any] = []
-        self.selected_kb_ids: dict[str, list[str]] = {}
-        self.rag_results_cache: dict[str, list[Any]] = {}
+        # --- Feature state (grouped) ---
+        self.kb: KBState | None = None
+
+    # ----- KB state helpers -----
+
+    def ensure_kb_state(self) -> KBState:
+        """Lazily create and return the KB state sub-object."""
+        if self.kb is None:
+            self.kb = KBState()
+        return self.kb
 
     # ----- Helpers -----
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from contextlib import AbstractContextManager
 from typing import Any
 
 from misaka.db.models import (
@@ -42,6 +43,23 @@ class DatabaseBackend(ABC):
     @abstractmethod
     def close(self) -> None:
         """Close the database connection gracefully."""
+
+    # ----- Transactions -----
+
+    @abstractmethod
+    def transaction(self) -> AbstractContextManager[None]:
+        """Context manager for batching multiple operations in a single transaction.
+
+        Usage::
+
+            with db.transaction():
+                db.update_session_title(...)
+                db.update_sdk_session_id(...)
+                db.add_message(...)
+
+        All operations inside the block are committed atomically at exit.
+        On exception the transaction is rolled back.
+        """
 
     # ----- Sessions -----
 
@@ -124,6 +142,27 @@ class DatabaseBackend(ABC):
         token_usage: str | None = None,
     ) -> Message:
         """Insert a message and update the session timestamp."""
+
+    @abstractmethod
+    def create_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        token_usage: str | None = None,
+    ) -> Message:
+        """Create a Message object without writing to the database.
+
+        Used for optimistic UI display — the message can be shown
+        immediately and persisted later via ``add_message_from_model()``.
+        """
+
+    @abstractmethod
+    def add_message_from_model(self, message: Message) -> None:
+        """Persist an already-created Message object to the database.
+
+        Counterpart to ``create_message()`` for deferred writes.
+        """
 
     @abstractmethod
     def add_messages_batch(

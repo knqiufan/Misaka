@@ -34,9 +34,12 @@ _CLAUDE_ENV_KEYS = (
 )
 
 
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
 def _sanitize_env_value(value: str) -> str:
     """Remove null bytes and control characters that cause spawn errors."""
-    return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value)
+    return _CONTROL_CHARS_RE.sub("", value)
 
 
 def _sanitize_env(env: dict[str, str]) -> dict[str, str]:
@@ -164,3 +167,27 @@ def resolve_script_from_cmd(cmd_path: str) -> str | None:
     except OSError:
         pass
     return None
+
+
+class ClaudeEnvCache:
+    """Caches the built Claude environment dict, invalidated when router config changes."""
+
+    def __init__(self) -> None:
+        self._cache: dict[str, str] | None = None
+        self._config_id: str | None = None
+
+    def get(self, db: DatabaseBackend) -> dict[str, str]:
+        active_config = db.get_active_router_config()
+        config_id = active_config.id if active_config else None
+        if self._cache is not None and self._config_id == config_id:
+            return self._cache
+        self._cache = build_claude_env(db)
+        self._config_id = config_id
+        return self._cache
+
+    def invalidate(self) -> None:
+        self._cache = None
+        self._config_id = None
+
+
+_env_cache = ClaudeEnvCache()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 import flet as ft
@@ -16,7 +17,6 @@ from misaka.ui.common.theme import (
     make_button,
     make_danger_button,
     make_dialog,
-    make_dropdown,
     make_form_dialog,
     make_icon_button,
     make_outlined_button,
@@ -330,6 +330,7 @@ class _FormFields:
     __slots__ = (
         "name", "api_key", "base_url",
         "main_model", "haiku_model", "opus_model", "sonnet_model",
+        "active_model_field",
         "agent_team_switch", "high_effort_switch",
         "disable_autoupdater_switch", "hide_attribution_switch",
         "enable_tool_search_switch", "config_json",
@@ -357,15 +358,11 @@ def _get_default_json(state: AppState, config, is_edit: bool) -> str:
     return config.config_json if config else "{}"
 
 
-def _make_model_dropdown(value: str) -> ft.Dropdown:
-    """Model picker styled like other settings fields; label comes from the grid."""
-    options = [ft.dropdown.Option(key=value, text=value)] if value else []
-    return make_dropdown(
-        value=value or None,
-        options=options,
-        dense=True,
-        text_size=12,
-        content_padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+def _make_model_text_field(value: str) -> ft.TextField:
+    """Editable model id field; detected models can fill it as a shortcut."""
+    return _make_compact_field(
+        value=value,
+        hint_text=t("settings.router_model_input_hint"),
     )
 
 
@@ -392,10 +389,12 @@ def _create_form_fields(config, form_vals: dict, default_json: str) -> _FormFiel
             or (config.base_url if config else "")
         ),
     )
-    f.main_model = _make_model_dropdown(str(form_vals.get("main_model", "")))
-    f.haiku_model = _make_model_dropdown(str(form_vals.get("haiku_model", "")))
-    f.opus_model = _make_model_dropdown(str(form_vals.get("opus_model", "")))
-    f.sonnet_model = _make_model_dropdown(str(form_vals.get("sonnet_model", "")))
+    f.main_model = _make_model_text_field(str(form_vals.get("main_model", "")))
+    f.haiku_model = _make_model_text_field(str(form_vals.get("haiku_model", "")))
+    f.opus_model = _make_model_text_field(str(form_vals.get("opus_model", "")))
+    f.sonnet_model = _make_model_text_field(str(form_vals.get("sonnet_model", "")))
+    f.active_model_field = "main_model"
+    _wire_model_focus_handlers(f)
     f.agent_team_switch = ft.Switch(
         value=bool(form_vals.get("agent_team", False)),
         scale=0.7,
@@ -437,17 +436,6 @@ def _create_form_fields(config, form_vals: dict, default_json: str) -> _FormFiel
     return f
 
 
-def _dropdown_selected_value(e: ft.ControlEvent) -> str:
-    c = e.control
-    if isinstance(c, ft.Dropdown):
-        v = c.value
-        if v is None:
-            return ""
-        return str(v)
-    raw = e.data
-    return "" if raw is None else str(raw)
-
-
 def _textfield_str(e: ft.ControlEvent) -> str:
     c = e.control
     if hasattr(c, "value") and c.value is not None:
@@ -455,43 +443,59 @@ def _textfield_str(e: ft.ControlEvent) -> str:
     return str(e.data or "")
 
 
-def _wire_model_dropdowns_json_sync(
+def _model_fields(fields: _FormFields) -> dict[str, ft.TextField]:
+    return {
+        "main_model": fields.main_model,
+        "haiku_model": fields.haiku_model,
+        "opus_model": fields.opus_model,
+        "sonnet_model": fields.sonnet_model,
+    }
+
+
+def _wire_model_focus_handlers(fields: _FormFields) -> None:
+    for field_name, text_field in _model_fields(fields).items():
+        def handler(e: ft.ControlEvent, name: str = field_name):
+            fields.active_model_field = name
+
+        text_field.on_focus = handler
+
+
+def _wire_model_fields_json_sync(
     svc,
     fields: _FormFields,
-    model_dropdowns: dict[str, ft.Dropdown],
+    model_fields: dict[str, ft.TextField],
 ) -> None:
     def bind(field_name: str):
         def handler(e: ft.ControlEvent):
             if not svc:
                 return
             current_json = fields.config_json.value or "{}"
-            chosen = _dropdown_selected_value(e)
+            chosen = _textfield_str(e)
             updated = svc.sync_form_to_json(current_json, field_name, chosen)
             fields.config_json.value = updated
             fields.config_json.update()
 
         return handler
 
-    for fname, dd in model_dropdowns.items():
-        dd.on_change = bind(fname)
+    for fname, text_field in model_fields.items():
+        text_field.on_change = bind(fname)
 
 
 def _apply_router_json_to_form_controls(
     svc,
     fields: _FormFields,
     raw_json: str,
-    model_dropdowns: dict[str, ft.Dropdown],
+    model_fields: dict[str, ft.TextField],
     switch_field_bindings: dict[str, ft.Switch],
 ) -> None:
     if not svc:
         return
     vals = svc.sync_json_to_form(raw_json)
-    for fname, dd in model_dropdowns.items():
+    for fname, text_field in model_fields.items():
         new_val = str(vals.get(fname, ""))
-        if dd.value != new_val:
-            _ensure_dropdown_option(dd, new_val)
-            dd.value = new_val if new_val else None
-            dd.update()
+        if text_field.value != new_val:
+            text_field.value = new_val
+            text_field.update()
     new_agent = bool(vals.get("agent_team", False))
     if fields.agent_team_switch.value != new_agent:
         fields.agent_team_switch.value = new_agent
@@ -512,14 +516,9 @@ def _apply_router_json_to_form_controls(
 
 
 def _wire_simple_json_sync(svc, fields: _FormFields) -> None:
-    model_dropdowns = {
-        "main_model": fields.main_model,
-        "haiku_model": fields.haiku_model,
-        "opus_model": fields.opus_model,
-        "sonnet_model": fields.sonnet_model,
-    }
+    model_fields = _model_fields(fields)
 
-    _wire_model_dropdowns_json_sync(svc, fields, model_dropdowns)
+    _wire_model_fields_json_sync(svc, fields, model_fields)
 
     def on_api_key_change(e: ft.ControlEvent):
         if not svc:
@@ -578,7 +577,7 @@ def _wire_simple_json_sync(svc, fields: _FormFields) -> None:
     def on_json_change(e: ft.ControlEvent):
         raw = fields.config_json.value or "{}"
         _apply_router_json_to_form_controls(
-            svc, fields, raw, model_dropdowns, switch_field_bindings,
+            svc, fields, raw, model_fields, switch_field_bindings,
         )
 
     fields.config_json.on_blur = on_json_change
@@ -587,15 +586,6 @@ def _wire_simple_json_sync(svc, fields: _FormFields) -> None:
 def _wire_field_sync(svc, fields: _FormFields) -> None:
     """Wire bi-directional sync between form fields and the JSON textarea."""
     _wire_simple_json_sync(svc, fields)
-
-
-def _ensure_dropdown_option(dropdown: ft.Dropdown, value: str) -> None:
-    """Add an option to the dropdown if not already present."""
-    if not value:
-        return
-    existing = {opt.key for opt in dropdown.options}
-    if value not in existing:
-        dropdown.options.append(ft.dropdown.Option(key=value, text=value))
 
 
 def _load_existing_models(svc, config_id: str, fields: _FormFields) -> None:
@@ -613,12 +603,6 @@ def _load_existing_models(svc, config_id: str, fields: _FormFields) -> None:
         grouped.setdefault(m.model_type, []).append(m)
 
     _render_model_groups(svc, fields, grouped)
-    llm_selected = [
-        str(c.label)
-        for c in fields.model_type_checkboxes.get("llm", [])
-        if c.value and c.label
-    ]
-    _populate_model_dropdowns(fields, llm_selected)
 
 
 def _handle_detect_models(
@@ -678,28 +662,12 @@ def _handle_detect_models(
                     grouped.setdefault(m.model_type, []).append(m)
 
             _render_model_groups(svc, fields, grouped)
-            llm_selected = [
-                str(c.label)
-                for c in fields.model_type_checkboxes.get("llm", [])
-                if c.value and c.label
-            ]
-            _populate_model_dropdowns(fields, llm_selected)
 
         fields.detect_btn.update()
         fields.detect_progress.update()
         fields.models_container.update()
 
     page.run_task(_run_detect)
-
-
-def _refresh_llm_dropdowns_from_checkboxes(fields: _FormFields) -> None:
-    llm_models = [
-        str(c.label)
-        for c in fields.model_type_checkboxes.get("llm", [])
-        if c.value and c.label
-    ]
-    _populate_model_dropdowns(fields, llm_models)
-    _update_all_model_dropdowns(fields)
 
 
 def _make_checkbox_handler(
@@ -711,8 +679,6 @@ def _make_checkbox_handler(
     def handler(e: ft.ControlEvent):
         if db_id and svc:
             svc.update_model_selection(db_id, e.data == "true")
-        if model_type == "llm":
-            _refresh_llm_dropdowns_from_checkboxes(fields)
 
     return handler
 
@@ -730,7 +696,7 @@ def _empty_type_panel() -> ft.Container:
     )
 
 
-def _scrollable_checkbox_panel(checkboxes: list[ft.Checkbox]) -> ft.Container:
+def _scrollable_checkbox_panel(rows: list[ft.Control]) -> ft.Container:
     return ft.Container(
         height=_ROUTER_MODELS_PANEL_HEIGHT,
         padding=ft.Padding.symmetric(horizontal=2, vertical=4),
@@ -739,11 +705,72 @@ def _scrollable_checkbox_panel(checkboxes: list[ft.Checkbox]) -> ft.Container:
         bgcolor=ft.Colors.with_opacity(0.02, ft.Colors.ON_SURFACE),
         clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         content=ft.ListView(
-            controls=checkboxes,
+            controls=rows,
             spacing=0,
             padding=ft.Padding.symmetric(vertical=2),
             scroll=ft.ScrollMode.AUTO,
         ),
+    )
+
+
+def _safe_update(control: ft.Control) -> None:
+    with suppress(AssertionError, RuntimeError):
+        control.update()
+
+
+def _fill_active_model_field(svc, fields: _FormFields, model_id: str) -> None:
+    """Fill the focused default-model field, falling back to the main model."""
+    field_name = fields.active_model_field or "main_model"
+    model_fields = _model_fields(fields)
+    if field_name not in model_fields:
+        field_name = "main_model"
+    target = model_fields[field_name]
+    target.value = model_id
+    _safe_update(target)
+
+    if not svc:
+        return
+    current_json = fields.config_json.value or "{}"
+    fields.config_json.value = svc.sync_form_to_json(
+        current_json, field_name, model_id,
+    )
+    _safe_update(fields.config_json)
+
+
+def _make_fill_model_handler(
+    svc,
+    fields: _FormFields,
+    model_id: str,
+) -> Callable[[ft.ControlEvent], None]:
+    def handler(e: ft.ControlEvent) -> None:
+        _fill_active_model_field(svc, fields, model_id)
+
+    return handler
+
+
+def _build_model_row(
+    svc,
+    fields: _FormFields,
+    checkbox: ft.Checkbox,
+    model_type: str,
+    model_id: str,
+) -> ft.Control:
+    if model_type != "llm":
+        return checkbox
+
+    fill_btn = make_icon_button(
+        ft.Icons.INPUT,
+        tooltip=t("settings.router_model_fill"),
+        on_click=_make_fill_model_handler(svc, fields, model_id),
+        icon_size=15,
+    )
+    return ft.Row(
+        controls=[
+            ft.Container(content=checkbox, expand=True),
+            fill_btn,
+        ],
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        spacing=4,
     )
 
 
@@ -766,7 +793,7 @@ def _render_model_groups(svc, fields: _FormFields, grouped: dict) -> None:
             tab_views.append(_empty_type_panel())
             continue
 
-        row_checks: list[ft.Checkbox] = []
+        rows: list[ft.Control] = []
         for m in items:
             model_id = m.model_id if hasattr(m, "model_id") else m.get("model_id", "")
             db_id = m.id if hasattr(m, "id") else None
@@ -779,10 +806,10 @@ def _render_model_groups(svc, fields: _FormFields, grouped: dict) -> None:
                 scale=0.88,
             )
             cb.on_change = _make_checkbox_handler(svc, fields, db_id, model_type)
-            row_checks.append(cb)
+            rows.append(_build_model_row(svc, fields, cb, model_type, model_id))
             by_type[model_type].append(cb)
 
-        tab_views.append(_scrollable_checkbox_panel(row_checks))
+        tab_views.append(_scrollable_checkbox_panel(rows))
 
     fields.model_type_checkboxes = by_type
     fields.models_container.controls = [
@@ -805,24 +832,6 @@ def _render_model_groups(svc, fields: _FormFields, grouped: dict) -> None:
             ),
         ),
     ]
-
-
-def _populate_model_dropdowns(fields: _FormFields, llm_model_ids: list[str]) -> None:
-    """Rebuild dropdown options from the selected LLM model list."""
-    options = [ft.dropdown.Option(key="", text="—")] + [
-        ft.dropdown.Option(key=mid, text=mid) for mid in sorted(llm_model_ids)
-    ]
-    for dd in (fields.main_model, fields.haiku_model, fields.opus_model, fields.sonnet_model):
-        current = dd.value
-        dd.options = list(options)
-        if current and current not in llm_model_ids:
-            dd.options.append(ft.dropdown.Option(key=current, text=current))
-
-
-def _update_all_model_dropdowns(fields: _FormFields) -> None:
-    """Call update on all four model dropdowns."""
-    for dd in (fields.main_model, fields.haiku_model, fields.opus_model, fields.sonnet_model):
-        dd.update()
 
 
 def _save_router(
@@ -920,9 +929,9 @@ def _build_switch_grid(switch_items: list[tuple[str, ft.Switch]]) -> ft.Control:
 
 
 def _build_default_models_grid(fields: _FormFields) -> ft.Control:
-    """Two-column grid of labeled model pickers (dropdowns styled via ``make_dropdown``)."""
+    """Two-column grid of editable default model fields."""
 
-    def cell(title: str, dd: ft.Dropdown) -> ft.Container:
+    def cell(title: str, text_field: ft.TextField) -> ft.Container:
         return ft.Container(
             content=ft.Column(
                 controls=[
@@ -932,7 +941,7 @@ def _build_default_models_grid(fields: _FormFields) -> ft.Control:
                         weight=ft.FontWeight.W_500,
                         opacity=0.82,
                     ),
-                    dd,
+                    text_field,
                 ],
                 spacing=6,
                 tight=True,

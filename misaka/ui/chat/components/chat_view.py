@@ -21,6 +21,7 @@ from misaka.ui.common.theme import ACCENT_BLUE, SUCCESS_GREEN, WARNING_AMBER, ma
 from misaka.ui.panels.offset_menu import OffsetMenu, OffsetMenuOption
 from misaka.ui.status.connection_status import ConnectionStatus
 from misaka.ui.status.update_banner import UpdateBanner
+from misaka.utils.perf import perf_timer
 
 if TYPE_CHECKING:
     from misaka.db.models import Message
@@ -449,13 +450,27 @@ class ChatView(ft.Column):
 
     def refresh_messages_minimal(self, new_message: Message) -> None:
         """Lightweight update on send: append only the new user message."""
-        if self._message_list:
-            self._message_list.append_message(new_message)
-        if self._message_input:
-            self._message_input.refresh()
-        if self._connection_status:
-            self._connection_status.set_status(is_streaming=self.state.is_streaming)
-        self._refresh_error_banner()
+        with perf_timer("refresh_minimal", 1.0):
+            if self._message_list:
+                self._message_list.append_message(new_message)
+            if self._message_input:
+                self._message_input.refresh()
+            if self._connection_status:
+                self._connection_status.set_status(is_streaming=self.state.is_streaming)
+            self._refresh_error_banner()
+
+    def append_user_message_lightweight(self, message: Message) -> None:
+        """Ultra-lightweight append for user message during send.
+
+        Only appends the message to the list and toggles the streaming
+        button state.  Skips connection_status refresh, error_banner
+        refresh, and full message_input rebuild.
+        """
+        with perf_timer("append_user_lightweight", 1.0):
+            if self._message_list:
+                self._message_list.append_message(message)
+            if self._message_input:
+                self._message_input.set_streaming_state(True)
 
     def prepend_older_messages(self, older_messages: list[Message]) -> None:
         """Insert older history at the top without rebuilding the list."""
@@ -482,19 +497,24 @@ class ChatView(ft.Column):
             self._connection_status.set_status(is_streaming=self.state.is_streaming)
 
     def refresh_streaming(self) -> None:
-        """Refresh streaming-related UI: message list, send/stop button, connection status.
+        """Called during streaming at ~30fps. Only updates components that change per-frame."""
+        with perf_timer("chat_view_streaming_refresh", 1.0):
+            if self._message_list:
+                self._message_list.refresh_streaming()
+            if self._message_input:
+                self._message_input.set_streaming_state(self.state.is_streaming)
+            # Skip: token_usage_bar — only changes when streaming ends
+            # Skip: connection_status — doesn't change during streaming
+            # Skip: KB badge/selected bar — doesn't change during streaming
 
-        Used during streaming deltas and when stream completes, so the
-        send button correctly reverts from stop (red) to send (primary).
-        """
-        if self._message_list:
-            self._message_list.refresh_streaming()
-        if self._message_input:
-            self._message_input.refresh()
-        if self._connection_status:
-            self._connection_status.set_status(is_streaming=self.state.is_streaming)
+    def refresh_streaming_finalize(self) -> None:
+        """Called once when streaming ends. Updates all components."""
         if self._token_usage_bar:
             self._token_usage_bar.refresh()
+        if self._connection_status:
+            self._connection_status.set_status(is_streaming=False)
+        if self._message_input:
+            self._message_input.refresh()
 
     def insert_file_path(self, path: str) -> None:
         """Insert a file path into the message input field."""

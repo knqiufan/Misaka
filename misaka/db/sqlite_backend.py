@@ -11,6 +11,7 @@ import json
 import os
 import secrets
 import sqlite3
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,7 @@ class SQLiteBackend(DatabaseBackend):
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
         self._conn: sqlite3.Connection | None = None
+        self._in_transaction = False
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._conn is None:
@@ -64,6 +66,29 @@ class SQLiteBackend(DatabaseBackend):
             self._conn.execute("PRAGMA journal_mode = WAL")
             self._conn.execute("PRAGMA foreign_keys = ON")
         return self._conn
+
+    def _maybe_commit(self) -> None:
+        """Commit only if not inside an explicit transaction() block."""
+        if not self._in_transaction:
+            self._get_conn().commit()
+
+    @contextmanager
+    def transaction(self) -> AbstractContextManager[None]:
+        """Context manager for batching multiple DB operations in a single transaction.
+
+        While active, individual write methods skip auto-commit.  On
+        successful exit the transaction is committed; on exception it is
+        rolled back.
+        """
+        self._in_transaction = True
+        try:
+            yield
+            self._get_conn().commit()
+        except Exception:
+            self._get_conn().rollback()
+            raise
+        finally:
+            self._in_transaction = False
 
     # ----- Lifecycle -----
 
@@ -117,7 +142,7 @@ class SQLiteBackend(DatabaseBackend):
             CREATE INDEX IF NOT EXISTS idx_sessions_sdk_id ON chat_sessions(sdk_session_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_session_id ON tasks(session_id);
         """)
-        conn.commit()
+        self._maybe_commit()
 
         from misaka.db.migrations import run_migrations
         run_migrations(conn)
@@ -173,7 +198,7 @@ class SQLiteBackend(DatabaseBackend):
                VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 'active', ?)""",
             (sid, title, now, now, model, system_prompt, working_directory, project_name, mode),
         )
-        conn.commit()
+        self._maybe_commit()
         return ChatSession(
             id=sid, title=title, model=model, system_prompt=system_prompt,
             working_directory=working_directory, project_name=project_name,
@@ -186,14 +211,14 @@ class SQLiteBackend(DatabaseBackend):
         conn.execute(
             "UPDATE chat_sessions SET title = ? WHERE id = ?", (title, session_id)
         )
-        conn.commit()
+        self._maybe_commit()
 
     def update_session_timestamp(self, session_id: str) -> None:
         conn = self._get_conn()
         conn.execute(
             "UPDATE chat_sessions SET updated_at = ? WHERE id = ?", (_now(), session_id)
         )
-        conn.commit()
+        self._maybe_commit()
 
     def update_sdk_session_id(self, session_id: str, sdk_session_id: str) -> None:
         conn = self._get_conn()
@@ -201,7 +226,7 @@ class SQLiteBackend(DatabaseBackend):
             "UPDATE chat_sessions SET sdk_session_id = ? WHERE id = ?",
             (sdk_session_id, session_id),
         )
-        conn.commit()
+        self._maybe_commit()
 
     def update_session_working_directory(self, session_id: str, working_directory: str) -> None:
         conn = self._get_conn()
@@ -210,35 +235,35 @@ class SQLiteBackend(DatabaseBackend):
             "UPDATE chat_sessions SET working_directory = ?, project_name = ? WHERE id = ?",
             (working_directory, project_name, session_id),
         )
-        conn.commit()
+        self._maybe_commit()
 
     def update_session_mode(self, session_id: str, mode: str) -> None:
         conn = self._get_conn()
         conn.execute(
             "UPDATE chat_sessions SET mode = ? WHERE id = ?", (mode, session_id)
         )
-        conn.commit()
+        self._maybe_commit()
 
     def update_session_model(self, session_id: str, model: str) -> None:
         conn = self._get_conn()
         conn.execute(
             "UPDATE chat_sessions SET model = ? WHERE id = ?", (model, session_id)
         )
-        conn.commit()
+        self._maybe_commit()
 
     def update_session_status(self, session_id: str, status: str) -> None:
         conn = self._get_conn()
         conn.execute(
             "UPDATE chat_sessions SET status = ? WHERE id = ?", (status, session_id)
         )
-        conn.commit()
+        self._maybe_commit()
 
     def delete_session(self, session_id: str) -> bool:
         conn = self._get_conn()
         cursor = conn.execute(
             "DELETE FROM chat_sessions WHERE id = ?", (session_id,)
         )
-        conn.commit()
+        self._maybe_commit()
         return cursor.rowcount > 0
 
     # ----- Messages -----
@@ -291,11 +316,52 @@ class SQLiteBackend(DatabaseBackend):
         conn.execute(
             "UPDATE chat_sessions SET updated_at = ? WHERE id = ?", (now, session_id)
         )
-        conn.commit()
+        self._maybe_commit()
         return Message(
             id=mid, session_id=session_id, role=role, content=content,
             created_at=now, token_usage=token_usage, _rowid=cursor.lastrowid,
         )
+
+    def create_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        token_usage: str | None = None,
+    ) -> Message:
+        """Create a Message model without writing to the database.
+
+        Used for optimistic UI display; persist later via ``add_message_from_model``.
+        """
+        mid = _generate_id()
+        now = _now()
+        if isinstance(content, list):
+            content = json.dumps(content, ensure_ascii=False)
+        return Message(
+            id=mid, session_id=session_id, role=role, content=content,
+            created_at=now, token_usage=token_usage,
+        )
+
+    def add_message_from_model(self, message: Message) -> None:
+        """Persist an already-created Message object to the database."""
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO messages (id, session_id, role, content, created_at, token_usage)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                message.id,
+                message.session_id,
+                message.role,
+                message.content,
+                message.created_at or _now(),
+                message.token_usage,
+            ),
+        )
+        conn.execute(
+            "UPDATE chat_sessions SET updated_at = ? WHERE id = ?",
+            (message.created_at or _now(), message.session_id),
+        )
+        self._maybe_commit()
 
     def add_messages_batch(
         self,
@@ -322,7 +388,7 @@ class SQLiteBackend(DatabaseBackend):
         conn.execute(
             "UPDATE chat_sessions SET updated_at = ? WHERE id = ?", (now, session_id)
         )
-        conn.commit()
+        self._maybe_commit()
 
     def clear_session_messages(self, session_id: str) -> None:
         conn = self._get_conn()
@@ -330,12 +396,12 @@ class SQLiteBackend(DatabaseBackend):
         conn.execute(
             "UPDATE chat_sessions SET sdk_session_id = '' WHERE id = ?", (session_id,)
         )
-        conn.commit()
+        self._maybe_commit()
 
     def delete_message(self, message_id: str) -> bool:
         conn = self._get_conn()
         cursor = conn.execute("DELETE FROM messages WHERE id = ?", (message_id,))
-        conn.commit()
+        self._maybe_commit()
         return cursor.rowcount > 0
 
     # ----- Settings -----
@@ -352,7 +418,7 @@ class SQLiteBackend(DatabaseBackend):
                ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
             (key, value),
         )
-        conn.commit()
+        self._maybe_commit()
 
     def set_settings_batch(self, settings: dict[str, str]) -> None:
         """Write multiple settings in a single transaction."""
@@ -364,7 +430,7 @@ class SQLiteBackend(DatabaseBackend):
                ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
             list(settings.items()),
         )
-        conn.commit()
+        self._maybe_commit()
 
     def get_all_settings(self) -> dict[str, str]:
         conn = self._get_conn()
@@ -396,7 +462,7 @@ class SQLiteBackend(DatabaseBackend):
                VALUES (?, ?, ?, 'pending', ?, ?, ?)""",
             (tid, session_id, title, description, now, now),
         )
-        conn.commit()
+        self._maybe_commit()
         return TaskItem(
             id=tid, session_id=session_id, title=title, status="pending",
             description=description, created_at=now, updated_at=now,
@@ -416,7 +482,7 @@ class SQLiteBackend(DatabaseBackend):
             f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?",  # noqa: S608
             params,
         )
-        conn.commit()
+        self._maybe_commit()
         if cursor.rowcount == 0:
             return None
         return self.get_task(task_id)
@@ -424,7 +490,7 @@ class SQLiteBackend(DatabaseBackend):
     def delete_task(self, task_id: str) -> bool:
         conn = self._get_conn()
         cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-        conn.commit()
+        self._maybe_commit()
         return cursor.rowcount > 0
 
     # ----- Router Configs -----
@@ -477,7 +543,7 @@ class SQLiteBackend(DatabaseBackend):
              opus_model, sonnet_model, 1 if agent_team else 0,
              config_json, is_active, sort_order, now, now),
         )
-        conn.commit()
+        self._maybe_commit()
         return RouterConfig(
             id=cid, name=name, api_key=api_key, base_url=base_url,
             main_model=main_model, haiku_model=haiku_model,
@@ -515,13 +581,13 @@ class SQLiteBackend(DatabaseBackend):
                 config_id,
             ),
         )
-        conn.commit()
+        self._maybe_commit()
         return self.get_router_config(config_id)
 
     def delete_router_config(self, config_id: str) -> bool:
         conn = self._get_conn()
         cursor = conn.execute("DELETE FROM router_configs WHERE id = ?", (config_id,))
-        conn.commit()
+        self._maybe_commit()
         return cursor.rowcount > 0
 
     def activate_router_config(self, config_id: str) -> bool:
@@ -535,7 +601,7 @@ class SQLiteBackend(DatabaseBackend):
         conn.execute(
             "UPDATE router_configs SET is_active = 1 WHERE id = ?", (config_id,)
         )
-        conn.commit()
+        self._maybe_commit()
         return True
 
     # ----- Router Models -----
@@ -569,7 +635,7 @@ class SQLiteBackend(DatabaseBackend):
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 rows,
             )
-        conn.commit()
+        self._maybe_commit()
 
     def get_router_models(self, config_id: str) -> list[RouterModel]:
         conn = self._get_conn()
@@ -585,7 +651,7 @@ class SQLiteBackend(DatabaseBackend):
             "UPDATE router_models SET is_selected = ? WHERE id = ?",
             (1 if is_selected else 0, model_id),
         )
-        conn.commit()
+        self._maybe_commit()
 
     def delete_router_models_by_config(self, config_id: str) -> None:
         conn = self._get_conn()
@@ -593,7 +659,7 @@ class SQLiteBackend(DatabaseBackend):
             "DELETE FROM router_models WHERE router_config_id = ?",
             (config_id,),
         )
-        conn.commit()
+        self._maybe_commit()
 
     def get_all_selected_models_by_type(self, model_type: str) -> list[ModelInfo]:
         conn = self._get_conn()
@@ -643,7 +709,7 @@ class SQLiteBackend(DatabaseBackend):
                 kb.status, kb.created_at or _now(), kb.updated_at or _now(),
             ),
         )
-        conn.commit()
+        self._maybe_commit()
 
     def get_knowledge_base(self, kb_id: str) -> KnowledgeBase | None:
         conn = self._get_conn()
@@ -682,12 +748,12 @@ class SQLiteBackend(DatabaseBackend):
             f"UPDATE knowledge_bases SET {', '.join(sets)} WHERE id = ?",  # noqa: S608
             params,
         )
-        conn.commit()
+        self._maybe_commit()
 
     def delete_knowledge_base(self, kb_id: str) -> None:
         conn = self._get_conn()
         conn.execute("DELETE FROM knowledge_bases WHERE id = ?", (kb_id,))
-        conn.commit()
+        self._maybe_commit()
 
     # ----- KB Documents -----
 
@@ -710,7 +776,7 @@ class SQLiteBackend(DatabaseBackend):
                 doc.created_at or _now(), doc.updated_at or _now(),
             ),
         )
-        conn.commit()
+        self._maybe_commit()
 
     def get_kb_document(self, doc_id: str) -> KBDocument | None:
         conn = self._get_conn()
@@ -747,12 +813,12 @@ class SQLiteBackend(DatabaseBackend):
             f"UPDATE kb_documents SET {', '.join(sets)} WHERE id = ?",  # noqa: S608
             params,
         )
-        conn.commit()
+        self._maybe_commit()
 
     def delete_kb_document(self, doc_id: str) -> None:
         conn = self._get_conn()
         conn.execute("DELETE FROM kb_documents WHERE id = ?", (doc_id,))
-        conn.commit()
+        self._maybe_commit()
 
     def get_kb_document_by_hash(self, kb_id: str, file_hash: str) -> KBDocument | None:
         conn = self._get_conn()
@@ -787,7 +853,7 @@ class SQLiteBackend(DatabaseBackend):
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
-        conn.commit()
+        self._maybe_commit()
 
     def get_kb_chunks_by_document(self, doc_id: str) -> list[KBChunk]:
         conn = self._get_conn()
@@ -810,7 +876,7 @@ class SQLiteBackend(DatabaseBackend):
         conn.execute(
             "DELETE FROM kb_chunks WHERE document_id = ?", (doc_id,)
         )
-        conn.commit()
+        self._maybe_commit()
 
     def update_kb_chunk_embedded(self, chunk_ids: list[str]) -> None:
         if not chunk_ids:
@@ -821,7 +887,7 @@ class SQLiteBackend(DatabaseBackend):
             f"UPDATE kb_chunks SET is_embedded = 1 WHERE id IN ({placeholders})",  # noqa: S608
             chunk_ids,
         )
-        conn.commit()
+        self._maybe_commit()
 
     # ----- Dashboard aggregation -----
 

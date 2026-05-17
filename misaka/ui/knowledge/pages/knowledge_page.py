@@ -48,7 +48,8 @@ class KnowledgePage(ft.Column):
     def _load_data(self) -> None:
         svc = self.state.get_service("kb_service")
         if svc:
-            self.state.knowledge_bases = svc.get_all()
+            kb = self.state.ensure_kb_state()
+            kb.knowledge_bases = svc.get_all()
 
     def _build_list_view(self) -> None:
         self._showing_detail = False
@@ -84,7 +85,7 @@ class KnowledgePage(ft.Column):
         )
 
     def _build_body(self) -> ft.Control:
-        kbs = self.state.knowledge_bases
+        kbs = self.state.kb.knowledge_bases if self.state.kb else []
         if not kbs:
             return self._build_empty_state()
         return self._build_card_grid(kbs)

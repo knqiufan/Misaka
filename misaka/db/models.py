@@ -83,6 +83,10 @@ class Message:
     token_usage: str | None = None  # JSON string of TokenUsage
     # Internal: row ID for cursor-based pagination
     _rowid: int | None = field(default=None, repr=False)
+    # Parsed content cache — avoids re-parsing JSON on every MessageItem construction
+    _parsed_content: list[MessageContentBlock] | None = field(
+        default=None, init=False, repr=False,
+    )
 
     def parse_content(self) -> list[MessageContentBlock]:
         """Parse the content JSON into a list of content blocks.
@@ -91,16 +95,24 @@ class Message:
         as a single text block.  Unknown dict keys are silently
         dropped so that imported Claude CLI responses don't cause
         TypeError.
+
+        Results are cached on first call to avoid redundant JSON parsing.
         """
+        if self._parsed_content is not None:
+            return self._parsed_content
         try:
             parsed = json.loads(self.content)
             if isinstance(parsed, list):
-                return [self._dict_to_block(b) if isinstance(b, dict)
-                        else MessageContentBlock(type="text", text=str(b))
-                        for b in parsed]
+                result = [self._dict_to_block(b) if isinstance(b, dict)
+                          else MessageContentBlock(type="text", text=str(b))
+                          for b in parsed]
+                self._parsed_content = result
+                return result
         except (json.JSONDecodeError, TypeError):
             pass
-        return [MessageContentBlock(type="text", text=self.content)]
+        result = [MessageContentBlock(type="text", text=self.content)]
+        self._parsed_content = result
+        return result
 
     @staticmethod
     def _dict_to_block(raw: dict) -> MessageContentBlock:

@@ -16,6 +16,7 @@ from misaka.i18n import t
 from misaka.ui.chat.components.message_item import MessageItem
 from misaka.ui.chat.components.permission_card import PermissionCard
 from misaka.ui.chat.components.streaming_message import StreamingMessage
+from misaka.utils.perf import perf_timer
 
 if TYPE_CHECKING:
     from misaka.db.models import Message
@@ -50,6 +51,7 @@ class MessageList(ft.Column):
         self._streaming_msg = StreamingMessage(state)
         self._item_cache: dict[str, MessageItem] = {}
         self._rendered_message_ids: list[str] = []
+        self._message_id_index: dict[str, int] = {}
         self._load_more_button: ft.Control | None = None
         self._was_streaming: bool = False
         self._model_display_name: str = "Claude"
@@ -105,8 +107,15 @@ class MessageList(ft.Column):
     def _build_ui(self) -> None:
         self._item_cache.clear()
         self._rendered_message_ids.clear()
+        self._rebuild_message_id_index()
         self.controls = [self._empty_view, self._list_view]
         self._rebuild_from_state()
+
+    def _rebuild_message_id_index(self) -> None:
+        """Rebuild the message_id -> position index for O(1) lookups in _find_rag_sources."""
+        self._message_id_index = {
+            msg.id: i for i, msg in enumerate(self.state.messages)
+        }
 
     def _resolve_model_display_name_once(self) -> None:
         """Resolve model display name only when session changes. Avoids repeated reads."""
@@ -148,16 +157,18 @@ class MessageList(ft.Column):
         RAG results are cached by the preceding user message ID.
         For assistant messages, walk backwards to find the user message
         that triggered the RAG retrieval.
+
+        Uses a pre-built message_id -> index mapping for O(1) lookup
+        instead of scanning the list each time.
         """
         if message.role != "assistant":
             return []
-        cache = self.state.rag_results_cache
+        cache = self.state.kb.rag_results_cache if self.state.kb else {}
         if not cache:
             return []
         messages = self.state.messages
-        try:
-            idx = next(i for i, m in enumerate(messages) if m.id == message.id)
-        except StopIteration:
+        idx = self._message_id_index.get(message.id)
+        if idx is None:
             return []
         for i in range(idx - 1, -1, -1):
             if messages[i].role == "user":
@@ -188,21 +199,23 @@ class MessageList(ft.Column):
         *,
         auto_scroll: bool = False,
         anchor_key: str | None = None,
+        content_grew: bool = False,
     ) -> None:
-        with contextlib.suppress(Exception):
-            self._list_view.update()
-        if auto_scroll:
+        with perf_timer("list_view_update", 1.0):
             with contextlib.suppress(Exception):
-                self._list_view.scroll_to(offset=-1, duration=0)
-        if anchor_key:
-            with contextlib.suppress(Exception):
-                self._list_view.scroll_to(key=anchor_key, duration=0)
-        try:
-            if self._empty_view.page:
+                self._list_view.update()
+            if auto_scroll and content_grew:
                 with contextlib.suppress(Exception):
-                    self._empty_view.update()
-        except RuntimeError:
-            pass
+                    self._list_view.scroll_to(offset=-1, duration=0)
+            if anchor_key:
+                with contextlib.suppress(Exception):
+                    self._list_view.scroll_to(key=anchor_key, duration=0)
+            try:
+                if self._empty_view.page:
+                    with contextlib.suppress(Exception):
+                        self._empty_view.update()
+            except RuntimeError:
+                pass
 
     def _build_permission_card(self) -> PermissionCard | None:
         if not (
@@ -253,11 +266,12 @@ class MessageList(ft.Column):
         self._sync_visibility()
 
         self._resolve_model_display_name_once()
+        self._rebuild_message_id_index()
         current_ids = {msg.id for msg in self.state.messages}
         self._prune_cache(current_ids)
         self._rendered_message_ids = [msg.id for msg in self.state.messages]
         self._list_view.controls = self._build_items_from_state()
-        self._update_list_view(auto_scroll=auto_scroll_to_bottom)
+        self._update_list_view(auto_scroll=auto_scroll_to_bottom, content_grew=True)
 
     def _get_load_more_button(self) -> ft.Control:
         """Return cached load-more button to avoid rebuilding on every sync."""
@@ -325,7 +339,7 @@ class MessageList(ft.Column):
             self._streaming_msg.refresh()
             controls.insert(self._get_message_insert_index(), self._streaming_msg)
         self._sync_permission_card()
-        self._update_list_view(auto_scroll=scroll_to_bottom)
+        self._update_list_view(auto_scroll=scroll_to_bottom, content_grew=True)
 
     def append_new_user_message(self, new_message: Message) -> None:
         """Append only the new user message to avoid full rebuild on send.
@@ -355,7 +369,8 @@ class MessageList(ft.Column):
             insert_idx += 1
             new_ids.append(msg.id)
         self._rendered_message_ids = new_ids + self._rendered_message_ids
-        self._update_list_view(anchor_key=anchor_key)
+        self._rebuild_message_id_index()
+        self._update_list_view(anchor_key=anchor_key, content_grew=True)
 
     def remove_message(self, message_id: str) -> None:
         """Remove a rendered message item without rebuilding the full list."""
@@ -390,6 +405,8 @@ class MessageList(ft.Column):
         if self._was_streaming and not self.state.is_streaming:
             self._was_streaming = False
             controls = self._list_view.controls
+            # Finalize rendering: replace lightweight ft.Text with ft.Markdown
+            self._streaming_msg.finalize_render()
             if self._streaming_msg in controls:
                 controls.remove(self._streaming_msg)
             self._sync_permission_card()
@@ -399,14 +416,16 @@ class MessageList(ft.Column):
                     self.append_message(last_message)
                     return
             self._sync_visibility()
-            self._update_list_view()
+            self._update_list_view(content_grew=True)
             return
 
         self._was_streaming = self.state.is_streaming
         self._sync_visibility()
+        prev_count = len(self._list_view.controls)
         self._streaming_msg.refresh()
         controls = self._list_view.controls
         if self.state.is_streaming and self._streaming_msg not in controls:
             controls.insert(self._get_message_insert_index(), self._streaming_msg)
         self._sync_permission_card()
-        self._update_list_view(auto_scroll=self.state.is_streaming)
+        grew = len(controls) > prev_count
+        self._update_list_view(auto_scroll=self.state.is_streaming, content_grew=grew)

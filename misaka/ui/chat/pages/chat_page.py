@@ -73,10 +73,15 @@ class ChatPage(ft.Stack):
             ui_refresh=self._refresh_stream_ui,
             on_title_changed=self._on_title_changed,
             on_background_status_change=self._on_background_status_change,
+            ui_refresh_finalize=self._refresh_stream_finalize,
         )
 
         self._file_tree_cache: dict[str, tuple] = {}
         self._preview_request_token = 0
+
+        # --- Send preprocessors ---
+        self._send_preprocessors: list[Any] = []
+        self._register_send_preprocessors()
 
         self._build_ui()
 
@@ -197,6 +202,25 @@ class ChatPage(ft.Stack):
         )
         self.controls = [main_container]
 
+    # ---- Send preprocessor registration ----
+
+    def _register_send_preprocessors(self) -> None:
+        """Register send preprocessors for the pipeline.
+
+        Only the RAG preprocessor is registered when the required
+        KB services are available.  Adding future preprocessors is
+        as simple as appending them here.
+        """
+        from misaka.services.chat.preprocessors import RAGPreprocessor
+
+        kb_service = self.state.get_service("kb_service")
+        rag_orchestrator = self.state.get_service("rag_orchestrator")
+        router_config_service = self.state.get_service("router_config_service")
+        if kb_service and rag_orchestrator:
+            self._send_preprocessors.append(
+                RAGPreprocessor(kb_service, rag_orchestrator, router_config_service),
+            )
+
     # ---- Session operations ----
 
     def _invalidate_preview_requests(self) -> None:
@@ -290,7 +314,8 @@ class ChatPage(ft.Stack):
         if image_service:
             image_service.cleanup_session_images(session_id)
         # Clean up KB selection and RAG cache for this session
-        self.state.selected_kb_ids.pop(session_id, None)
+        if self.state.kb:
+            self.state.kb.selected_kb_ids.pop(session_id, None)
         self._purge_rag_cache_for_session(session_id)
         self.state.sessions = [s for s in self.state.sessions if s.id != session_id]
         if self.state.current_session_id == session_id:
@@ -544,55 +569,67 @@ class ChatPage(ft.Stack):
     def _on_send_message(self, text: str, images: list | None = None) -> None:
         """Handle sending a message with optional images.
 
-        If knowledge bases are selected for the current session, the RAG
-        pipeline runs asynchronously *before* handing the prompt to Claude.
+        If send preprocessors are registered (e.g. RAG), they run
+        asynchronously *before* handing the prompt to Claude.
         """
         if not self.state.current_session_id:
             return
         session_id = self.state.current_session_id
-        selected_kb_ids = self.state.selected_kb_ids.get(session_id, [])
-        # RAG only when there is actual text for embedding query;
-        # image-only messages bypass RAG since embedding is text-based.
-        if selected_kb_ids and text.strip():
+        # Build context for preprocessors
+        preprocessor_context: dict[str, Any] = {
+            "session_id": session_id,
+            "selected_kb_ids": (
+                list(self.state.kb.selected_kb_ids.get(session_id, []))
+                if self.state.kb else []
+            ),
+        }
+
+        needs_preprocessing = self._send_preprocessors and text.strip()
+        if needs_preprocessing:
             msg = self._stream_handler.persist_user_message(text, images)
             if msg and self._chat_view:
-                self._chat_view.refresh_messages_minimal(msg)
+                self._chat_view.append_user_message_lightweight(msg)
             self.state.page.run_task(
-                self._send_with_rag, text, images, list(selected_kb_ids), msg,
+                self._send_with_preprocessors, text, images, preprocessor_context, msg,
             )
             return
         msg = self._stream_handler.persist_user_message(text, images)
         self.state.page.run_task(*self._stream_handler.get_send_coroutine(text, images))
         if msg and self._chat_view:
-            self._chat_view.refresh_messages_minimal(msg)
+            self._chat_view.append_user_message_lightweight(msg)
 
-    async def _send_with_rag(
+    async def _send_with_preprocessors(
         self,
         text: str,
         images: list | None,
-        kb_ids: list[str],
+        context: dict[str, Any],
         user_msg: object | None,
     ) -> None:
-        """Retrieve from selected KBs and inject context before sending.
+        """Run all send preprocessors sequentially, then send.
 
-        This coroutine is already scheduled via ``page.run_task()``, so
-        we can directly ``await`` the send coroutine returned by
-        ``get_send_coroutine()`` without re-scheduling it.
+        This coroutine is already scheduled via ``page.run_task()``.
         """
         augmented_text = text
-        search_results: list[Any] = []
-        try:
-            augmented_text, search_results = await self._do_rag_retrieve(
-                text, kb_ids,
-            )
-        except Exception as exc:
-            logger.warning("RAG retrieval failed, sending without context: %s", exc)
-            self._notify_rag_failure()
+        modified_images = images or []
 
-        if search_results and user_msg:
-            self.state.rag_results_cache[getattr(user_msg, "id", "")] = search_results
+        for preprocessor in self._send_preprocessors:
+            try:
+                augmented_text, modified_images = await preprocessor.process(
+                    augmented_text, modified_images, context,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Preprocessor %s failed, sending without its changes: %s",
+                    type(preprocessor).__name__, exc,
+                )
+                self._notify_rag_failure()
 
-        send_tuple = self._stream_handler.get_send_coroutine(augmented_text, images)
+        # Cache RAG results if the preprocessor produced any
+        search_results = context.get("_rag_results", [])
+        if search_results and user_msg and self.state.kb:
+            self.state.kb.rag_results_cache[getattr(user_msg, "id", "")] = search_results
+
+        send_tuple = self._stream_handler.get_send_coroutine(augmented_text, modified_images)
         coro = send_tuple[0]
         args = send_tuple[1:]
         await coro(*args)
@@ -605,101 +642,6 @@ class ChatPage(ft.Stack):
             self.state.page.open(
                 ft.SnackBar(content=ft.Text(t("chat.rag_retrieval_failed")), open=True),
             )
-
-    async def _do_rag_retrieve(
-        self,
-        query: str,
-        kb_ids: list[str],
-    ) -> tuple[str, list]:
-        """Execute RAG retrieval and build the augmented prompt text.
-
-        Returns:
-            A tuple of (augmented_prompt, search_results).
-        """
-        orchestrator = self.state.get_service("rag_orchestrator")
-        if not orchestrator:
-            return query, []
-
-        embedding_configs, reranker_config = self._build_rag_configs(kb_ids)
-        if not embedding_configs:
-            return query, []
-
-        results = await orchestrator.retrieve(
-            query=query,
-            kb_ids=kb_ids,
-            embedding_configs=embedding_configs,
-            reranker_config=reranker_config,
-        )
-
-        if not results:
-            return query, []
-
-        context_text = orchestrator.format_context(results)
-        if context_text:
-            return f"{query}\n\n{context_text}", results
-        return query, results
-
-    def _build_rag_configs(
-        self, kb_ids: list[str],
-    ) -> tuple[dict, object | None]:
-        """Build embedding/reranker configs for each selected KB.
-
-        Returns:
-            ``(embedding_configs_dict, reranker_config_or_none)``.
-        """
-        from misaka.services.knowledge.rag.abstractions import (
-            EmbeddingConfig,
-            RerankerConfig,
-        )
-
-        kb_svc = self.state.get_service("kb_service")
-        router_svc = self.state.get_service("router_config_service")
-        if not kb_svc or not router_svc:
-            return {}, None
-
-        embedding_configs: dict[str, EmbeddingConfig] = {}
-        reranker_config = None
-
-        for kb_id in kb_ids:
-            kb = kb_svc.get(kb_id)
-            if not kb:
-                continue
-            emb_info = self._find_model_info(
-                router_svc, kb.embedding_model_id, kb.embedding_router_config_id,
-            )
-            if emb_info:
-                embedding_configs[kb_id] = EmbeddingConfig(
-                    model_id=emb_info.model_id,
-                    base_url=emb_info.base_url,
-                    api_key=emb_info.api_key,
-                )
-            if not reranker_config and kb.reranker_model_id:
-                rnk_info = self._find_model_info(
-                    router_svc, kb.reranker_model_id, kb.reranker_router_config_id,
-                )
-                if rnk_info:
-                    reranker_config = RerankerConfig(
-                        model_id=rnk_info.model_id,
-                        base_url=rnk_info.base_url,
-                        api_key=rnk_info.api_key,
-                        top_n=kb.reranker_top_k,
-                    )
-
-        return embedding_configs, reranker_config
-
-    @staticmethod
-    def _find_model_info(router_svc, model_id: str, config_id: str):
-        """Look up a specific model from the router service."""
-        if not model_id or not config_id:
-            return None
-        try:
-            models = router_svc.get_models_by_config(config_id)
-            for m in models:
-                if m.model_id == model_id:
-                    return m
-        except Exception:
-            logger.warning("Failed to find model %s in config %s", model_id, config_id)
-        return None
 
     def _on_regenerate(self, assistant_message_id: str) -> None:
         """Regenerate the assistant response for the given message."""
@@ -1016,12 +958,12 @@ class ChatPage(ft.Stack):
         ``state.messages``. Orphaned entries from older sessions are
         harmless and naturally small in number.
         """
-        if self.state.current_session_id != session_id:
+        if not self.state.kb or self.state.current_session_id != session_id:
             return
         msg_ids = {m.id for m in self.state.messages}
-        for mid in list(self.state.rag_results_cache):
+        for mid in list(self.state.kb.rag_results_cache):
             if mid in msg_ids:
-                del self.state.rag_results_cache[mid]
+                del self.state.kb.rag_results_cache[mid]
 
     def _rebuild_all(self) -> None:
         """Rebuild all sub-components."""
@@ -1082,6 +1024,11 @@ class ChatPage(ft.Stack):
         """Refresh message list, send/stop button, and connection status after stream events."""
         if self._chat_view:
             self._chat_view.refresh_streaming()
+
+    def _refresh_stream_finalize(self) -> None:
+        """Refresh components that only need updating when streaming ends."""
+        if self._chat_view:
+            self._chat_view.refresh_streaming_finalize()
 
     def _load_file_tree(self, session: ChatSession) -> None:
         wd = (session.working_directory or "").strip()
@@ -1182,7 +1129,7 @@ class ChatPage(ft.Stack):
 
     def _on_title_changed(self) -> None:
         """Called by StreamHandler when the session title is auto-synced."""
-        if self._chat_list:
-            self._chat_list.refresh()
+        if self._chat_list and self.state.current_session_id:
+            self._chat_list.update_session_item(self.state.current_session_id)
         if self._chat_view:
             self._chat_view.refresh_header_only()

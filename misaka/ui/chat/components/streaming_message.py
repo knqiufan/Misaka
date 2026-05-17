@@ -7,7 +7,6 @@ with live-updating text, tool call blocks, and a progress indicator.
 from __future__ import annotations
 
 import contextlib
-import re
 import webbrowser
 from typing import TYPE_CHECKING
 
@@ -37,8 +36,15 @@ class StreamingMessage(ft.Container):
         # Incremental update tracking
         self._content_column: ft.Column | None = None
         self._rendered_block_count: int = 0
-        self._last_text_md: ft.Markdown | None = None
+        self._last_text_widget: ft.Text | ft.Markdown | None = None
         self._last_text_content: str | None = None
+        self._last_text_wrapper: ft.Container | None = None
+        # Incremental blockquote flag (avoids regex every frame)
+        self._has_blockquote: bool = False
+        # Whether the current wrapper container has blockquote styling applied
+        self._wrapper_has_blockquote: bool = False
+        # Whether last text block is using lightweight ft.Text (streaming) vs ft.Markdown
+        self._streaming_text_mode: bool = False
         self._build_ui()
 
     def did_mount(self) -> None:
@@ -125,19 +131,32 @@ class StreamingMessage(ft.Container):
             on_tap_link=self._handle_link,
         )
 
+    def _create_streaming_text(self, text: str) -> ft.Text:
+        """Create a lightweight ft.Text widget for streaming display.
+
+        Avoids the overhead of ft.Markdown's full AST re-parse on every
+        frame.  Used during streaming; replaced by ft.Markdown in
+        ``finalize_render()`` when streaming ends.
+        """
+        return ft.Text(
+            value=text,
+            selectable=True,
+            style=ft.TextStyle(
+                size=14,
+            ),
+        )
+
     def _handle_link(self, e: ft.MarkdownTapLinkEvent) -> None:
         """Open clicked link in the default browser."""
         if e.page and e.link:
             webbrowser.open(e.link)
 
-    def _wrap_markdown(self, md: ft.Markdown, text: str) -> ft.Control:
-        """Wrap markdown in a container with optional blockquote styling."""
-        # Check for blockquote (lines starting with >)
-        has_blockquote = bool(re.search(r"^>\s", text, re.MULTILINE))
-
-        if has_blockquote:
+    def _wrap_text_widget(self, widget: ft.Text | ft.Markdown, text: str) -> ft.Container:
+        """Wrap a text widget in a container with optional blockquote styling."""
+        self._wrapper_has_blockquote = self._has_blockquote
+        if self._has_blockquote:
             return ft.Container(
-                content=md,
+                content=widget,
                 border=ft.Border(
                     left=ft.BorderSide(3, ft.Colors.PRIMARY),
                 ),
@@ -145,9 +164,14 @@ class StreamingMessage(ft.Container):
             )
 
         return ft.Container(
-            content=md,
+            content=widget,
             padding=ft.Padding.symmetric(horizontal=4, vertical=6),
         )
+
+    @staticmethod
+    def _check_blockquote_incremental(text: str) -> bool:
+        """Check whether text contains any blockquote lines."""
+        return any(line.lstrip().startswith("> ") for line in text.split("\n"))
 
     # ------------------------------------------------------------------
     # Build
@@ -157,8 +181,12 @@ class StreamingMessage(ft.Container):
         self._thinking_container: ft.Container | None = None
         self._content_column = None
         self._rendered_block_count = 0
-        self._last_text_md = None
+        self._last_text_widget = None
         self._last_text_content = None
+        self._last_text_wrapper = None
+        self._has_blockquote = False
+        self._wrapper_has_blockquote = False
+        self._streaming_text_mode = False
         if not self.state.is_streaming:
             self.visible = False
             self.content = ft.Container()
@@ -196,11 +224,14 @@ class StreamingMessage(ft.Container):
                 if thinking_block.thinking:
                     controls.append(self._build_thinking_block(thinking_block.thinking))
             elif hasattr(block, "text") and block.text:
-                md = self._create_markdown(block.text)
-                wrapped = self._wrap_markdown(md, block.text)
+                text_widget = self._create_streaming_text(block.text)
+                self._has_blockquote = self._check_blockquote_incremental(block.text)
+                wrapped = self._wrap_text_widget(text_widget, block.text)
                 controls.append(wrapped)
-                self._last_text_md = md
+                self._last_text_widget = text_widget
                 self._last_text_content = block.text
+                self._last_text_wrapper = wrapped
+                self._streaming_text_mode = True
             elif hasattr(block, "name") and block.name:
                 tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
                 controls.append(
@@ -254,7 +285,7 @@ class StreamingMessage(ft.Container):
         """Update the streaming display incrementally when possible.
 
         Most common case during streaming: last block is text and block
-        count unchanged → update Markdown value in-place.
+        count unchanged → update ft.Text value in-place (cheap).
         """
         if not self.state.is_streaming:
             self._build_ui()
@@ -272,22 +303,33 @@ class StreamingMessage(ft.Container):
         if (
             current_count == self._rendered_block_count
             and current_count > 0
-            and self._last_text_md is not None
+            and self._last_text_widget is not None
             and hasattr(blocks[-1], "text")
         ):
             new_text = blocks[-1].text
-            # Check if blockquote status changed - need full rebuild if so
-            old_has_blockquote = bool(
-                re.search(r"^>\s", self._last_text_content or "", re.MULTILINE)
-            )
-            new_has_blockquote = bool(re.search(r"^>\s", new_text, re.MULTILINE))
-            if old_has_blockquote != new_has_blockquote:
+            old_text = self._last_text_content or ""
+
+            # Incremental blockquote detection: only check the new delta
+            if new_text.startswith(old_text):
+                delta = new_text[len(old_text):]
+                if delta:
+                    self._has_blockquote = self._has_blockquote or any(
+                        line.lstrip().startswith("> ") for line in delta.split("\n")
+                    )
+            else:
+                # Text was replaced entirely (rare) — full scan
+                self._has_blockquote = self._check_blockquote_incremental(new_text)
+
+            # Blockquote appeared → need wrapper change → full rebuild
+            if self._has_blockquote and not self._wrapper_has_blockquote:
                 self._build_ui()
                 return
-            self._last_text_md.value = new_text
+
+            # Lightweight ft.Text update (no Markdown AST re-parse)
+            self._last_text_widget.value = new_text
             self._last_text_content = new_text
             with contextlib.suppress(Exception):
-                self._last_text_md.update()
+                self._last_text_widget.update()
             return
 
         # New blocks added → append only new block controls
@@ -307,13 +349,17 @@ class StreamingMessage(ft.Container):
                         self._content_column.controls.append(
                             self._build_thinking_block(thinking_block_inc.thinking)
                         )
-                    self._last_text_md = None
+                    self._last_text_widget = None
+                    self._last_text_wrapper = None
                 elif hasattr(block, "text"):
-                    md = self._create_markdown(block.text or "")
-                    wrapped = self._wrap_markdown(md, block.text or "")
+                    text_widget = self._create_streaming_text(block.text or "")
+                    self._has_blockquote = self._check_blockquote_incremental(block.text or "")
+                    wrapped = self._wrap_text_widget(text_widget, block.text or "")
                     self._content_column.controls.append(wrapped)
-                    self._last_text_md = md
+                    self._last_text_widget = text_widget
                     self._last_text_content = block.text or ""
+                    self._last_text_wrapper = wrapped
+                    self._streaming_text_mode = True
                 elif hasattr(block, "name") and block.name:
                     tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
                     self._content_column.controls.append(
@@ -325,7 +371,8 @@ class StreamingMessage(ft.Container):
                             initially_expanded=tool_block.output is None,
                         )
                     )
-                    self._last_text_md = None
+                    self._last_text_widget = None
+                    self._last_text_wrapper = None
 
             self._rendered_block_count = current_count
             return
@@ -336,4 +383,31 @@ class StreamingMessage(ft.Container):
     def refresh(self) -> None:
         """Rebuild the streaming display from current state."""
         self._incremental_update()
-        self._start_thinking_pulse()
+        if self._thinking_container is not None:  # Only during thinking phase
+            self._start_thinking_pulse()
+
+    def finalize_render(self) -> None:
+        """Replace lightweight ft.Text widgets with ft.Markdown for final display.
+
+        Called once when streaming ends.  During streaming, ft.Text is used
+        because it only needs a simple value update (~O(1)).  This method
+        performs the single, more expensive Markdown render pass for proper
+        formatted display (bold, links, lists, code blocks, etc.).
+        """
+        if (
+            self._last_text_widget is None
+            or self._last_text_wrapper is None
+            or not self._streaming_text_mode
+        ):
+            return
+
+        final_text = self._last_text_content or ""
+        md = self._create_markdown(final_text)
+
+        # Replace the ft.Text inside the wrapper with ft.Markdown
+        self._last_text_wrapper.content = md
+        self._last_text_widget = md
+        self._streaming_text_mode = False
+
+        with contextlib.suppress(Exception):
+            self._last_text_wrapper.update()

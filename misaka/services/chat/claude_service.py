@@ -26,7 +26,7 @@ from misaka.config import SettingKeys
 from misaka.db.database import DatabaseBackend
 from misaka.errors import ErrorClassifier
 from misaka.services.chat.permission_service import PermissionService
-from misaka.services.common.claude_env_builder import build_claude_env
+from misaka.utils.perf import perf_timer
 from misaka.utils.platform import find_claude_sdk_binary
 
 logger = logging.getLogger(__name__)
@@ -68,26 +68,73 @@ class ClaudeService:
         self._saw_text_delta_in_turn: bool = False
         self._saw_thinking_delta_in_turn: bool = False
 
+        # Cache SDK types to avoid repeated suppress+import blocks per message
+        self._sdk_types: dict[str, type] = {}
+        with contextlib.suppress(ImportError, AttributeError):
+            from claude_agent_sdk import (
+                AssistantMessage,
+                ResultMessage,
+                SystemMessage,
+                UserMessage,
+            )
+
+            self._sdk_types.update({
+                "AssistantMessage": AssistantMessage,
+                "ResultMessage": ResultMessage,
+                "SystemMessage": SystemMessage,
+                "UserMessage": UserMessage,
+            })
+        with contextlib.suppress(ImportError, AttributeError):
+            from claude_agent_sdk.types import (
+                StreamEvent,
+                TextBlock,
+                ThinkingBlock,
+                ToolResultBlock,
+                ToolUseBlock,
+            )
+
+            self._sdk_types.update({
+                "StreamEvent": StreamEvent,
+                "TextBlock": TextBlock,
+                "ThinkingBlock": ThinkingBlock,
+                "ToolResultBlock": ToolResultBlock,
+                "ToolUseBlock": ToolUseBlock,
+            })
+
+        # Debug log file-check cache (avoids reading config.json per message)
+        self._debug_log_cache: bool | None = None
+        self._debug_log_cache_time: float = 0.0
+
     def _is_debug_log_enabled(self) -> bool:
         """Return whether Claude SDK debug logging is enabled.
 
         Enabled via environment variable MISAKA_CLAUDE_DEBUG_LOG=true
-        or via config file (~/.misaka/config.json).
+        or via config file (~/.misaka/config.json).  File check is
+        cached for 30 seconds to avoid reading config.json per message.
         """
-        # Check environment variable first
-        if os.environ.get("MISAKA_CLAUDE_DEBUG_LOG", "").lower() == "true":
+        # Check environment variable first (no cache needed)
+        env_val = os.environ.get("MISAKA_CLAUDE_DEBUG_LOG", "").lower()
+        if env_val in ("1", "true", "yes"):
             return True
+        if env_val in ("0", "false", "no"):
+            return False
+        # Cache file check for 30 seconds
+        now = time.monotonic()
+        if self._debug_log_cache is not None and (now - self._debug_log_cache_time) < 30.0:
+            return self._debug_log_cache
         # Check config file
         config_path = Path.home() / ".misaka" / "config.json"
+        result = False
         if config_path.exists():
             try:
                 with open(config_path, encoding="utf-8") as f:
                     config = json.load(f)
-                if config.get("claude_debug_log", False):
-                    return True
+                result = bool(config.get("claude_debug_log", False))
             except (json.JSONDecodeError, OSError):
                 pass
-        return False
+        self._debug_log_cache = result
+        self._debug_log_cache_time = now
+        return result
 
     def _debug_log(self, message: str, *args: Any) -> None:
         """Write concise Claude SDK debug logs when enabled."""
@@ -96,7 +143,9 @@ class ClaudeService:
 
     def _build_env(self) -> dict[str, str]:
         """Build the subprocess environment for the Claude CLI."""
-        return build_claude_env(self._db)
+        with perf_timer("env_build", 1.0):
+            from misaka.services.common.claude_env_builder import _env_cache
+            return _env_cache.get(self._db)
 
     def _build_options(
         self,
@@ -122,66 +171,69 @@ class ClaudeService:
         """
         from claude_agent_sdk import ClaudeAgentOptions
 
-        cwd = working_directory or str(Path.home())
-        env = self._build_env()
+        with perf_timer("options_build", 1.0):
+            cwd = working_directory or str(Path.home())
+            env = self._build_env()
 
-        # Check for bypass permissions setting
-        skip_permissions = self._db.get_setting(SettingKeys.DANGEROUSLY_SKIP_PERMISSIONS) == "true"
+            # Check for bypass permissions setting
+            skip_permissions = (
+                self._db.get_setting(SettingKeys.DANGEROUSLY_SKIP_PERMISSIONS) == "true"
+            )
 
-        # Determine final SDK permission_mode and disallowed_tools based on session_mode
-        final_permission_mode: str
-        final_disallowed_tools: list[str] | None = None
-        final_can_use_tool: Any = None
+            # Determine final SDK permission_mode and disallowed_tools based on session_mode
+            final_permission_mode: str
+            final_disallowed_tools: list[str] | None = None
+            final_can_use_tool: Any = None
 
-        if skip_permissions:
-            final_permission_mode = "bypassPermissions"
-        elif session_mode == "plan":
-            # Plan mode: SDK native, no tool execution
-            final_permission_mode = "plan"
-        elif session_mode == "ask":
-            # Ask mode: read-only, disallow write tools
-            final_permission_mode = "default"
-            final_disallowed_tools = ["Write", "Edit", "Bash"]
-            final_can_use_tool = can_use_tool
-        else:
-            # Agent mode: use permission_mode setting
-            final_permission_mode = permission_mode
-            final_can_use_tool = can_use_tool
+            if skip_permissions:
+                final_permission_mode = "bypassPermissions"
+            elif session_mode == "plan":
+                # Plan mode: SDK native, no tool execution
+                final_permission_mode = "plan"
+            elif session_mode == "ask":
+                # Ask mode: read-only, disallow write tools
+                final_permission_mode = "default"
+                final_disallowed_tools = ["Write", "Edit", "Bash"]
+                final_can_use_tool = can_use_tool
+            else:
+                # Agent mode: use permission_mode setting
+                final_permission_mode = permission_mode
+                final_can_use_tool = can_use_tool
 
-        options = ClaudeAgentOptions(
-            cwd=cwd,
-            system_prompt=system_prompt,
-            permission_mode=final_permission_mode,
-            env=env,
-            allowed_tools=[],  # Empty to let permission_mode handle access
-            include_partial_messages=True,
-            can_use_tool=final_can_use_tool,
-            disallowed_tools=final_disallowed_tools,
-            stderr=lambda line: logger.warning("[Claude CLI stderr] %s", line),
-        )
+            options = ClaudeAgentOptions(
+                cwd=cwd,
+                system_prompt=system_prompt,
+                permission_mode=final_permission_mode,
+                env=env,
+                allowed_tools=[],  # Empty to let permission_mode handle access
+                include_partial_messages=True,
+                can_use_tool=final_can_use_tool,
+                disallowed_tools=final_disallowed_tools,
+                stderr=lambda line: logger.warning("[Claude CLI stderr] %s", line),
+            )
 
-        if skip_permissions:
-            options.allow_dangerously_skip_permissions = True
+            if skip_permissions:
+                options.allow_dangerously_skip_permissions = True
 
-        # Resume existing session
-        if sdk_session_id:
-            options.resume = sdk_session_id
+            # Resume existing session
+            if sdk_session_id:
+                options.resume = sdk_session_id
 
-        if model:
-            options.model = model
+            if model:
+                options.model = model
 
-        if mcp_servers:
-            options.mcp_servers = mcp_servers
+            if mcp_servers:
+                options.mcp_servers = mcp_servers
 
-        # Find Claude binary path
-        claude_path = find_claude_sdk_binary()
-        if claude_path:
-            # SDK transport executes cli_path directly as a process.
-            # On Windows, passing a resolved .js path causes WinError 193.
-            # Keep the actual executable/wrapper path (e.g. claude.cmd / claude.exe).
-            options.cli_path = claude_path
+            # Find Claude binary path
+            claude_path = find_claude_sdk_binary()
+            if claude_path:
+                # SDK transport executes cli_path directly as a process.
+                # On Windows, passing a resolved .js path causes WinError 193.
+                # Keep the actual executable/wrapper path (e.g. claude.cmd / claude.exe).
+                options.cli_path = claude_path
 
-        return options
+            return options
 
     async def send_message(
         self,
@@ -414,18 +466,20 @@ class ClaudeService:
             self._saw_text_delta_in_turn = False
             self._saw_thinking_delta_in_turn = False
 
-    @staticmethod
-    def _classify_message_kind(message: Any) -> str:
+    def _classify_message_kind(self, message: Any) -> str:
         """Classify SDK message into a stable, concise label."""
-        name = type(message).__name__
-        mapping = {
-            "AssistantMessage": "assistant",
-            "UserMessage": "user",
-            "ResultMessage": "result",
-            "SystemMessage": "system",
-            "StreamEvent": "stream_event",
-        }
-        return mapping.get(name, "other")
+        types = self._sdk_types
+        if types.get("AssistantMessage") and isinstance(message, types["AssistantMessage"]):
+            return "assistant"
+        if types.get("ResultMessage") and isinstance(message, types["ResultMessage"]):
+            return "result"
+        if types.get("SystemMessage") and isinstance(message, types["SystemMessage"]):
+            return "system"
+        if types.get("UserMessage") and isinstance(message, types["UserMessage"]):
+            return "user"
+        if types.get("StreamEvent") and isinstance(message, types["StreamEvent"]):
+            return "stream_event"
+        return "other"
 
     def _make_permission_callback(
         self,
@@ -493,17 +547,11 @@ class ClaudeService:
         on_result: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         """Dispatch a single SDK message to the appropriate callback."""
-        AssistantMessage = ResultMessage = SystemMessage = UserMessage = None  # noqa: N806
-        StreamEvent = None  # noqa: N806
-        with contextlib.suppress(ImportError, AttributeError):
-            from claude_agent_sdk import (
-                AssistantMessage,
-                ResultMessage,
-                SystemMessage,
-                UserMessage,
-            )
-        with contextlib.suppress(ImportError, AttributeError):
-            from claude_agent_sdk.types import StreamEvent
+        AssistantMessage = self._sdk_types.get("AssistantMessage")  # noqa: N806
+        ResultMessage = self._sdk_types.get("ResultMessage")  # noqa: N806
+        SystemMessage = self._sdk_types.get("SystemMessage")  # noqa: N806
+        UserMessage = self._sdk_types.get("UserMessage")  # noqa: N806
+        StreamEvent = self._sdk_types.get("StreamEvent")  # noqa: N806
 
         if AssistantMessage and isinstance(message, AssistantMessage):
             self._handle_assistant_message(
@@ -561,9 +609,9 @@ class ClaudeService:
             msg_content = getattr(message, "message", None)
             content = getattr(msg_content, "content", []) if msg_content else []
 
-        TextBlock = ToolUseBlock = ThinkingBlock = None  # noqa: N806
-        with contextlib.suppress(ImportError, AttributeError):
-            from claude_agent_sdk.types import TextBlock, ThinkingBlock, ToolUseBlock
+        TextBlock = self._sdk_types.get("TextBlock")  # noqa: N806
+        ToolUseBlock = self._sdk_types.get("ToolUseBlock")  # noqa: N806
+        ThinkingBlock = self._sdk_types.get("ThinkingBlock")  # noqa: N806
 
         for block in content:
             if ThinkingBlock and isinstance(block, ThinkingBlock):
@@ -624,9 +672,7 @@ class ClaudeService:
         if isinstance(content, str) or not isinstance(content, list):
             return
 
-        ToolResultBlock = None  # noqa: N806
-        with contextlib.suppress(ImportError, AttributeError):
-            from claude_agent_sdk.types import ToolResultBlock
+        ToolResultBlock = self._sdk_types.get("ToolResultBlock")  # noqa: N806
 
         for block in content:
             if ToolResultBlock and isinstance(block, ToolResultBlock):

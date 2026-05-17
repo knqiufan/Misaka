@@ -67,15 +67,23 @@ def _collect_advanced_paired_rows(control: ft.Control, rows: list[ft.Row]) -> No
 
 
 def _is_advanced_pair_row(row: ft.Row) -> bool:
-    labels = {
-        getattr(control, "label", "")
-        for control in row.controls
-        if isinstance(control, ft.TextField)
-    }
-    advanced_labels = {
+    """Check if a Row contains two advanced number fields.
+
+    Labels are compared against their translated values, so this works
+    regardless of the current i18n locale.
+    """
+    advanced_translation_keys = {
         "kb.chunk_size",
         "kb.chunk_overlap",
         "kb.top_k",
         "kb.similarity_threshold",
     }
-    return len(labels) == 2 and labels.issubset(advanced_labels)
+    from misaka.i18n import t
+    advanced_translated = {t(key) for key in advanced_translation_keys}
+
+    labels = {
+        getattr(control, "label", "")
+        for control in row.controls
+        if isinstance(control, ft.TextField)
+    }
+    return len(labels) == 2 and labels.issubset(advanced_translated)

@@ -569,29 +569,32 @@ class MessageItem(ft.Container):
     def _smart_render_text(self, text: str) -> ft.Control | None:
         """Render text: detect raw JSON and show a collapsible summary instead."""
         stripped = text.strip()
-        if self._looks_like_raw_json(stripped):
-            return self._render_json_summary(stripped)
+        parsed = self._try_parse_json(stripped)
+        if parsed is not None:
+            return self._render_json_summary(stripped, parsed)
         return self._render_text_block(text)
 
     @staticmethod
-    def _looks_like_raw_json(text: str) -> bool:
+    def _try_parse_json(text: str):
+        """Try to parse text as JSON; return parsed data if it looks like raw JSON, else None."""
         if not text:
-            return False
+            return None
         if (text.startswith("{") and text.endswith("}")) or \
            (text.startswith("[") and text.endswith("]")):
             try:
-                json.loads(text)
-                return len(text) > 120
+                data = json.loads(text)
+                if len(text) > 120:
+                    return data
             except (json.JSONDecodeError, ValueError):
                 pass
-        return False
+        return None
 
-    def _render_json_summary(self, raw_json: str) -> ft.Control:
-        """Build a compact summary for raw JSON with expandable detail."""
-        try:
-            data = json.loads(raw_json)
-        except (json.JSONDecodeError, ValueError):
-            return self._render_text_block(raw_json)
+    def _render_json_summary(self, raw_json: str, data: object) -> ft.Control:
+        """Build a compact summary for raw JSON with expandable detail.
+
+        ``data`` is the already-parsed JSON object, passed in from
+        ``_smart_render_text`` to avoid a redundant ``json.loads`` call.
+        """
 
         summary = self._extract_json_summary(data)
 

@@ -60,10 +60,14 @@ class RouterConfigService:
         return self._db.create_router_config(name, **kwargs)
 
     def update(self, config_id: str, **kwargs: object) -> RouterConfig | None:
-        return self._db.update_router_config(config_id, **kwargs)
+        result = self._db.update_router_config(config_id, **kwargs)
+        self._invalidate_env_cache()
+        return result
 
     def delete(self, config_id: str) -> bool:
-        return self._db.delete_router_config(config_id)
+        result = self._db.delete_router_config(config_id)
+        self._invalidate_env_cache()
+        return result
 
     def activate(self, config_id: str) -> bool:
         """Activate a router config: write its config_json to settings.json."""
@@ -77,7 +81,9 @@ class RouterConfigService:
             data = {}
 
         self._cli.write_settings(data)
-        return self._db.activate_router_config(config_id)
+        result = self._db.activate_router_config(config_id)
+        self._invalidate_env_cache()
+        return result
 
     def sync_form_to_json(
         self, config_json: str, field_name: str, value: str | bool
@@ -270,3 +276,9 @@ class RouterConfigService:
 
     def get_available_reranker_models(self) -> list[ModelInfo]:
         return self._db.get_all_selected_models_by_type("reranker")
+
+    @staticmethod
+    def _invalidate_env_cache() -> None:
+        """Invalidate the Claude environment cache after router config changes."""
+        from misaka.services.common.claude_env_builder import _env_cache
+        _env_cache.invalidate()

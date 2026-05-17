@@ -25,6 +25,7 @@ from misaka.state import (
     StreamingToolUseBlock,
     TokenUsageInfo,
 )
+from misaka.utils.perf import perf_timer
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -76,17 +77,21 @@ class StreamHandler:
         ui_refresh: Callable[[], None],
         on_title_changed: Callable[[], None] | None = None,
         on_background_status_change: Callable[[], None] | None = None,
+        ui_refresh_finalize: Callable[[], None] | None = None,
     ) -> None:
         self._state = state
         self._db = db
         self._ui_refresh = ui_refresh
         self._on_title_changed = on_title_changed
         self._on_background_status_change = on_background_status_change
+        self._ui_refresh_finalize = ui_refresh_finalize
         self._send_override: Any = None
         self._abort_override: Any = None
         self._always_allowed_tools: set[str] = set()
         # Per-invocation stream context (foreground)
         self._active_ctx: _StreamContext | None = None
+        # Pending user message awaiting async DB write
+        self._pending_user_msg: Message | None = None
         # Detached contexts still running in background
         self._detached_contexts: dict[str, _StreamContext] = {}
         # Throttling: limit UI refreshes to ~30fps during streaming
@@ -113,7 +118,8 @@ class StreamHandler:
             if self._refresh_timer is not None:
                 self._refresh_timer.cancel()
                 self._refresh_timer = None
-            self._ui_refresh()
+            with perf_timer("ui_refresh", 5.0):
+                self._ui_refresh()
         elif not self._refresh_pending:
             self._refresh_pending = True
             delay = 0.033 - elapsed
@@ -131,7 +137,8 @@ class StreamHandler:
         self._refresh_pending = False
         self._refresh_timer = None
         self._last_refresh_time = time.monotonic()
-        self._ui_refresh()
+        with perf_timer("ui_refresh", 5.0):
+            self._ui_refresh()
 
     def _is_current_foreground_ctx(self, ctx: _StreamContext) -> bool:
         """Return whether the context still owns the current foreground stream."""
@@ -147,7 +154,10 @@ class StreamHandler:
         text: str,
         images: list | None = None,
     ) -> Message | None:
-        """Save a user message to the DB, append to state, and start streaming.
+        """Create a user message optimistically (no DB write) and start streaming.
+
+        The message is shown in the UI immediately. The actual DB write is
+        deferred to ``send_to_claude()`` via ``_persist_user_message_to_db()``.
 
         Args:
             text: The text content of the message.
@@ -155,34 +165,49 @@ class StreamHandler:
 
         Returns the new Message for minimal UI refresh, or None if no session.
         """
-        if not self._state.current_session_id:
-            return None
+        with perf_timer("persist_user_msg", 1.0):
+            if not self._state.current_session_id:
+                return None
 
-        # Build content blocks
-        content_blocks: list[dict] = []
+            # Build content blocks
+            content_blocks: list[dict] = []
 
-        # Add image blocks first (if any)
-        if images:
-            for img in images:
-                content_blocks.append({
-                    "type": "image",
-                    "source_type": "file",
-                    "file_path": img.temp_path,
-                    "media_type": img.mime_type,
-                    "alt_text": img.original_name,
-                })
+            # Add image blocks first (if any)
+            if images:
+                for img in images:
+                    content_blocks.append({
+                        "type": "image",
+                        "source_type": "file",
+                        "file_path": img.temp_path,
+                        "media_type": img.mime_type,
+                        "alt_text": img.original_name,
+                    })
 
-        # Add text block
-        if text:
-            content_blocks.append({"type": "text", "text": text})
+            # Add text block
+            if text:
+                content_blocks.append({"type": "text", "text": text})
 
-        content_json = json.dumps(content_blocks)
-        msg = self._db.add_message(
-            self._state.current_session_id, "user", content_json,
-        )
-        self._state.messages.append(msg)
-        self.start_streaming()
-        return msg
+            content_json = json.dumps(content_blocks)
+            # Create an optimistic Message without writing to DB.
+            # The DB write will happen asynchronously in send_to_claude().
+            msg = self._db.create_message(
+                self._state.current_session_id, "user", content_json,
+            )
+            self._state.messages.append(msg)
+            self._pending_user_msg = msg
+            self.start_streaming()
+            return msg
+
+    def _persist_user_message_to_db(self, msg: Message) -> None:
+        """Synchronous DB write for a previously created user message.
+
+        Designed to be called via ``asyncio.to_thread`` so the DB write
+        does not block the UI.  Errors are logged but do not crash.
+        """
+        try:
+            self._db.add_message_from_model(msg)
+        except Exception:
+            logger.exception("Failed to persist user message %s to DB", msg.id)
 
     async def send_to_claude(
         self,
@@ -195,195 +220,208 @@ class StreamHandler:
             prompt: The text prompt to send.
             images: Optional list of PendingImage objects to send as multimodal content.
         """
-        session = self._state.current_session
-        claude = self._state.get_service("claude_service")
-        if not session or not claude:
-            from misaka.i18n import t
-            classified = ErrorClassifier.classify_error_string("Claude service unavailable")
-            self._state.error_message = ErrorClassifier.format_user_message(classified, translate=t)
-            self.reset_stream_state()
-            self._ui_refresh()
-            return
+        with perf_timer("send_to_claude_total", 1.0):
+            # Async DB write for the user message (optimistic UI already shown)
+            pending = self._pending_user_msg
+            if pending is not None:
+                self._pending_user_msg = None
+                await asyncio.to_thread(self._persist_user_message_to_db, pending)
 
-        ctx = _StreamContext(
-            session_id=session.id,
-            generation=self._stream_generation,
-        )
-        self._active_ctx = ctx
-
-        result_usage: dict[str, Any] | None = None
-        result_sdk_session_id: str | None = None
-        stream_error: str | None = None
-
-        def _append_thinking_to_ctx(text: str) -> None:
-            """Append thinking text to the context's block list."""
-            if ctx.blocks and isinstance(ctx.blocks[-1], StreamingThinkingBlock):
-                ctx.blocks[-1].thinking += text
-                return
-            ctx.blocks.append(StreamingThinkingBlock(thinking=text))
-
-        def _append_text_to_ctx(text: str) -> None:
-            """Append text to the context's block list."""
-            if not ctx.blocks:
-                ctx.blocks.append(StreamingTextBlock())
-            last = ctx.blocks[-1]
-            if isinstance(last, StreamingTextBlock):
-                last.text += text
-                return
-            ctx.blocks.append(StreamingTextBlock(text=text))
-
-        def _append_tool_use_to_ctx(payload: dict) -> None:
-            ctx.blocks.append(
-                StreamingToolUseBlock(
-                    id=payload.get("id", ""),
-                    name=payload.get("name", ""),
-                    input=payload.get("input", {}) or {},
+            session = self._state.current_session
+            claude = self._state.get_service("claude_service")
+            if not session or not claude:
+                from misaka.i18n import t
+                classified = ErrorClassifier.classify_error_string("Claude service unavailable")
+                self._state.error_message = ErrorClassifier.format_user_message(
+                    classified, translate=t
                 )
-            )
+                self.reset_stream_state()
+                self._ui_refresh()
+                return
 
-        def _append_tool_result_to_ctx(payload: dict) -> None:
-            tool_id = payload.get("tool_use_id", "")
-            for block in reversed(ctx.blocks):
-                if isinstance(block, StreamingToolUseBlock) and block.id == tool_id:
-                    block.output = payload.get("content", "")
-                    block.is_error = bool(payload.get("is_error"))
+            ctx = _StreamContext(
+                session_id=session.id,
+                generation=self._stream_generation,
+            )
+            self._active_ctx = ctx
+
+            result_usage: dict[str, Any] | None = None
+            result_sdk_session_id: str | None = None
+            stream_error: str | None = None
+
+            def _append_thinking_to_ctx(text: str) -> None:
+                """Append thinking text to the context's block list."""
+                if ctx.blocks and isinstance(ctx.blocks[-1], StreamingThinkingBlock):
+                    ctx.blocks[-1].thinking_parts.append(text)
                     return
+                ctx.blocks.append(StreamingThinkingBlock(thinking_parts=[text]))
 
-        def on_text(text: str) -> None:
-            if self._is_current_foreground_ctx(ctx):
-                self._append_stream_text(text)
-                self._throttled_ui_refresh()
-            _append_text_to_ctx(text)
+            def _append_text_to_ctx(text: str) -> None:
+                """Append text to the context's block list."""
+                if not ctx.blocks:
+                    ctx.blocks.append(StreamingTextBlock())
+                last = ctx.blocks[-1]
+                if isinstance(last, StreamingTextBlock):
+                    last.text_parts.append(text)
+                    return
+                ctx.blocks.append(StreamingTextBlock(text_parts=[text]))
 
-        def on_thinking(text: str) -> None:
-            if self._is_current_foreground_ctx(ctx):
-                self._append_stream_thinking(text)
-                self._throttled_ui_refresh()
-            _append_thinking_to_ctx(text)
-
-        def on_tool_use(payload: dict) -> None:
-            if self._is_current_foreground_ctx(ctx):
-                self._append_tool_use(payload)
-                self._ui_refresh()
-            _append_tool_use_to_ctx(payload)
-
-        def on_tool_result(payload: dict) -> None:
-            if self._is_current_foreground_ctx(ctx):
-                self._append_tool_result(payload)
-                self._ui_refresh()
-            _append_tool_result_to_ctx(payload)
-
-        def on_result(payload: dict) -> None:
-            nonlocal result_usage, result_sdk_session_id
-            result_usage = payload.get("usage")
-            result_sdk_session_id = payload.get("session_id") or None
-
-        def on_status(payload: dict) -> None:
-            nonlocal result_sdk_session_id
-            if payload.get("subtype") == "init":
-                result_sdk_session_id = (
-                    payload.get("session_id") or result_sdk_session_id
+            def _append_tool_use_to_ctx(payload: dict) -> None:
+                ctx.blocks.append(
+                    StreamingToolUseBlock(
+                        id=payload.get("id", ""),
+                        name=payload.get("name", ""),
+                        input=payload.get("input", {}) or {},
+                    )
                 )
 
-        def on_error(message: str) -> None:
-            nonlocal stream_error
-            stream_error = message
+            def _append_tool_result_to_ctx(payload: dict) -> None:
+                tool_id = payload.get("tool_use_id", "")
+                for block in reversed(ctx.blocks):
+                    if isinstance(block, StreamingToolUseBlock) and block.id == tool_id:
+                        block.output = payload.get("content", "")
+                        block.is_error = bool(payload.get("is_error"))
+                        return
 
-        def on_permission_request(payload: dict) -> None:
-            if not self._is_current_foreground_ctx(ctx):
-                # Auto-deny permissions when running in background
-                perm_svc = self._state.get_service("permission_service")
-                perm_id = payload.get("permission_id", "")
-                if perm_svc:
-                    perm_svc.resolve(perm_id, {
-                        "behavior": "deny",
-                        "message": "Auto-denied: session is running in background",
-                    })
-                notif_svc = self._state.get_service("notification_service")
-                if notif_svc:
-                    from misaka.i18n import t as _t
-                    notif_svc.publish(
-                        type="warning",
-                        title=_t("notifications.permission_denied"),
-                        message=payload.get("tool_name", ""),
-                        source="permission",
-                        session_id=ctx.session_id,
+            def on_text(text: str) -> None:
+                if self._is_current_foreground_ctx(ctx):
+                    self._append_stream_text(text)
+                    self._throttled_ui_refresh()
+                else:
+                    _append_text_to_ctx(text)
+
+            def on_thinking(text: str) -> None:
+                if self._is_current_foreground_ctx(ctx):
+                    self._append_stream_thinking(text)
+                    self._throttled_ui_refresh()
+                else:
+                    _append_thinking_to_ctx(text)
+
+            def on_tool_use(payload: dict) -> None:
+                if self._is_current_foreground_ctx(ctx):
+                    self._append_tool_use(payload)
+                    self._ui_refresh()
+                else:
+                    _append_tool_use_to_ctx(payload)
+
+            def on_tool_result(payload: dict) -> None:
+                if self._is_current_foreground_ctx(ctx):
+                    self._append_tool_result(payload)
+                    self._ui_refresh()
+                else:
+                    _append_tool_result_to_ctx(payload)
+
+            def on_result(payload: dict) -> None:
+                nonlocal result_usage, result_sdk_session_id
+                result_usage = payload.get("usage")
+                result_sdk_session_id = payload.get("session_id") or None
+
+            def on_status(payload: dict) -> None:
+                nonlocal result_sdk_session_id
+                if payload.get("subtype") == "init":
+                    result_sdk_session_id = (
+                        payload.get("session_id") or result_sdk_session_id
                     )
-                return
-            self._state.pending_permission = PermissionRequest(
-                id=payload.get("permission_id", ""),
-                tool_name=payload.get("tool_name", ""),
-                tool_input=payload.get("tool_input", {}) or {},
-                suggestions=payload.get("suggestions"),
-                decision_reason=payload.get("decision_reason"),
+
+            def on_error(message: str) -> None:
+                nonlocal stream_error
+                stream_error = message
+
+            def on_permission_request(payload: dict) -> None:
+                if not self._is_current_foreground_ctx(ctx):
+                    # Auto-deny permissions when running in background
+                    perm_svc = self._state.get_service("permission_service")
+                    perm_id = payload.get("permission_id", "")
+                    if perm_svc:
+                        perm_svc.resolve(perm_id, {
+                            "behavior": "deny",
+                            "message": "Auto-denied: session is running in background",
+                        })
+                    notif_svc = self._state.get_service("notification_service")
+                    if notif_svc:
+                        from misaka.i18n import t as _t
+                        notif_svc.publish(
+                            type="warning",
+                            title=_t("notifications.permission_denied"),
+                            message=payload.get("tool_name", ""),
+                            source="permission",
+                            session_id=ctx.session_id,
+                        )
+                    return
+                self._state.pending_permission = PermissionRequest(
+                    id=payload.get("permission_id", ""),
+                    tool_name=payload.get("tool_name", ""),
+                    tool_input=payload.get("tool_input", {}) or {},
+                    suggestions=payload.get("suggestions"),
+                    decision_reason=payload.get("decision_reason"),
+                )
+                self._ui_refresh()
+
+            # Build multimodal content if images are present
+            if images:
+                content_blocks: list[dict] = []
+                # Add images first - encode as base64
+                image_service = self._state.get_service("image_service")
+                for img in images:
+                    base64_data = None
+                    if image_service:
+                        base64_data = image_service.get_image_base64(img.temp_path)
+                    if base64_data:
+                        content_blocks.append({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": img.mime_type,
+                                "data": base64_data,
+                            },
+                        })
+                # Add text block
+                if prompt:
+                    content_blocks.append({"type": "text", "text": prompt})
+                message_content: str | list[dict] = content_blocks
+            else:
+                message_content = prompt
+
+            await claude.send_message(
+                session_id=session.id,
+                prompt=message_content,
+                model=session.model or None,
+                system_prompt=session.system_prompt or None,
+                working_directory=session.working_directory or None,
+                sdk_session_id=session.sdk_session_id or None,
+                mcp_servers=self._state.mcp_servers_sdk or None,
+                session_mode=session.mode or "agent",
+                permission_mode=self._get_global_permission_mode(),
+                should_auto_allow=self._make_should_auto_allow(
+                    self._get_global_permission_mode(),
+                    session.mode or "agent",
+                ),
+                on_text=on_text,
+                on_thinking=on_thinking,
+                on_tool_use=on_tool_use,
+                on_tool_result=on_tool_result,
+                on_status=on_status,
+                on_result=on_result,
+                on_error=on_error,
+                on_permission_request=on_permission_request,
             )
-            self._ui_refresh()
 
-        # Build multimodal content if images are present
-        if images:
-            content_blocks: list[dict] = []
-            # Add images first - encode as base64
-            image_service = self._state.get_service("image_service")
-            for img in images:
-                base64_data = None
-                if image_service:
-                    base64_data = image_service.get_image_base64(img.temp_path)
-                if base64_data:
-                    content_blocks.append({
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": img.mime_type,
-                            "data": base64_data,
-                        },
-                    })
-            # Add text block
-            if prompt:
-                content_blocks.append({"type": "text", "text": prompt})
-            message_content: str | list[dict] = content_blocks
-        else:
-            message_content = prompt
+            # Clean up active context reference
+            if self._active_ctx is ctx:
+                self._active_ctx = None
 
-        await claude.send_message(
-            session_id=session.id,
-            prompt=message_content,
-            model=session.model or None,
-            system_prompt=session.system_prompt or None,
-            working_directory=session.working_directory or None,
-            sdk_session_id=session.sdk_session_id or None,
-            mcp_servers=self._state.mcp_servers_sdk or None,
-            session_mode=session.mode or "agent",
-            permission_mode=self._get_global_permission_mode(),
-            should_auto_allow=self._make_should_auto_allow(
-                self._get_global_permission_mode(),
-                session.mode or "agent",
-            ),
-            on_text=on_text,
-            on_thinking=on_thinking,
-            on_tool_use=on_tool_use,
-            on_tool_result=on_tool_result,
-            on_status=on_status,
-            on_result=on_result,
-            on_error=on_error,
-            on_permission_request=on_permission_request,
-        )
-
-        # Clean up active context reference
-        if self._active_ctx is ctx:
-            self._active_ctx = None
-
-        if self._is_current_foreground_ctx(ctx):
-            self._finalize_stream(
-                session, result_usage, result_sdk_session_id, stream_error,
-            )
-        elif not ctx.is_foreground and not ctx.cancelled:
-            # Stream finished in background — finalize without touching foreground UI
-            self._detached_contexts.pop(ctx.session_id, None)
-            self._finalize_background(
-                ctx, session, result_usage, result_sdk_session_id, stream_error,
-            )
-        else:
-            self._detached_contexts.pop(ctx.session_id, None)
+            if self._is_current_foreground_ctx(ctx):
+                self._finalize_stream(
+                    session, result_usage, result_sdk_session_id, stream_error,
+                )
+            elif not ctx.is_foreground and not ctx.cancelled:
+                # Stream finished in background — finalize without touching foreground UI
+                self._detached_contexts.pop(ctx.session_id, None)
+                self._finalize_background(
+                    ctx, session, result_usage, result_sdk_session_id, stream_error,
+                )
+            else:
+                self._detached_contexts.pop(ctx.session_id, None)
 
     async def abort_claude(self) -> None:
         await self.abort_claude_with_options()
@@ -547,18 +585,18 @@ class StreamHandler:
     def _append_stream_thinking(self, text: str) -> None:
         blocks = self._state.streaming_blocks
         if blocks and isinstance(blocks[-1], StreamingThinkingBlock):
-            blocks[-1].thinking += text
+            blocks[-1].thinking_parts.append(text)
             return
-        blocks.append(StreamingThinkingBlock(thinking=text))
+        blocks.append(StreamingThinkingBlock(thinking_parts=[text]))
 
     def _append_stream_text(self, text: str) -> None:
         if not self._state.streaming_blocks:
             self._state.streaming_blocks.append(StreamingTextBlock())
         last = self._state.streaming_blocks[-1]
         if isinstance(last, StreamingTextBlock):
-            last.text += text
+            last.text_parts.append(text)
             return
-        self._state.streaming_blocks.append(StreamingTextBlock(text=text))
+        self._state.streaming_blocks.append(StreamingTextBlock(text_parts=[text]))
 
     def _append_tool_use(self, payload: dict) -> None:
         self._state.streaming_blocks.append(
@@ -632,14 +670,19 @@ class StreamHandler:
         result_sdk_session_id: str | None,
         stream_error: str | None,
     ) -> None:
-        active_sdk_id = result_sdk_session_id or session.sdk_session_id or None
-        self._persist_assistant_message(session, result_usage)
-        self._update_sdk_session(session, result_sdk_session_id)
-        self._maybe_sync_session_title(session, active_sdk_id)
-        if stream_error:
-            self._state.error_message = stream_error
-        self.reset_stream_state()
-        self._ui_refresh()
+        with perf_timer("stream_finalize", 1.0):
+            active_sdk_id = result_sdk_session_id or session.sdk_session_id or None
+            with self._db.transaction():
+                self._persist_assistant_message(session, result_usage)
+                self._update_sdk_session(session, result_sdk_session_id)
+                self._maybe_sync_session_title(session, active_sdk_id)
+            if stream_error:
+                self._state.error_message = stream_error
+            self.reset_stream_state()
+            self._ui_refresh()
+            # Finalize refresh for components that only need updating when streaming ends
+            if self._ui_refresh_finalize:
+                self._ui_refresh_finalize()
 
     def _finalize_background(
         self,
