@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
+from misaka.utils.perf import perf_timer
 from misaka.ui.chat.components.message_item import MessageItem
 from misaka.ui.chat.components.permission_card import PermissionCard
 from misaka.ui.chat.components.streaming_message import StreamingMessage
@@ -189,20 +190,21 @@ class MessageList(ft.Column):
         auto_scroll: bool = False,
         anchor_key: str | None = None,
     ) -> None:
-        with contextlib.suppress(Exception):
-            self._list_view.update()
-        if auto_scroll:
+        with perf_timer("list_view_update", 1.0):
             with contextlib.suppress(Exception):
-                self._list_view.scroll_to(offset=-1, duration=0)
-        if anchor_key:
-            with contextlib.suppress(Exception):
-                self._list_view.scroll_to(key=anchor_key, duration=0)
-        try:
-            if self._empty_view.page:
+                self._list_view.update()
+            if auto_scroll:
                 with contextlib.suppress(Exception):
-                    self._empty_view.update()
-        except RuntimeError:
-            pass
+                    self._list_view.scroll_to(offset=-1, duration=0)
+            if anchor_key:
+                with contextlib.suppress(Exception):
+                    self._list_view.scroll_to(key=anchor_key, duration=0)
+            try:
+                if self._empty_view.page:
+                    with contextlib.suppress(Exception):
+                        self._empty_view.update()
+            except RuntimeError:
+                pass
 
     def _build_permission_card(self) -> PermissionCard | None:
         if not (

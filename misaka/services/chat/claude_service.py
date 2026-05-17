@@ -27,6 +27,7 @@ from misaka.db.database import DatabaseBackend
 from misaka.errors import ErrorClassifier
 from misaka.services.chat.permission_service import PermissionService
 from misaka.services.common.claude_env_builder import build_claude_env
+from misaka.utils.perf import perf_timer
 from misaka.utils.platform import find_claude_sdk_binary
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,8 @@ class ClaudeService:
 
     def _build_env(self) -> dict[str, str]:
         """Build the subprocess environment for the Claude CLI."""
-        return build_claude_env(self._db)
+        with perf_timer("env_build", 1.0):
+            return build_claude_env(self._db)
 
     def _build_options(
         self,
@@ -122,66 +124,67 @@ class ClaudeService:
         """
         from claude_agent_sdk import ClaudeAgentOptions
 
-        cwd = working_directory or str(Path.home())
-        env = self._build_env()
+        with perf_timer("options_build", 1.0):
+            cwd = working_directory or str(Path.home())
+            env = self._build_env()
 
-        # Check for bypass permissions setting
-        skip_permissions = self._db.get_setting(SettingKeys.DANGEROUSLY_SKIP_PERMISSIONS) == "true"
+            # Check for bypass permissions setting
+            skip_permissions = self._db.get_setting(SettingKeys.DANGEROUSLY_SKIP_PERMISSIONS) == "true"
 
-        # Determine final SDK permission_mode and disallowed_tools based on session_mode
-        final_permission_mode: str
-        final_disallowed_tools: list[str] | None = None
-        final_can_use_tool: Any = None
+            # Determine final SDK permission_mode and disallowed_tools based on session_mode
+            final_permission_mode: str
+            final_disallowed_tools: list[str] | None = None
+            final_can_use_tool: Any = None
 
-        if skip_permissions:
-            final_permission_mode = "bypassPermissions"
-        elif session_mode == "plan":
-            # Plan mode: SDK native, no tool execution
-            final_permission_mode = "plan"
-        elif session_mode == "ask":
-            # Ask mode: read-only, disallow write tools
-            final_permission_mode = "default"
-            final_disallowed_tools = ["Write", "Edit", "Bash"]
-            final_can_use_tool = can_use_tool
-        else:
-            # Agent mode: use permission_mode setting
-            final_permission_mode = permission_mode
-            final_can_use_tool = can_use_tool
+            if skip_permissions:
+                final_permission_mode = "bypassPermissions"
+            elif session_mode == "plan":
+                # Plan mode: SDK native, no tool execution
+                final_permission_mode = "plan"
+            elif session_mode == "ask":
+                # Ask mode: read-only, disallow write tools
+                final_permission_mode = "default"
+                final_disallowed_tools = ["Write", "Edit", "Bash"]
+                final_can_use_tool = can_use_tool
+            else:
+                # Agent mode: use permission_mode setting
+                final_permission_mode = permission_mode
+                final_can_use_tool = can_use_tool
 
-        options = ClaudeAgentOptions(
-            cwd=cwd,
-            system_prompt=system_prompt,
-            permission_mode=final_permission_mode,
-            env=env,
-            allowed_tools=[],  # Empty to let permission_mode handle access
-            include_partial_messages=True,
-            can_use_tool=final_can_use_tool,
-            disallowed_tools=final_disallowed_tools,
-            stderr=lambda line: logger.warning("[Claude CLI stderr] %s", line),
-        )
+            options = ClaudeAgentOptions(
+                cwd=cwd,
+                system_prompt=system_prompt,
+                permission_mode=final_permission_mode,
+                env=env,
+                allowed_tools=[],  # Empty to let permission_mode handle access
+                include_partial_messages=True,
+                can_use_tool=final_can_use_tool,
+                disallowed_tools=final_disallowed_tools,
+                stderr=lambda line: logger.warning("[Claude CLI stderr] %s", line),
+            )
 
-        if skip_permissions:
-            options.allow_dangerously_skip_permissions = True
+            if skip_permissions:
+                options.allow_dangerously_skip_permissions = True
 
-        # Resume existing session
-        if sdk_session_id:
-            options.resume = sdk_session_id
+            # Resume existing session
+            if sdk_session_id:
+                options.resume = sdk_session_id
 
-        if model:
-            options.model = model
+            if model:
+                options.model = model
 
-        if mcp_servers:
-            options.mcp_servers = mcp_servers
+            if mcp_servers:
+                options.mcp_servers = mcp_servers
 
-        # Find Claude binary path
-        claude_path = find_claude_sdk_binary()
-        if claude_path:
-            # SDK transport executes cli_path directly as a process.
-            # On Windows, passing a resolved .js path causes WinError 193.
-            # Keep the actual executable/wrapper path (e.g. claude.cmd / claude.exe).
-            options.cli_path = claude_path
+            # Find Claude binary path
+            claude_path = find_claude_sdk_binary()
+            if claude_path:
+                # SDK transport executes cli_path directly as a process.
+                # On Windows, passing a resolved .js path causes WinError 193.
+                # Keep the actual executable/wrapper path (e.g. claude.cmd / claude.exe).
+                options.cli_path = claude_path
 
-        return options
+            return options
 
     async def send_message(
         self,

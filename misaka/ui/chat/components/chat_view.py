@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.i18n import t
+from misaka.utils.perf import perf_timer
 from misaka.ui.chat.components.message_input import MessageInput
 from misaka.ui.chat.components.message_list import MessageList
 from misaka.ui.chat.components.token_usage_bar import TokenUsageBar
@@ -449,13 +450,14 @@ class ChatView(ft.Column):
 
     def refresh_messages_minimal(self, new_message: Message) -> None:
         """Lightweight update on send: append only the new user message."""
-        if self._message_list:
-            self._message_list.append_message(new_message)
-        if self._message_input:
-            self._message_input.refresh()
-        if self._connection_status:
-            self._connection_status.set_status(is_streaming=self.state.is_streaming)
-        self._refresh_error_banner()
+        with perf_timer("refresh_minimal", 1.0):
+            if self._message_list:
+                self._message_list.append_message(new_message)
+            if self._message_input:
+                self._message_input.refresh()
+            if self._connection_status:
+                self._connection_status.set_status(is_streaming=self.state.is_streaming)
+            self._refresh_error_banner()
 
     def prepend_older_messages(self, older_messages: list[Message]) -> None:
         """Insert older history at the top without rebuilding the list."""
@@ -487,14 +489,15 @@ class ChatView(ft.Column):
         Used during streaming deltas and when stream completes, so the
         send button correctly reverts from stop (red) to send (primary).
         """
-        if self._message_list:
-            self._message_list.refresh_streaming()
-        if self._message_input:
-            self._message_input.refresh()
-        if self._connection_status:
-            self._connection_status.set_status(is_streaming=self.state.is_streaming)
-        if self._token_usage_bar:
-            self._token_usage_bar.refresh()
+        with perf_timer("chat_view_streaming_refresh", 1.0):
+            if self._message_list:
+                self._message_list.refresh_streaming()
+            if self._message_input:
+                self._message_input.refresh()
+            if self._connection_status:
+                self._connection_status.set_status(is_streaming=self.state.is_streaming)
+            if self._token_usage_bar:
+                self._token_usage_bar.refresh()
 
     def insert_file_path(self, path: str) -> None:
         """Insert a file path into the message input field."""
