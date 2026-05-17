@@ -393,6 +393,8 @@ class MessageList(ft.Column):
         if self._was_streaming and not self.state.is_streaming:
             self._was_streaming = False
             controls = self._list_view.controls
+            # Finalize rendering: replace lightweight ft.Text with ft.Markdown
+            self._streaming_msg.finalize_render()
             if self._streaming_msg in controls:
                 controls.remove(self._streaming_msg)
             self._sync_permission_card()
