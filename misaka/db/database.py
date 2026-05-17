@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Generator
 
 from misaka.db.models import (
     ChatSession,
@@ -42,6 +42,23 @@ class DatabaseBackend(ABC):
     @abstractmethod
     def close(self) -> None:
         """Close the database connection gracefully."""
+
+    # ----- Transactions -----
+
+    @abstractmethod
+    def transaction(self) -> Generator[None, None, None]:
+        """Context manager for batching multiple operations in a single transaction.
+
+        Usage::
+
+            with db.transaction():
+                db.update_session_title(...)
+                db.update_sdk_session_id(...)
+                db.add_message(...)
+
+        All operations inside the block are committed atomically at exit.
+        On exception the transaction is rolled back.
+        """
 
     # ----- Sessions -----
 

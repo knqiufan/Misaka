@@ -285,25 +285,29 @@ class StreamHandler:
                 if self._is_current_foreground_ctx(ctx):
                     self._append_stream_text(text)
                     self._throttled_ui_refresh()
-                _append_text_to_ctx(text)
+                else:
+                    _append_text_to_ctx(text)
 
             def on_thinking(text: str) -> None:
                 if self._is_current_foreground_ctx(ctx):
                     self._append_stream_thinking(text)
                     self._throttled_ui_refresh()
-                _append_thinking_to_ctx(text)
+                else:
+                    _append_thinking_to_ctx(text)
 
             def on_tool_use(payload: dict) -> None:
                 if self._is_current_foreground_ctx(ctx):
                     self._append_tool_use(payload)
                     self._ui_refresh()
-                _append_tool_use_to_ctx(payload)
+                else:
+                    _append_tool_use_to_ctx(payload)
 
             def on_tool_result(payload: dict) -> None:
                 if self._is_current_foreground_ctx(ctx):
                     self._append_tool_result(payload)
                     self._ui_refresh()
-                _append_tool_result_to_ctx(payload)
+                else:
+                    _append_tool_result_to_ctx(payload)
 
             def on_result(payload: dict) -> None:
                 nonlocal result_usage, result_sdk_session_id
@@ -666,9 +670,10 @@ class StreamHandler:
     ) -> None:
         with perf_timer("stream_finalize", 1.0):
             active_sdk_id = result_sdk_session_id or session.sdk_session_id or None
-            self._persist_assistant_message(session, result_usage)
-            self._update_sdk_session(session, result_sdk_session_id)
-            self._maybe_sync_session_title(session, active_sdk_id)
+            with self._db.transaction():
+                self._persist_assistant_message(session, result_usage)
+                self._update_sdk_session(session, result_sdk_session_id)
+                self._maybe_sync_session_title(session, active_sdk_id)
             if stream_error:
                 self._state.error_message = stream_error
             self.reset_stream_state()

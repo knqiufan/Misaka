@@ -1188,7 +1188,7 @@ class ChatPage(ft.Stack):
 
     def _on_title_changed(self) -> None:
         """Called by StreamHandler when the session title is auto-synced."""
-        if self._chat_list:
-            self._chat_list.refresh()
+        if self._chat_list and self.state.current_session_id:
+            self._chat_list.update_session_item(self.state.current_session_id)
         if self._chat_view:
             self._chat_view.refresh_header_only()

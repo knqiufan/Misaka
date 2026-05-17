@@ -633,6 +633,31 @@ class ChatList(ft.Column):
             with contextlib.suppress(Exception):
                 self._session_list.update()
 
+    def update_session_item(self, session_id: str) -> None:
+        """Update a single session item in-place without full rebuild.
+
+        Used when a session title is synced — avoids rebuilding all list
+        items when only one changed.
+        """
+        # Find the session data in state
+        session = next(
+            (s for s in self.state.sessions if s.id == session_id), None,
+        )
+        if not session or not self._session_list:
+            return
+
+        # Find and update only the matching item in the list view
+        new_item = self._build_session_item(session)
+        for i, ctrl in enumerate(self._session_list.controls):
+            # Session items are stored as GestureDetector wrapping a Container
+            cached = self._item_cache.get(session_id)
+            if cached is not None and ctrl is cached:
+                self._session_list.controls[i] = new_item
+                self._item_cache[session_id] = new_item
+                with contextlib.suppress(Exception):
+                    self._session_list.update()
+                return
+
     def _update_dots_only(self) -> None:
         """Update only the opacity of existing status dots without rebuilding the list.
 
