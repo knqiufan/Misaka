@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import flet as ft
 
+from misaka.config import KNOWLEDGE_BASE_UI_ENABLED
 from misaka.i18n import t
 from misaka.ui.common.theme import make_icon_button
 
@@ -200,6 +201,7 @@ def build_nav_rail(
     nav_items = [
         _build_nav_item(item, item["page"] == current_page, handle_click)
         for item in _NAV_ITEMS
+        if KNOWLEDGE_BASE_UI_ENABLED or item["page"] != "knowledge"
     ]
 
     notif_btn = _build_notification_bell(state, on_bell_click)

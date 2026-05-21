@@ -158,3 +158,11 @@ def get_expanded_path() -> str:
             parts.append(p)
             seen.add(p)
     return os.pathsep.join(parts)
+
+
+# ---------------------------------------------------------------------------
+# UI feature flags (temporary toggles; do not remove underlying code)
+# ---------------------------------------------------------------------------
+
+KNOWLEDGE_BASE_UI_ENABLED: bool = False
+"""Show knowledge base nav item and chat KB selector. Set True to re-enable."""
