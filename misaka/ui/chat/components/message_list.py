@@ -7,6 +7,7 @@ with auto-scroll to bottom on new messages and "load earlier" pagination.
 from __future__ import annotations
 
 import contextlib
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -56,6 +57,8 @@ class MessageList(ft.Column):
         self._was_streaming: bool = False
         self._model_display_name: str = "Claude"
         self._last_session_id_for_model: str | None = None
+        self._last_scroll_time: float = 0.0
+        self._scroll_throttle_sec: float = 0.1
         self._empty_view = self._build_empty_state()
         self._build_ui()
 
@@ -194,6 +197,52 @@ class MessageList(ft.Column):
             items.append(permission_card)
         return items
 
+    def _get_page(self) -> ft.Page | None:
+        """Return the Flet page when attached, else None."""
+        page = getattr(self.state, "page", None)
+        if page is not None:
+            return page
+        with contextlib.suppress(RuntimeError):
+            return self.page
+        return None
+
+    async def _scroll_list_to_bottom(self) -> None:
+        """Scroll the list view to the latest content (Flet 0.80+ async API)."""
+        if not self._list_view.page:
+            return
+        with contextlib.suppress(Exception):
+            await self._list_view.scroll_to(offset=-1, duration=0)
+
+    async def _scroll_list_to_anchor(self, anchor_key: str) -> None:
+        """Restore scroll position to a message after prepending history."""
+        if not self._list_view.page:
+            return
+        with contextlib.suppress(Exception):
+            await self._list_view.scroll_to(scroll_key=anchor_key, duration=0)
+
+    def _schedule_list_scroll(
+        self,
+        *,
+        scroll_to_bottom: bool = False,
+        anchor_key: str | None = None,
+        throttle_bottom: bool = False,
+    ) -> None:
+        """Schedule async list scrolling via the page event loop."""
+        page = self._get_page()
+        if page is None:
+            return
+        if anchor_key:
+            page.run_task(self._scroll_list_to_anchor, anchor_key)
+            return
+        if not scroll_to_bottom:
+            return
+        if throttle_bottom:
+            now = time.monotonic()
+            if now - self._last_scroll_time < self._scroll_throttle_sec:
+                return
+            self._last_scroll_time = now
+        page.run_task(self._scroll_list_to_bottom)
+
     def _update_list_view(
         self,
         *,
@@ -205,11 +254,12 @@ class MessageList(ft.Column):
             with contextlib.suppress(Exception):
                 self._list_view.update()
             if auto_scroll and content_grew:
-                with contextlib.suppress(Exception):
-                    self._list_view.scroll_to(offset=-1, duration=0)
+                self._schedule_list_scroll(
+                    scroll_to_bottom=True,
+                    throttle_bottom=self.state.is_streaming,
+                )
             if anchor_key:
-                with contextlib.suppress(Exception):
-                    self._list_view.scroll_to(key=anchor_key, duration=0)
+                self._schedule_list_scroll(anchor_key=anchor_key)
             try:
                 if self._empty_view.page:
                     with contextlib.suppress(Exception):
