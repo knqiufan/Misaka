@@ -61,8 +61,8 @@ def show_document_viewer(state: AppState, doc_id: str) -> None:
 
     copy_btn_text = ft.Text(t("kb.doc_viewer_copy"), size=11)
 
-    def _on_copy(_: ft.ControlEvent) -> None:
-        page.set_clipboard(content_text)
+    async def _on_copy(_: ft.ControlEvent) -> None:
+        await ft.Clipboard().set(content_text)
         copy_btn_text.value = t("kb.doc_viewer_copied")
         copy_btn_text.update()
 

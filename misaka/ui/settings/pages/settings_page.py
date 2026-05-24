@@ -916,7 +916,7 @@ class SettingsPage(ft.Column):
         if page:
             show_snackbar(page, t("settings.log_viewer_cleared"))
 
-    def _handle_copy_logs(self, e: ft.ControlEvent) -> None:
+    async def _handle_copy_logs(self, e: ft.ControlEvent) -> None:
         page = e.page
         if not page:
             return
@@ -925,7 +925,7 @@ class SettingsPage(ft.Column):
         level_filter = None if selected_level == "All" else selected_level
         entries = handler.get_entries(level_filter=level_filter)
         text = "\n".join(entry.format_line() for entry in entries)
-        page.set_clipboard(text)
+        await ft.Clipboard().set(text)
         show_snackbar(page, t("settings.log_viewer_copied"))
 
     # ------------------------------------------------------------------
