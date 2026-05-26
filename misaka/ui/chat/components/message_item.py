@@ -21,9 +21,18 @@ from misaka.db.models import KBSearchResult, Message, MessageContentBlock
 from misaka.i18n import t
 from misaka.ui.chat.components.code_block import CodeBlock
 from misaka.ui.chat.components.image_block import ImageBlock
-from misaka.ui.chat.components.subagent_block import SubAgentBlock
+from misaka.ui.chat.components.message_tool_envelope import (
+    MessageToolEnvelope,
+    compute_tool_type_summary,
+)
 from misaka.ui.chat.components.tool_call_block import ToolCallBlock
-from misaka.ui.chat.components.tool_group_block import ToolCallInfo, ToolGroupBlock
+from misaka.ui.chat.components.tool_rendering import (
+    MESSAGE_TOOL_ENVELOPE_MIN,
+    build_result_map,
+    make_result_resolver,
+    render_tool_segment,
+    segment_assistant_blocks,
+)
 from misaka.ui.common.theme import MONO_FONT_FAMILY, RADIUS_LG, make_icon_button
 
 
@@ -490,44 +499,47 @@ class MessageItem(ft.Container):
         self, blocks: list[MessageContentBlock]
     ) -> list[ft.Control]:
         controls: list[ft.Control] = []
-        result_map: dict[str, MessageContentBlock] = {
-            b.tool_use_id: b
-            for b in blocks
-            if b.type == "tool_result" and b.tool_use_id
-        }
+        result_map = build_result_map(blocks)
         consumed_results: set[str] = set()
+        resolver = make_result_resolver(result_map)
+        segments = segment_assistant_blocks(blocks)
+        tool_buffer: list[ft.Control] = []
+        segment_tool_names: list[str] = []
 
-        # Collect blocks into segments: consecutive tool_use runs are grouped
-        segments: list[list[MessageContentBlock]] = []
-        current_tool_run: list[MessageContentBlock] = []
-
-        for block in blocks:
-            if block.type == "tool_use" and block.name:
-                current_tool_run.append(block)
+        def flush_tool_buffer() -> None:
+            if not tool_buffer:
+                return
+            region_count = len(segment_tool_names)
+            if region_count >= MESSAGE_TOOL_ENVELOPE_MIN:
+                controls.append(
+                    MessageToolEnvelope(
+                        tool_buffer,
+                        tool_count=region_count,
+                        type_summary=compute_tool_type_summary(segment_tool_names),
+                    )
+                )
             else:
-                if current_tool_run:
-                    segments.append(current_tool_run)
-                    current_tool_run = []
-                segments.append([block])
-
-        if current_tool_run:
-            segments.append(current_tool_run)
+                controls.extend(tool_buffer)
+            tool_buffer.clear()
+            segment_tool_names.clear()
 
         for segment in segments:
             if not segment:
                 continue
-
             first = segment[0]
-
-            # Segment of consecutive tool_use blocks
             if first.type == "tool_use" and first.name:
-                rendered = self._render_tool_segment(
-                    segment, result_map, consumed_results,
+                for block in segment:
+                    if block.name:
+                        segment_tool_names.append(block.name or "unknown")
+                tool_buffer.extend(
+                    render_tool_segment(
+                        segment, result_map, consumed_results,
+                        result_resolver=resolver,
+                    )
                 )
-                controls.extend(rendered)
                 continue
 
-            # Non-tool blocks (single block segments)
+            flush_tool_buffer()
             block = first
             if block.type == "interrupted":
                 controls.append(self._build_interrupted_banner())
@@ -541,18 +553,6 @@ class MessageItem(ft.Container):
                     ctrl = self._smart_render_text(text)
                     if ctrl:
                         controls.append(ctrl)
-            elif block.type == "tool_result":
-                if block.tool_use_id and block.tool_use_id in consumed_results:
-                    pass
-                else:
-                    controls.append(
-                        ToolCallBlock(
-                            tool_name="tool_result",
-                            tool_input=None,
-                            tool_output=block.content,
-                            is_error=block.is_error,
-                        )
-                    )
             elif block.type == "code" and block.code:
                 controls.append(
                     CodeBlock(code=block.code, language=block.language or "plaintext")
@@ -562,93 +562,22 @@ class MessageItem(ft.Container):
                     ImageBlock(block, on_click=self._handle_image_click)
                 )
 
-        return controls
+        flush_tool_buffer()
 
-    def _render_tool_segment(
-        self,
-        tool_blocks: list[MessageContentBlock],
-        result_map: dict[str, MessageContentBlock],
-        consumed_results: set[str],
-    ) -> list[ft.Control]:
-        """Render a consecutive sequence of tool_use blocks.
-
-        - SubAgent (Task) calls get their own SubAgentBlock
-        - Runs of 3+ non-SubAgent tools are collapsed into ToolGroupBlock
-        - Shorter runs render individual ToolCallBlocks
-        """
-        controls: list[ft.Control] = []
-        non_subagent_run: list[MessageContentBlock] = []
-
-        for block in tool_blocks:
-            is_subagent = block.name == "Task"
-
-            if is_subagent:
-                # Flush any accumulated non-subagent tools
-                if non_subagent_run:
-                    controls.extend(
-                        self._flush_tool_run(non_subagent_run, result_map, consumed_results)
-                    )
-                    non_subagent_run = []
-
-                # Render SubAgent block
-                result_block = result_map.get(block.id or "") if block.id else None
-                if block.id and result_block:
-                    consumed_results.add(block.id)
-                controls.append(
-                    SubAgentBlock(
-                        tool_input=block.input if isinstance(block.input, dict) else None,
-                        tool_output=result_block.content if result_block else None,
-                        is_error=result_block.is_error if result_block else False,
-                    )
-                )
-            else:
-                non_subagent_run.append(block)
-
-        # Flush remaining non-subagent tools
-        if non_subagent_run:
-            controls.extend(
-                self._flush_tool_run(non_subagent_run, result_map, consumed_results)
-            )
-
-        return controls
-
-    def _flush_tool_run(
-        self,
-        tool_blocks: list[MessageContentBlock],
-        result_map: dict[str, MessageContentBlock],
-        consumed_results: set[str],
-    ) -> list[ft.Control]:
-        """Render a run of non-SubAgent tool calls.
-
-        If 3+ consecutive, collapse into ToolGroupBlock; otherwise render individually.
-        """
-        if len(tool_blocks) >= 3:
-            tool_infos: list[ToolCallInfo] = []
-            for block in tool_blocks:
-                result_block = result_map.get(block.id or "") if block.id else None
-                if block.id and result_block:
-                    consumed_results.add(block.id)
-                tool_infos.append(ToolCallInfo(
-                    name=block.name or "unknown",
-                    tool_input=block.input if isinstance(block.input, dict) else None,
-                    result=result_block.content if result_block else None,
-                    is_error=result_block.is_error if result_block else False,
-                ))
-            return [ToolGroupBlock(tool_infos)]
-
-        controls: list[ft.Control] = []
-        for block in tool_blocks:
-            result_block = result_map.get(block.id or "") if block.id else None
-            if block.id and result_block:
-                consumed_results.add(block.id)
+        for block in blocks:
+            if block.type != "tool_result":
+                continue
+            if block.tool_use_id and block.tool_use_id in consumed_results:
+                continue
             controls.append(
                 ToolCallBlock(
-                    tool_name=block.name or "unknown",
-                    tool_input=block.input if isinstance(block.input, dict) else None,
-                    tool_output=result_block.content if result_block else None,
-                    is_error=result_block.is_error if result_block else False,
+                    tool_name="tool_result",
+                    tool_input=None,
+                    tool_output=block.content,
+                    is_error=block.is_error,
                 )
             )
+
         return controls
 
     def _smart_render_text(self, text: str) -> ft.Control | None:

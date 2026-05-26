@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import contextlib
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import flet as ft
 
 from misaka.i18n import t
 from misaka.ui.chat.components.tool_call_block import ToolCallBlock
+
+ResultResolver = Callable[[str], tuple[str | None, bool]]
 
 _TOOL_ICONS = {
     "Read": ft.Icons.DESCRIPTION_OUTLINED,
@@ -35,8 +38,9 @@ class ToolCallInfo:
 
     name: str
     tool_input: dict | None = None
-    result: str | None = None
+    tool_use_id: str | None = None
     is_error: bool = False
+    result: str | None = None
 
 
 class ToolGroupBlock(ft.Container):
@@ -47,16 +51,57 @@ class ToolGroupBlock(ft.Container):
     created when user explicitly requests detail view.
     """
 
-    def __init__(self, tools: list[ToolCallInfo]) -> None:
+    def __init__(
+        self,
+        tools: list[ToolCallInfo],
+        *,
+        result_resolver: ResultResolver | None = None,
+    ) -> None:
         super().__init__()
         self._tools = tools
+        self._result_resolver = result_resolver
         self._expanded = False
         self._detail_loaded = False
         self._detail_column: ft.Column | None = None
         self._stats_column: ft.Column | None = None
         self._chevron: ft.Icon | None = None
+        self._summary_detail: ft.Text | None = None
+        self._summary_status: ft.Text | None = None
         self._summary_text = self._compute_summary()
         self._build_ui()
+
+    def _resolve_tool_output(self, tool: ToolCallInfo) -> tuple[str | None, bool]:
+        if tool.result is not None:
+            return tool.result, tool.is_error
+        if self._result_resolver and tool.tool_use_id:
+            return self._result_resolver(tool.tool_use_id)
+        return None, tool.is_error
+
+    def update_tools(self, tools: list[ToolCallInfo]) -> None:
+        """Refresh summary after streaming adds more tools to the group."""
+        self._tools = tools
+        self._summary_text = self._compute_summary()
+        if self._summary_detail is not None:
+            self._summary_detail.value = self._summary_text
+        total = len(self._tools)
+        error_count = self._count_errors()
+        if self._summary_status is not None:
+            status_text = t("chat.tool_group_summary").format(count=total)
+            if error_count > 0:
+                status_text += f" ({error_count} " + t("chat.tool_group_errors") + ")"
+            self._summary_status.value = status_text
+        if self._detail_loaded and self._detail_column is not None:
+            self._detail_loaded = False
+            self._detail_column.controls = []
+            self._detail_column.visible = False
+        if self._stats_column is not None:
+            self._stats_column.controls = []
+        with contextlib.suppress(Exception):
+            if self._summary_detail:
+                self._summary_detail.update()
+            if self._summary_status:
+                self._summary_status.update()
+            self.update()
 
     def _compute_summary(self) -> str:
         """Compute a compact summary string like 'Read x3, Write x2'."""
@@ -82,6 +127,20 @@ class ToolGroupBlock(ft.Container):
         if error_count > 0:
             status_text += f" ({error_count} " + t("chat.tool_group_errors") + ")"
 
+        self._summary_status = ft.Text(
+            status_text,
+            size=12,
+            weight=ft.FontWeight.W_600,
+        )
+        self._summary_detail = ft.Text(
+            self._summary_text,
+            size=11,
+            opacity=0.4,
+            expand=True,
+            max_lines=1,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+
         summary_row = ft.Row(
             controls=[
                 ft.Icon(
@@ -90,19 +149,8 @@ class ToolGroupBlock(ft.Container):
                     color=ft.Colors.PRIMARY,
                     opacity=0.6,
                 ),
-                ft.Text(
-                    status_text,
-                    size=12,
-                    weight=ft.FontWeight.W_600,
-                ),
-                ft.Text(
-                    self._summary_text,
-                    size=11,
-                    opacity=0.4,
-                    expand=True,
-                    max_lines=1,
-                    overflow=ft.TextOverflow.ELLIPSIS,
-                ),
+                self._summary_status,
+                self._summary_detail,
                 self._chevron,
             ],
             spacing=8,
@@ -228,12 +276,13 @@ class ToolGroupBlock(ft.Container):
         self._detail_loaded = True
 
         for tool in self._tools:
+            output, is_err = self._resolve_tool_output(tool)
             self._detail_column.controls.append(
                 ToolCallBlock(
                     tool_name=tool.name,
                     tool_input=tool.tool_input,
-                    tool_output=tool.result,
-                    is_error=tool.is_error,
+                    tool_output=output,
+                    is_error=is_err,
                 )
             )
         self._detail_column.visible = True

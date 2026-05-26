@@ -6,6 +6,7 @@ to show input/output details on click.
 
 from __future__ import annotations
 
+import contextlib
 import json
 
 import flet as ft
@@ -54,8 +55,10 @@ class ToolCallBlock(ft.Container):
         self._tool_output = tool_output
         self._is_error = is_error
         self._expanded = initially_expanded
+        self._detail_built = False
         self._detail_container: ft.Container | None = None
         self._chevron: ft.Icon | None = None
+        self._status_dot: ft.Container | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -74,9 +77,12 @@ class ToolCallBlock(ft.Container):
             opacity=0.3,
         )
 
+        self._status_dot = ft.Container(
+            width=5, height=5, border_radius=3, bgcolor=status_color,
+        )
         summary_row = ft.Row(
             controls=[
-                ft.Container(width=5, height=5, border_radius=3, bgcolor=status_color),
+                self._status_dot,
                 ft.Icon(icon, size=14, color=ft.Colors.PRIMARY, opacity=0.6),
                 ft.Text(
                     self._tool_name,
@@ -97,12 +103,13 @@ class ToolCallBlock(ft.Container):
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-        detail_controls = self._build_detail_controls()
         self._detail_container = ft.Container(
-            content=ft.Column(controls=detail_controls, spacing=4, tight=True),
+            content=None,
             visible=self._expanded,
             padding=ft.Padding.only(left=26, right=8, top=4, bottom=6),
         )
+        if self._expanded:
+            self._ensure_detail_built()
 
         self.content = ft.Column(
             controls=[
@@ -198,8 +205,30 @@ class ToolCallBlock(ft.Container):
 
         return controls
 
+    def _ensure_detail_built(self) -> None:
+        """Build detail controls on first expand (lazy)."""
+        if self._detail_built or self._detail_container is None:
+            return
+        self._detail_built = True
+        detail_controls = self._build_detail_controls()
+        self._detail_container.content = ft.Column(
+            controls=detail_controls, spacing=4, tight=True,
+        )
+
+    def _refresh_status_dot(self) -> None:
+        if not self._status_dot:
+            return
+        status_color = (
+            _STATUS_COLORS["error"] if self._is_error
+            else _STATUS_COLORS["success"] if self._tool_output is not None
+            else _STATUS_COLORS["pending"]
+        )
+        self._status_dot.bgcolor = status_color
+
     def _toggle(self, e: ft.ControlEvent) -> None:
         self._expanded = not self._expanded
+        if self._expanded:
+            self._ensure_detail_built()
         if self._detail_container:
             self._detail_container.visible = self._expanded
             self._detail_container.update()
@@ -239,4 +268,15 @@ class ToolCallBlock(ft.Container):
     def update_output(self, output: str, is_error: bool = False) -> None:
         self._tool_output = output
         self._is_error = is_error
-        self._build_ui()
+        if self._detail_built:
+            self._detail_built = False
+            if self._detail_container:
+                self._detail_container.content = None
+            self._ensure_detail_built()
+            if self._detail_container:
+                with contextlib.suppress(Exception):
+                    self._detail_container.update()
+        self._refresh_status_dot()
+        if self._status_dot:
+            with contextlib.suppress(Exception):
+                self._status_dot.update()

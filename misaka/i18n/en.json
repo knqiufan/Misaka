@@ -114,7 +114,12 @@
     "subagent_result": "Result",
     "subagent_error": "Error",
     "subagent_running": "Running...",
-    "subagent_no_details": "No details"
+    "subagent_no_details": "No details",
+    "message_tools_summary": "{count} tool calls this turn",
+    "message_tools_expand": "Show tool activity",
+    "message_heavy_load": "{count} tool calls — tap to load message",
+    "message_heavy_loading": "Loading message...",
+    "message_heavy_load_btn": "Load"
   },
   "settings": {
     "title": "Settings",

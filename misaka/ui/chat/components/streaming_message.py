@@ -14,8 +14,11 @@ import flet as ft
 
 from misaka.config import get_assets_path
 from misaka.i18n import t
-from misaka.ui.chat.components.subagent_block import SubAgentBlock
-from misaka.ui.chat.components.tool_call_block import ToolCallBlock
+from misaka.state import StreamingTextBlock, StreamingThinkingBlock, StreamingToolUseBlock
+from misaka.ui.chat.components.tool_rendering import (
+    render_streaming_tool_segment,
+    segment_streaming_blocks,
+)
 
 if TYPE_CHECKING:
     from misaka.state import AppState, StreamingThinkingBlock, StreamingToolUseBlock
@@ -219,12 +222,22 @@ class StreamingMessage(ft.Container):
             )
         )
 
-        for block in self.state.streaming_blocks:
-            if hasattr(block, "thinking"):
-                thinking_block: StreamingThinkingBlock = block  # type: ignore[assignment]
-                if thinking_block.thinking:
-                    controls.append(self._build_thinking_block(thinking_block.thinking))
-            elif hasattr(block, "text") and block.text:
+        segments = segment_streaming_blocks(self.state.streaming_blocks)
+        for segment in segments:
+            if not segment:
+                continue
+            first = segment[0]
+            if isinstance(first, StreamingToolUseBlock) and first.name:
+                controls.extend(render_streaming_tool_segment(segment))
+                self._last_text_widget = None
+                self._last_text_wrapper = None
+                continue
+            block = first
+            if isinstance(block, StreamingThinkingBlock) and block.thinking:
+                controls.append(self._build_thinking_block(block.thinking))
+                self._last_text_widget = None
+                self._last_text_wrapper = None
+            elif isinstance(block, StreamingTextBlock) and block.text:
                 text_widget = self._create_streaming_text(block.text)
                 self._has_blockquote = self._check_blockquote_incremental(block.text)
                 wrapped = self._wrap_text_widget(text_widget, block.text)
@@ -233,27 +246,6 @@ class StreamingMessage(ft.Container):
                 self._last_text_content = block.text
                 self._last_text_wrapper = wrapped
                 self._streaming_text_mode = True
-            elif hasattr(block, "name") and block.name:
-                tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
-                if tool_block.name == "Task":
-                    controls.append(
-                        SubAgentBlock(
-                            tool_input=tool_block.input,
-                            tool_output=tool_block.output,
-                            is_error=tool_block.is_error,
-                            initially_expanded=tool_block.output is None,
-                        )
-                    )
-                else:
-                    controls.append(
-                        ToolCallBlock(
-                            tool_name=tool_block.name,
-                            tool_input=tool_block.input,
-                            tool_output=tool_block.output,
-                            is_error=tool_block.is_error,
-                            initially_expanded=tool_block.output is None,
-                        )
-                    )
 
         self._rendered_block_count = len(self.state.streaming_blocks)
 
@@ -343,6 +335,14 @@ class StreamingMessage(ft.Container):
                 self._last_text_widget.update()
             return
 
+        if (
+            current_count == self._rendered_block_count
+            and current_count > 0
+            and isinstance(blocks[-1], StreamingToolUseBlock)
+        ):
+            self._build_ui()
+            return
+
         # New blocks added → append only new block controls
         if current_count > self._rendered_block_count:
             # Remove thinking indicator if it was showing
@@ -371,29 +371,9 @@ class StreamingMessage(ft.Container):
                     self._last_text_content = block.text or ""
                     self._last_text_wrapper = wrapped
                     self._streaming_text_mode = True
-                elif hasattr(block, "name") and block.name:
-                    tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
-                    if tool_block.name == "Task":
-                        self._content_column.controls.append(
-                            SubAgentBlock(
-                                tool_input=tool_block.input,
-                                tool_output=tool_block.output,
-                                is_error=tool_block.is_error,
-                                initially_expanded=tool_block.output is None,
-                            )
-                        )
-                    else:
-                        self._content_column.controls.append(
-                            ToolCallBlock(
-                                tool_name=tool_block.name,
-                                tool_input=tool_block.input,
-                                tool_output=tool_block.output,
-                                is_error=tool_block.is_error,
-                                initially_expanded=tool_block.output is None,
-                            )
-                        )
-                    self._last_text_widget = None
-                    self._last_text_wrapper = None
+                elif isinstance(block, StreamingToolUseBlock):
+                    self._build_ui()
+                    return
 
             self._rendered_block_count = current_count
             return

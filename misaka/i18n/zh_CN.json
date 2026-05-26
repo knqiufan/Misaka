@@ -114,7 +114,12 @@
     "subagent_result": "结果",
     "subagent_error": "错误",
     "subagent_running": "运行中...",
-    "subagent_no_details": "暂无详情"
+    "subagent_no_details": "暂无详情",
+    "message_tools_summary": "本回合 {count} 次工具调用",
+    "message_tools_expand": "展开工具活动",
+    "message_heavy_load": "含 {count} 次工具调用 — 点击加载",
+    "message_heavy_loading": "正在加载消息...",
+    "message_heavy_load_btn": "加载"
   },
   "settings": {
     "title": "设置",

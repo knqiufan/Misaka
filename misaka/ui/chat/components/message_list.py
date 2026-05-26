@@ -6,6 +6,7 @@ with auto-scroll to bottom on new messages and "load earlier" pagination.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import time
 from collections.abc import Callable
@@ -15,13 +16,21 @@ import flet as ft
 
 from misaka.i18n import t
 from misaka.ui.chat.components.message_item import MessageItem
+from misaka.ui.chat.components.message_item_shell import MessageItemShell
 from misaka.ui.chat.components.permission_card import PermissionCard
 from misaka.ui.chat.components.streaming_message import StreamingMessage
+from misaka.ui.chat.components.tool_rendering import (
+    HEAVY_MESSAGE_TOOL_MIN,
+    count_tool_uses,
+)
 from misaka.utils.perf import perf_timer
 
 if TYPE_CHECKING:
     from misaka.db.models import Message
     from misaka.state import AppState
+
+INITIAL_VISIBLE = 4
+STAGED_BATCH_SIZE = 3
 
 
 class MessageList(ft.Column):
@@ -50,7 +59,7 @@ class MessageList(ft.Column):
             padding=ft.Padding.symmetric(horizontal=4, vertical=8),
         )
         self._streaming_msg = StreamingMessage(state)
-        self._item_cache: dict[str, MessageItem] = {}
+        self._item_cache: dict[str, ft.Control] = {}
         self._rendered_message_ids: list[str] = []
         self._message_id_index: dict[str, int] = {}
         self._load_more_button: ft.Control | None = None
@@ -59,6 +68,10 @@ class MessageList(ft.Column):
         self._last_session_id_for_model: str | None = None
         self._last_scroll_time: float = 0.0
         self._scroll_throttle_sec: float = 0.1
+        self._staged_build_token: int = 0
+        self._staged_build_in_progress: bool = False
+        self._pending_append_messages: list[Message] = []
+        self._pending_prepends: list[tuple[list[Message], str]] = []
         self._empty_view = self._build_empty_state()
         self._build_ui()
 
@@ -140,19 +153,76 @@ class MessageList(ft.Column):
         self._empty_view.visible = not has_messages
         self._list_view.visible = has_messages
 
-    def _get_or_create_item(self, message: Message) -> MessageItem:
+    def _count_tool_uses_for_message(self, message: Message) -> int:
+        return count_tool_uses(message.parse_content())
+
+    def _is_heavy_message(self, message: Message) -> bool:
+        return (
+            message.role == "assistant"
+            and self._count_tool_uses_for_message(message) >= HEAVY_MESSAGE_TOOL_MIN
+        )
+
+    def _message_weight(self, message: Message) -> int:
+        return self._count_tool_uses_for_message(message)
+
+    def _sort_messages_light_first(self, messages: list[Message]) -> list[Message]:
+        return sorted(messages, key=self._message_weight)
+
+    def _create_message_item(self, message: Message) -> MessageItem:
+        rag_sources = self._find_rag_sources(message)
+        item = MessageItem(
+            message,
+            assistant_label=self._model_display_name,
+            on_regenerate=self._on_regenerate,
+            rag_sources=rag_sources,
+        )
+        item.key = message.id
+        return item
+
+    def _replace_shell(self, message_id: str, full_item: ft.Control) -> None:
+        full_item.key = message_id
+        self._item_cache[message_id] = full_item
+        for i, ctrl in enumerate(self._list_view.controls):
+            if getattr(ctrl, "key", None) == message_id:
+                self._list_view.controls[i] = full_item
+                break
+        self._update_list_view(content_grew=True)
+
+    def _get_or_create_item(
+        self,
+        message: Message,
+        *,
+        auto_load_shell: bool = False,
+    ) -> ft.Control:
         cached = self._item_cache.get(message.id)
-        if cached is None:
-            rag_sources = self._find_rag_sources(message)
-            cached = MessageItem(
+        if cached is not None:
+            return cached
+        if self._is_heavy_message(message):
+            shell: ft.Control = MessageItemShell(
                 message,
                 assistant_label=self._model_display_name,
-                on_regenerate=self._on_regenerate,
-                rag_sources=rag_sources,
+                tool_count=self._count_tool_uses_for_message(message),
+                build_full_item=lambda m=message: self._create_message_item(m),
+                on_replaced=lambda full, mid=message.id: self._replace_shell(mid, full),
             )
-            cached.key = message.id
-            self._item_cache[message.id] = cached
-        return cached
+            self._item_cache[message.id] = shell
+            if auto_load_shell:
+                page = self._get_page()
+                if page is not None:
+                    page.run_task(shell._load_async)  # type: ignore[attr-defined]
+            return shell
+        item = self._create_message_item(message)
+        self._item_cache[message.id] = item
+        return item
+
+    def _clear_list_view_fast(self) -> None:
+        """Drop old message controls before building a new session."""
+        for ctrl in self._list_view.controls:
+            with contextlib.suppress(Exception):
+                ctrl.content = None
+        self._list_view.controls = []
+        with contextlib.suppress(Exception):
+            self._list_view.update()
 
     def _find_rag_sources(self, message: Message) -> list:
         """Find RAG sources for an assistant message.
@@ -311,8 +381,186 @@ class MessageList(ft.Column):
             insert_idx = min(insert_idx, controls.index(self._streaming_msg))
         return insert_idx
 
+    def _get_history_insert_index(self) -> int:
+        """Index after load-more button for prepending older messages."""
+        controls = self._list_view.controls
+        if controls and controls[0] is self._get_load_more_button():
+            return 1
+        return 0
+
+    def _cancel_staged_build(self) -> None:
+        """Invalidate any in-flight staged build task."""
+        self._staged_build_token += 1
+        self._staged_build_in_progress = False
+
+    def _append_trailing_controls(self, items: list[ft.Control]) -> list[ft.Control]:
+        """Append streaming message and permission card to a message item list."""
+        self._streaming_msg.refresh()
+        if self.state.is_streaming:
+            items.append(self._streaming_msg)
+        permission_card = self._build_permission_card()
+        if permission_card is not None:
+            items.append(permission_card)
+        return items
+
+    def _build_tail_items(self, messages: list[Message]) -> list[ft.Control]:
+        """Build list controls for the newest visible message batch."""
+        items: list[ft.Control] = []
+        if self.state.has_more_messages and self._on_load_more:
+            items.append(self._get_load_more_button())
+        for i, msg in enumerate(messages):
+            is_last = i == len(messages) - 1
+            auto_shell = is_last and self._is_heavy_message(msg)
+            items.append(self._get_or_create_item(msg, auto_load_shell=auto_shell))
+        return self._append_trailing_controls(items)
+
+    def _flush_pending_appends(self, *, scroll_to_bottom: bool = True) -> None:
+        """Append messages queued during a staged build."""
+        if not self._pending_append_messages:
+            return
+        pending = self._pending_append_messages
+        self._pending_append_messages = []
+        for i, msg in enumerate(pending):
+            is_last = i == len(pending) - 1
+            self.append_message(
+                msg,
+                scroll_to_bottom=scroll_to_bottom and is_last,
+            )
+
+    def _flush_pending_prepends(self, token: int) -> None:
+        """Run prepends queued while a session staged build was in progress."""
+        if not self._pending_prepends:
+            return
+        pending = self._pending_prepends
+        self._pending_prepends = []
+        for older_messages, anchor_key in pending:
+            if token != self._staged_build_token:
+                return
+            if len(older_messages) > STAGED_BATCH_SIZE:
+                page = self._get_page()
+                if page:
+                    page.run_task(
+                        self._staged_prepend_older, token, older_messages, anchor_key,
+                    )
+                else:
+                    self._prepend_older_messages_sync(older_messages, anchor_key)
+            else:
+                self._prepend_older_messages_sync(older_messages, anchor_key)
+
+    async def _staged_build_remaining(
+        self,
+        token: int,
+        remaining: list[Message],
+    ) -> None:
+        """Insert older messages in batches after the initial tail render."""
+        insert_idx = self._get_history_insert_index()
+        tail_ids = list(self._rendered_message_ids)
+        for start in range(0, len(remaining), STAGED_BATCH_SIZE):
+            if token != self._staged_build_token:
+                return
+            batch = remaining[start : start + STAGED_BATCH_SIZE]
+            for msg in batch:
+                self._list_view.controls.insert(
+                    insert_idx, self._get_or_create_item(msg),
+                )
+                insert_idx += 1
+            built_count = start + len(batch)
+            self._rendered_message_ids = (
+                [m.id for m in remaining[:built_count]] + tail_ids
+            )
+            with contextlib.suppress(Exception):
+                self._list_view.update()
+            await asyncio.sleep(0)
+
+        if token != self._staged_build_token:
+            return
+        self._staged_build_in_progress = False
+        self._flush_pending_prepends(token)
+        self._flush_pending_appends()
+
+    async def _staged_prepend_older(
+        self,
+        token: int,
+        older_messages: list[Message],
+        anchor_key: str,
+    ) -> None:
+        """Prepend loaded history in batches while preserving scroll anchor."""
+        insert_idx = self._get_history_insert_index()
+        older_id_set = {m.id for m in older_messages}
+        existing_ids = [
+            mid for mid in self._rendered_message_ids if mid not in older_id_set
+        ]
+        prepended_ids: list[str] = []
+        seen_ids = set(self._rendered_message_ids)
+        for start in range(0, len(older_messages), STAGED_BATCH_SIZE):
+            if token != self._staged_build_token:
+                return
+            batch = older_messages[start : start + STAGED_BATCH_SIZE]
+            for msg in batch:
+                if msg.id in seen_ids:
+                    continue
+                self._list_view.controls.insert(
+                    insert_idx, self._get_or_create_item(msg),
+                )
+                insert_idx += 1
+                prepended_ids.append(msg.id)
+                seen_ids.add(msg.id)
+            if prepended_ids:
+                self._rendered_message_ids = prepended_ids + existing_ids
+                with contextlib.suppress(Exception):
+                    self._list_view.update()
+            await asyncio.sleep(0)
+
+        if token == self._staged_build_token:
+            self._schedule_list_scroll(anchor_key=anchor_key)
+
+    def _schedule_staged_build_remaining(
+        self,
+        token: int,
+        remaining: list[Message],
+    ) -> None:
+        page = self._get_page()
+        if page is None or not remaining:
+            self._staged_build_in_progress = False
+            self._flush_pending_appends()
+            return
+        page.run_task(self._staged_build_remaining, token, remaining)
+
+    def _schedule_staged_prepend(
+        self,
+        older_messages: list[Message],
+        anchor_key: str,
+    ) -> None:
+        token = self._staged_build_token
+        page = self._get_page()
+        if page is None:
+            self._prepend_older_messages_sync(older_messages, anchor_key)
+            return
+        page.run_task(self._staged_prepend_older, token, older_messages, anchor_key)
+
+    def _prepend_older_messages_sync(
+        self,
+        older_messages: list[Message],
+        anchor_key: str,
+    ) -> None:
+        """Synchronously prepend older messages (small batches)."""
+        insert_idx = self._get_history_insert_index()
+        new_ids: list[str] = []
+        for msg in older_messages:
+            if msg.id in self._rendered_message_ids:
+                continue
+            self._list_view.controls.insert(insert_idx, self._get_or_create_item(msg))
+            insert_idx += 1
+            new_ids.append(msg.id)
+        self._rendered_message_ids = new_ids + self._rendered_message_ids
+        self._rebuild_message_id_index()
+        self._update_list_view(anchor_key=anchor_key, content_grew=True)
+
     def _rebuild_from_state(self, *, auto_scroll_to_bottom: bool = False) -> None:
         """Rebuild list contents from state as a fallback path."""
+        self._cancel_staged_build()
+        self._pending_append_messages.clear()
+        self._pending_prepends.clear()
         self._sync_visibility()
 
         self._resolve_model_display_name_once()
@@ -322,6 +570,38 @@ class MessageList(ft.Column):
         self._rendered_message_ids = [msg.id for msg in self.state.messages]
         self._list_view.controls = self._build_items_from_state()
         self._update_list_view(auto_scroll=auto_scroll_to_bottom, content_grew=True)
+
+    def _rebuild_for_session(self, *, auto_scroll_to_bottom: bool = False) -> None:
+        """Rebuild after session switch; staged when many messages."""
+        self._pending_append_messages.clear()
+        self._pending_prepends.clear()
+        self._sync_visibility()
+        self._clear_list_view_fast()
+        self._resolve_model_display_name_once()
+        self._rebuild_message_id_index()
+        current_ids = {msg.id for msg in self.state.messages}
+        self._prune_cache(current_ids)
+
+        messages = self.state.messages
+        if len(messages) <= INITIAL_VISIBLE:
+            self._staged_build_in_progress = False
+            self._rendered_message_ids = [msg.id for msg in messages]
+            self._list_view.controls = self._build_items_from_state()
+            self._update_list_view(
+                auto_scroll=auto_scroll_to_bottom, content_grew=True,
+            )
+            self._flush_pending_appends(scroll_to_bottom=auto_scroll_to_bottom)
+            return
+
+        token = self._staged_build_token
+        self._staged_build_in_progress = True
+        tail = messages[-INITIAL_VISIBLE:]
+        head = messages[:-INITIAL_VISIBLE]
+
+        self._rendered_message_ids = [msg.id for msg in tail]
+        self._list_view.controls = self._build_tail_items(tail)
+        self._update_list_view(auto_scroll=auto_scroll_to_bottom, content_grew=True)
+        self._schedule_staged_build_remaining(token, head)
 
     def _get_load_more_button(self) -> ft.Control:
         """Return cached load-more button to avoid rebuilding on every sync."""
@@ -361,9 +641,12 @@ class MessageList(ft.Column):
 
     def refresh_for_session_change(self) -> None:
         """Refresh list after switching sessions."""
+        self._cancel_staged_build()
+        self._pending_append_messages.clear()
+        self._pending_prepends.clear()
         self._item_cache.clear()
         self._rendered_message_ids.clear()
-        self._rebuild_from_state(auto_scroll_to_bottom=bool(self.state.messages))
+        self._rebuild_for_session(auto_scroll_to_bottom=bool(self.state.messages))
 
     def append_message(
         self,
@@ -372,6 +655,9 @@ class MessageList(ft.Column):
         scroll_to_bottom: bool = True,
     ) -> None:
         """Append a new message item near the bottom without rebuilding history."""
+        if self._staged_build_in_progress:
+            self._pending_append_messages.append(new_message)
+            return
         self._sync_visibility()
         if not self._list_view.visible:
             self._rebuild_from_state(auto_scroll_to_bottom=scroll_to_bottom)
@@ -410,17 +696,16 @@ class MessageList(ft.Column):
         self._resolve_model_display_name_once()
         self._sync_load_more_button()
         anchor_key = self._rendered_message_ids[0]
-        insert_idx = 1 if self.state.has_more_messages and self._on_load_more else 0
-        new_ids: list[str] = []
-        for msg in older_messages:
-            if msg.id in self._rendered_message_ids:
-                continue
-            self._list_view.controls.insert(insert_idx, self._get_or_create_item(msg))
-            insert_idx += 1
-            new_ids.append(msg.id)
-        self._rendered_message_ids = new_ids + self._rendered_message_ids
         self._rebuild_message_id_index()
-        self._update_list_view(anchor_key=anchor_key, content_grew=True)
+
+        if self._staged_build_in_progress:
+            self._pending_prepends.append((older_messages, anchor_key))
+            return
+
+        if len(older_messages) > STAGED_BATCH_SIZE:
+            self._schedule_staged_prepend(older_messages, anchor_key)
+            return
+        self._prepend_older_messages_sync(older_messages, anchor_key)
 
     def remove_message(self, message_id: str) -> None:
         """Remove a rendered message item without rebuilding the full list."""

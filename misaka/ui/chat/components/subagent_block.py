@@ -47,8 +47,11 @@ class SubAgentBlock(ft.Container):
         self._tool_output = tool_output
         self._is_error = is_error
         self._expanded = initially_expanded
+        self._detail_built = False
+        self._prompt_text = ""
         self._detail_container: ft.Container | None = None
         self._chevron: ft.Icon | None = None
+        self._status_dot: ft.Container | None = None
         self._build_ui()
 
     def _extract_metadata(self) -> tuple[str, str, str, str]:
@@ -94,12 +97,13 @@ class SubAgentBlock(ft.Container):
             padding=ft.Padding.symmetric(horizontal=6, vertical=2),
         )
 
+        self._status_dot = ft.Container(
+            width=6, height=6,
+            border_radius=3,
+            bgcolor=status_color,
+        )
         header_controls = [
-            ft.Container(
-                width=6, height=6,
-                border_radius=3,
-                bgcolor=status_color,
-            ),
+            self._status_dot,
             ft.Icon(icon_name, size=16, color=ft.Colors.PRIMARY),
             ft.Text(
                 t("chat.subagent_label"),
@@ -136,12 +140,14 @@ class SubAgentBlock(ft.Container):
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-        detail_controls = self._build_detail_controls(prompt)
+        self._prompt_text = prompt
         self._detail_container = ft.Container(
-            content=ft.Column(controls=detail_controls, spacing=6, tight=True),
+            content=None,
             visible=self._expanded,
             padding=ft.Padding.only(left=28, right=8, top=6, bottom=8),
         )
+        if self._expanded:
+            self._ensure_detail_built()
 
         self.content = ft.Column(
             controls=[
@@ -244,9 +250,31 @@ class SubAgentBlock(ft.Container):
 
         return controls
 
+    def _ensure_detail_built(self) -> None:
+        """Build detail controls on first expand (lazy)."""
+        if self._detail_built or self._detail_container is None:
+            return
+        self._detail_built = True
+        detail_controls = self._build_detail_controls(self._prompt_text)
+        self._detail_container.content = ft.Column(
+            controls=detail_controls, spacing=6, tight=True,
+        )
+
+    def _refresh_status_dot(self) -> None:
+        if not self._status_dot:
+            return
+        status_color = (
+            ft.Colors.ERROR if self._is_error
+            else ft.Colors.GREEN if self._tool_output is not None
+            else ft.Colors.AMBER
+        )
+        self._status_dot.bgcolor = status_color
+
     def _toggle(self, e: ft.ControlEvent) -> None:
         """Toggle expanded state."""
         self._expanded = not self._expanded
+        if self._expanded:
+            self._ensure_detail_built()
         if self._detail_container:
             self._detail_container.visible = self._expanded
             with contextlib.suppress(Exception):

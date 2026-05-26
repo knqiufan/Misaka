@@ -83,3 +83,17 @@ class TestToolGroupBlock:
         block = ToolGroupBlock(tools)
         # Most common first
         assert block._summary_text.startswith("Bash x3")
+
+    def test_result_resolver_used_on_detail(self):
+        tools = [
+            ToolCallInfo(name="Read", tool_use_id="t1", is_error=False),
+        ]
+
+        def resolve(tid: str) -> tuple[str | None, bool]:
+            assert tid == "t1"
+            return "file body", False
+
+        block = ToolGroupBlock(tools, result_resolver=resolve)
+        output, err = block._resolve_tool_output(tools[0])
+        assert output == "file body"
+        assert err is False

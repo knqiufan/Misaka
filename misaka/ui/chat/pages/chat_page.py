@@ -261,10 +261,7 @@ class ChatPage(ft.Stack):
         session = self.state.current_session
         if session:
             self.state.sdk_session_id = session.sdk_session_id or None
-            self._load_file_tree(session)
-            self._reload_mcp_for_session(session)
-        # Refresh UI — targeted refreshes instead of _rebuild_all()
-        # Use refresh_selection() for efficient highlight update without rebuilding list
+        # Refresh UI first so the message list appears before heavier side effects.
         if self._chat_list:
             if bg_status is None:
                 self._chat_list.refresh_selection()
@@ -275,6 +272,11 @@ class ChatPage(ft.Stack):
         if self._right_panel:
             self._clear_right_panel_preview()
             self._right_panel.refresh()
+        if session and self.state.page:
+            sid = session.id
+            self.state.page.run_task(
+                self._deferred_session_side_effects, sid,
+            )
 
     def _on_new_chat(self) -> None:
         """Open folder picker, then create a new chat session."""
@@ -941,6 +943,19 @@ class ChatPage(ft.Stack):
         self._stream_handler.resolve_permission(allow=False)
 
     # ---- Helpers ----
+
+    async def _deferred_session_side_effects(self, session_id: str) -> None:
+        """Load file tree and MCP after the message list has refreshed."""
+        if self.state.current_session_id != session_id:
+            return
+        session = self.state.current_session
+        if session is None:
+            return
+        self._load_file_tree(session)
+        self._reload_mcp_for_session(session)
+        if self._right_panel:
+            with contextlib.suppress(Exception):
+                self._right_panel.refresh()
 
     def _reload_mcp_for_session(self, session: ChatSession) -> None:
         """Reload MCP configs including project-level .mcp.json for the session."""
