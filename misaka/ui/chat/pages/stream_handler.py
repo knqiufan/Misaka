@@ -386,7 +386,7 @@ class StreamHandler:
                 session_id=session.id,
                 prompt=message_content,
                 model=session.model or None,
-                system_prompt=session.system_prompt or None,
+                system_prompt=self._resolve_system_prompt(session),
                 working_directory=session.working_directory or None,
                 sdk_session_id=session.sdk_session_id or None,
                 mcp_servers=self._state.mcp_servers_sdk or None,
@@ -875,6 +875,23 @@ class StreamHandler:
     # ------------------------------------------------------------------
     # Utility
     # ------------------------------------------------------------------
+
+    def _resolve_system_prompt(self, session) -> str | None:
+        """Merge global default system prompt with session-level prompt.
+
+        Global prompt takes precedence (prepended); session prompt appended.
+        Returns None if both are empty/unset.
+        """
+        settings_svc = self._state.get_service("settings_service")
+        global_prompt = (
+            settings_svc.get_default_system_prompt()
+            if settings_svc and hasattr(settings_svc, "get_default_system_prompt")
+            else None
+        )
+        session_prompt = session.system_prompt or None
+
+        parts = [p for p in (global_prompt, session_prompt) if p and p.strip()]
+        return "\n\n".join(parts) if parts else None
 
     def _get_global_permission_mode(self) -> str:
         """Read the global permission mode from settings."""

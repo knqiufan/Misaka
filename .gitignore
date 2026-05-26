@@ -15,10 +15,13 @@ env/
 
 # IDE
 .vscode/
+.claude/
+.agents/
 .idea/
 *.swp
 *.swo
 *~
+skills-lock.json
 
 # Testing
 .pytest_cache/

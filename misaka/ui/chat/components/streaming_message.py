@@ -14,6 +14,7 @@ import flet as ft
 
 from misaka.config import get_assets_path
 from misaka.i18n import t
+from misaka.ui.chat.components.subagent_block import SubAgentBlock
 from misaka.ui.chat.components.tool_call_block import ToolCallBlock
 
 if TYPE_CHECKING:
@@ -234,15 +235,25 @@ class StreamingMessage(ft.Container):
                 self._streaming_text_mode = True
             elif hasattr(block, "name") and block.name:
                 tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
-                controls.append(
-                    ToolCallBlock(
-                        tool_name=tool_block.name,
-                        tool_input=tool_block.input,
-                        tool_output=tool_block.output,
-                        is_error=tool_block.is_error,
-                        initially_expanded=tool_block.output is None,
+                if tool_block.name == "Task":
+                    controls.append(
+                        SubAgentBlock(
+                            tool_input=tool_block.input,
+                            tool_output=tool_block.output,
+                            is_error=tool_block.is_error,
+                            initially_expanded=tool_block.output is None,
+                        )
                     )
-                )
+                else:
+                    controls.append(
+                        ToolCallBlock(
+                            tool_name=tool_block.name,
+                            tool_input=tool_block.input,
+                            tool_output=tool_block.output,
+                            is_error=tool_block.is_error,
+                            initially_expanded=tool_block.output is None,
+                        )
+                    )
 
         self._rendered_block_count = len(self.state.streaming_blocks)
 
@@ -362,15 +373,25 @@ class StreamingMessage(ft.Container):
                     self._streaming_text_mode = True
                 elif hasattr(block, "name") and block.name:
                     tool_block: StreamingToolUseBlock = block  # type: ignore[assignment]
-                    self._content_column.controls.append(
-                        ToolCallBlock(
-                            tool_name=tool_block.name,
-                            tool_input=tool_block.input,
-                            tool_output=tool_block.output,
-                            is_error=tool_block.is_error,
-                            initially_expanded=tool_block.output is None,
+                    if tool_block.name == "Task":
+                        self._content_column.controls.append(
+                            SubAgentBlock(
+                                tool_input=tool_block.input,
+                                tool_output=tool_block.output,
+                                is_error=tool_block.is_error,
+                                initially_expanded=tool_block.output is None,
+                            )
                         )
-                    )
+                    else:
+                        self._content_column.controls.append(
+                            ToolCallBlock(
+                                tool_name=tool_block.name,
+                                tool_input=tool_block.input,
+                                tool_output=tool_block.output,
+                                is_error=tool_block.is_error,
+                                initially_expanded=tool_block.output is None,
+                            )
+                        )
                     self._last_text_widget = None
                     self._last_text_wrapper = None
 

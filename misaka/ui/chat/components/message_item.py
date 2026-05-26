@@ -12,7 +12,6 @@ import contextlib
 import json
 import re
 import webbrowser
-from dataclasses import dataclass
 from typing import cast
 
 import flet as ft
@@ -22,17 +21,10 @@ from misaka.db.models import KBSearchResult, Message, MessageContentBlock
 from misaka.i18n import t
 from misaka.ui.chat.components.code_block import CodeBlock
 from misaka.ui.chat.components.image_block import ImageBlock
+from misaka.ui.chat.components.subagent_block import SubAgentBlock
 from misaka.ui.chat.components.tool_call_block import ToolCallBlock
+from misaka.ui.chat.components.tool_group_block import ToolCallInfo, ToolGroupBlock
 from misaka.ui.common.theme import MONO_FONT_FAMILY, RADIUS_LG, make_icon_button
-
-
-@dataclass
-class _PairedTool:
-    """A tool_use block paired with its corresponding tool_result."""
-    name: str
-    tool_input: dict
-    result: str | None = None
-    is_error: bool = False
 
 
 class MessageItem(ft.Container):
@@ -505,65 +497,158 @@ class MessageItem(ft.Container):
         }
         consumed_results: set[str] = set()
 
+        # Collect blocks into segments: consecutive tool_use runs are grouped
+        segments: list[list[MessageContentBlock]] = []
+        current_tool_run: list[MessageContentBlock] = []
+
         for block in blocks:
-            if block.type == "interrupted":
-                controls.append(self._build_interrupted_banner())
+            if block.type == "tool_use" and block.name:
+                current_tool_run.append(block)
+            else:
+                if current_tool_run:
+                    segments.append(current_tool_run)
+                    current_tool_run = []
+                segments.append([block])
+
+        if current_tool_run:
+            segments.append(current_tool_run)
+
+        for segment in segments:
+            if not segment:
                 continue
 
-            if block.type == "thinking":
+            first = segment[0]
+
+            # Segment of consecutive tool_use blocks
+            if first.type == "tool_use" and first.name:
+                rendered = self._render_tool_segment(
+                    segment, result_map, consumed_results,
+                )
+                controls.extend(rendered)
+                continue
+
+            # Non-tool blocks (single block segments)
+            block = first
+            if block.type == "interrupted":
+                controls.append(self._build_interrupted_banner())
+            elif block.type == "thinking":
                 thinking_text = block.thinking or ""
                 if thinking_text.strip():
                     controls.append(self._build_thinking_block(thinking_text))
-                continue
-
-            if block.type == "text":
+            elif block.type == "text":
                 text = block.text or ""
-                if not text.strip():
-                    continue
-                ctrl = self._smart_render_text(text)
-                if ctrl:
-                    controls.append(ctrl)
-                continue
+                if text.strip():
+                    ctrl = self._smart_render_text(text)
+                    if ctrl:
+                        controls.append(ctrl)
+            elif block.type == "tool_result":
+                if block.tool_use_id and block.tool_use_id in consumed_results:
+                    pass
+                else:
+                    controls.append(
+                        ToolCallBlock(
+                            tool_name="tool_result",
+                            tool_input=None,
+                            tool_output=block.content,
+                            is_error=block.is_error,
+                        )
+                    )
+            elif block.type == "code" and block.code:
+                controls.append(
+                    CodeBlock(code=block.code, language=block.language or "plaintext")
+                )
+            elif block.type == "image":
+                controls.append(
+                    ImageBlock(block, on_click=self._handle_image_click)
+                )
 
-            if block.type == "tool_use" and block.name:
+        return controls
+
+    def _render_tool_segment(
+        self,
+        tool_blocks: list[MessageContentBlock],
+        result_map: dict[str, MessageContentBlock],
+        consumed_results: set[str],
+    ) -> list[ft.Control]:
+        """Render a consecutive sequence of tool_use blocks.
+
+        - SubAgent (Task) calls get their own SubAgentBlock
+        - Runs of 3+ non-SubAgent tools are collapsed into ToolGroupBlock
+        - Shorter runs render individual ToolCallBlocks
+        """
+        controls: list[ft.Control] = []
+        non_subagent_run: list[MessageContentBlock] = []
+
+        for block in tool_blocks:
+            is_subagent = block.name == "Task"
+
+            if is_subagent:
+                # Flush any accumulated non-subagent tools
+                if non_subagent_run:
+                    controls.extend(
+                        self._flush_tool_run(non_subagent_run, result_map, consumed_results)
+                    )
+                    non_subagent_run = []
+
+                # Render SubAgent block
                 result_block = result_map.get(block.id or "") if block.id else None
                 if block.id and result_block:
                     consumed_results.add(block.id)
                 controls.append(
-                    ToolCallBlock(
-                        tool_name=block.name,
+                    SubAgentBlock(
                         tool_input=block.input if isinstance(block.input, dict) else None,
                         tool_output=result_block.content if result_block else None,
                         is_error=result_block.is_error if result_block else False,
                     )
                 )
-                continue
+            else:
+                non_subagent_run.append(block)
 
-            if block.type == "tool_result":
-                if block.tool_use_id and block.tool_use_id in consumed_results:
-                    continue
-                controls.append(
-                    ToolCallBlock(
-                        tool_name="tool_result",
-                        tool_input=None,
-                        tool_output=block.content,
-                        is_error=block.is_error,
-                    )
+        # Flush remaining non-subagent tools
+        if non_subagent_run:
+            controls.extend(
+                self._flush_tool_run(non_subagent_run, result_map, consumed_results)
+            )
+
+        return controls
+
+    def _flush_tool_run(
+        self,
+        tool_blocks: list[MessageContentBlock],
+        result_map: dict[str, MessageContentBlock],
+        consumed_results: set[str],
+    ) -> list[ft.Control]:
+        """Render a run of non-SubAgent tool calls.
+
+        If 3+ consecutive, collapse into ToolGroupBlock; otherwise render individually.
+        """
+        if len(tool_blocks) >= 3:
+            tool_infos: list[ToolCallInfo] = []
+            for block in tool_blocks:
+                result_block = result_map.get(block.id or "") if block.id else None
+                if block.id and result_block:
+                    consumed_results.add(block.id)
+                tool_infos.append(ToolCallInfo(
+                    name=block.name or "unknown",
+                    tool_input=block.input if isinstance(block.input, dict) else None,
+                    result=result_block.content if result_block else None,
+                    is_error=result_block.is_error if result_block else False,
+                ))
+            return [ToolGroupBlock(tool_infos)]
+
+        controls: list[ft.Control] = []
+        for block in tool_blocks:
+            result_block = result_map.get(block.id or "") if block.id else None
+            if block.id and result_block:
+                consumed_results.add(block.id)
+            controls.append(
+                ToolCallBlock(
+                    tool_name=block.name or "unknown",
+                    tool_input=block.input if isinstance(block.input, dict) else None,
+                    tool_output=result_block.content if result_block else None,
+                    is_error=result_block.is_error if result_block else False,
                 )
-                continue
-
-            if block.type == "code" and block.code:
-                controls.append(
-                    CodeBlock(code=block.code, language=block.language or "plaintext")
-                )
-                continue
-
-            if block.type == "image":
-                controls.append(
-                    ImageBlock(block, on_click=self._handle_image_click)
-                )
-                continue
-
+            )
         return controls
 
     def _smart_render_text(self, text: str) -> ft.Control | None:
@@ -624,8 +709,9 @@ class MessageItem(ft.Container):
                 ft.Icons.EXPAND_MORE_ROUNDED if detail_container.visible
                 else ft.Icons.CHEVRON_RIGHT_ROUNDED
             )
-            detail_container.update()
-            chevron.update()
+            with contextlib.suppress(Exception):
+                detail_container.update()
+                chevron.update()
 
         summary_row = ft.Container(
             content=ft.Row(
@@ -681,9 +767,9 @@ class MessageItem(ft.Container):
             names = []
             for item in data[:10]:
                 if isinstance(item, dict):
-                    t = item.get("type", "")
-                    if t:
-                        types.add(t)
+                    item_type = item.get("type", "")
+                    if item_type:
+                        types.add(item_type)
                     n = item.get("name", "")
                     if n:
                         names.append(n)
@@ -696,62 +782,6 @@ class MessageItem(ft.Container):
             return " | ".join(parts)
 
         return str(data)[:80]
-
-    # ------------------------------------------------------------------
-    # Block categorisation & pairing (assistant messages)
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _categorise_blocks(
-        blocks: list[MessageContentBlock],
-    ) -> tuple[list[_PairedTool], list[MessageContentBlock], list[MessageContentBlock]]:
-        """Split blocks into paired tools, text blocks, and code blocks."""
-        result_map: dict[str, MessageContentBlock] = {}
-        for b in blocks:
-            if b.type == "tool_result" and b.tool_use_id:
-                result_map[b.tool_use_id] = b
-
-        paired: list[_PairedTool] = []
-        matched_result_ids: set[str] = set()
-
-        for b in blocks:
-            if b.type == "tool_use" and b.name:
-                result_block = result_map.get(b.id or "") if b.id else None
-                paired.append(_PairedTool(
-                    name=b.name,
-                    tool_input=b.input if isinstance(b.input, dict) else {},
-                    result=result_block.content if result_block else None,
-                    is_error=result_block.is_error if result_block else False,
-                ))
-                if b.id and result_block:
-                    matched_result_ids.add(b.id)
-
-        for b in blocks:
-            if b.type == "tool_result" and b.tool_use_id not in matched_result_ids:
-                paired.append(_PairedTool(
-                    name="tool_result",
-                    tool_input={},
-                    result=b.content,
-                    is_error=b.is_error,
-                ))
-
-        text_blocks = [b for b in blocks if b.type == "text" and b.text]
-        code_blocks = [b for b in blocks if b.type == "code" and b.code]
-
-        return paired, text_blocks, code_blocks
-
-    @staticmethod
-    def _render_tool_group(paired: list[_PairedTool]) -> ft.Control:
-        tool_controls = [
-            ToolCallBlock(
-                tool_name=t.name,
-                tool_input=t.tool_input if t.tool_input else None,
-                tool_output=t.result,
-                is_error=t.is_error,
-            )
-            for t in paired
-        ]
-        return ft.Column(controls=tool_controls, spacing=2)
 
     # ------------------------------------------------------------------
     # Single-block rendering (user messages / fallback)
