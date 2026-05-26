@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-05-27
+
+### Added
+
+- Knowledge base management with RAG retrieval, document upload, and multi-KB search in chat
+- Router model configuration with automatic model detection
+- Tool call folding: consecutive tool calls collapse into summary groups with lazy-loaded details
+- SubAgent (Task) dedicated display cards with type badges
+- Settings panel refactor: left menu + modular panels (appearance, permissions, router, system prompt, update, logs)
+- Global system prompt configuration injected into conversations
+- Message list staged loading for faster session switching on large histories
+- Heavy-message shell placeholder for assistant replies with many tool calls
+- Scroll management and performance optimizations for chat module
+- Knowledge base UI feature flag for conditional rendering
+
+### Changed
+
+- Skip `tool_result` blocks when segmenting history messages so ToolGroupBlock merging works correctly
+- Defer file tree and MCP reload until after message list refresh on session switch
+- Enhance internationalization (en, zh_CN, zh_TW) for new chat and settings strings
+
+### Fixed
+
+- Fix documentation links for architecture and conventions
+
 ## [0.1.8] - 2026-04-13
 
 ### Added
