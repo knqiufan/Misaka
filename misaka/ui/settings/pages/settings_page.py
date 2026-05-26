@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from misaka.state import AppState
 
 # Menu item definitions: (panel_id, i18n_key, icon)
-_MENU_ITEMS: list[tuple[str, str, str]] = [
+_MENU_ITEMS: list[tuple[str, str, object]] = [
     ("appearance", "settings.settings_menu_appearance", ft.Icons.PALETTE_OUTLINED),
     ("permission", "settings.settings_menu_permission", ft.Icons.SECURITY_OUTLINED),
     ("router", "settings.settings_menu_router", ft.Icons.ROUTER_OUTLINED),
