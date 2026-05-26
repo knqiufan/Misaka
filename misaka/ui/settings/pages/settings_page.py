@@ -63,11 +63,12 @@ class SettingsPage(ft.Column):
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
         )
 
+        menu_border_color = ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE)
         menu_container = ft.Container(
             content=menu,
             width=200,
             padding=ft.Padding.symmetric(vertical=12, horizontal=6),
-            border=ft.Border(right=ft.BorderSide(1, ft.Colors.with_opacity(0.08, ft.Colors.ON_SURFACE))),
+            border=ft.Border(right=ft.BorderSide(1, menu_border_color)),
         )
 
         inner = ft.Row(

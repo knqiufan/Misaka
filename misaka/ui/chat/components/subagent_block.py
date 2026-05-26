@@ -209,12 +209,17 @@ class SubAgentBlock(ft.Container):
             display = self._tool_output
             if len(display) > 1000:
                 display = display[:1000] + "\n... (truncated)"
+            result_label = (
+                t("chat.subagent_error")
+                if self._is_error
+                else t("chat.subagent_result")
+            )
             controls.append(
                 ft.Container(
                     content=ft.Column(
                         controls=[
                             ft.Text(
-                                t("chat.subagent_error") if self._is_error else t("chat.subagent_result"),
+                                result_label,
                                 size=9,
                                 weight=ft.FontWeight.W_600,
                                 opacity=0.4,
@@ -241,9 +246,14 @@ class SubAgentBlock(ft.Container):
             )
 
         if not controls:
+            placeholder = (
+                t("chat.subagent_running")
+                if self._tool_output is None
+                else t("chat.subagent_no_details")
+            )
             controls.append(
                 ft.Text(
-                    t("chat.subagent_running") if self._tool_output is None else t("chat.subagent_no_details"),
+                    placeholder,
                     size=10, italic=True, opacity=0.3,
                 )
             )
