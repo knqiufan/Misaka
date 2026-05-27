@@ -132,6 +132,7 @@ class SystemPromptPanel(ft.Container):
             spacing=12,
             scroll=ft.ScrollMode.AUTO,
             expand=True,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
         self.padding = ft.Padding.symmetric(horizontal=24, vertical=16)
 
