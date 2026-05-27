@@ -57,6 +57,7 @@
   "chat": {
     "chats": "Chats",
     "new_chat": "New Chat",
+    "new_session": "New Session",
     "delete": "Delete",
     "rename": "Rename",
     "rename_session": "Rename Session",

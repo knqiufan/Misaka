@@ -57,6 +57,7 @@
   "chat": {
     "chats": "聊天",
     "new_chat": "新建聊天",
+    "new_session": "新建會話",
     "delete": "刪除",
     "rename": "重新命名",
     "rename_session": "重新命名工作階段",

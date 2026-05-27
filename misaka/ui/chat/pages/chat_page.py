@@ -91,6 +91,7 @@ class ChatPage(ft.Stack):
             state=self.state,
             on_select=self._on_session_select,
             on_new_chat=self._on_new_chat,
+            on_new_session=self._on_new_session_from_context,
             on_delete=self._on_delete_session,
             on_rename=self._on_rename_session,
             on_remove_from_list=self._on_remove_from_list,
@@ -292,13 +293,19 @@ class ChatPage(ft.Stack):
     def _on_new_chat_folder_selected(self, path: str) -> None:
         """Create a new session with the selected working directory."""
         session = self.db.create_session(working_directory=path)
+        self._activate_new_session(session)
+
+    def _activate_new_session(self, session: ChatSession) -> None:
+        """Insert session into state and switch all panels to it."""
+        wd = (session.working_directory or "").strip()
         self.state.sessions = [session] + self.state.sessions
         self.state.current_session_id = session.id
         self.state.messages = []
         self.state.has_more_messages = False
         self.state.tasks = []
         self._stream_handler.reset_stream_state()
-        self._scan_file_tree_async(path)
+        if wd:
+            self._scan_file_tree_async(wd)
         self._reload_mcp_for_session(session)
         if self._chat_list:
             self._chat_list.refresh()
@@ -306,6 +313,26 @@ class ChatPage(ft.Stack):
             self._chat_view.refresh_for_session_change()
         if self._right_panel:
             self._clear_right_panel_preview()
+
+    def _on_new_session_from_context(self, source_session_id: str) -> None:
+        """Create a new session in the same folder as *source_session_id*."""
+        source = next(
+            (s for s in self.state.sessions if s.id == source_session_id), None
+        )
+        if not source:
+            return
+        wd = (source.working_directory or "").strip()
+        if not wd:
+            self._on_new_chat()
+            return
+        self._detach_if_streaming()
+        session = self.db.create_session(
+            working_directory=wd,
+            model=source.model,
+            mode=source.mode,
+            system_prompt=source.system_prompt,
+        )
+        self._activate_new_session(session)
 
     def _on_delete_session(self, session_id: str) -> None:
         """Delete a session."""

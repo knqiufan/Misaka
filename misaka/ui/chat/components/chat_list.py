@@ -36,6 +36,7 @@ class ChatList(ft.Column):
         state: AppState,
         on_select: Callable[[str], None] | None = None,
         on_new_chat: Callable[[], None] | None = None,
+        on_new_session: Callable[[str], None] | None = None,
         on_delete: Callable[[str], None] | None = None,
         on_rename: Callable[[str, str], None] | None = None,
         on_remove_from_list: Callable[[str], None] | None = None,
@@ -47,6 +48,7 @@ class ChatList(ft.Column):
         self.state = state
         self._on_select = on_select
         self._on_new_chat = on_new_chat
+        self._on_new_session = on_new_session
         self._on_delete = on_delete
         self._on_rename = on_rename
         self._on_remove_from_list = on_remove_from_list
@@ -481,13 +483,20 @@ class ChatList(ft.Column):
             return handler
 
         # Build menu items
-        items: list[ContextMenuItem] = [
-            ContextMenuItem(
-                icon=ft.Icons.EDIT,
-                label=t("chat.rename"),
-                on_click=handle_action(self._start_rename, session_id, page),
-            ),
-        ]
+        items: list[ContextMenuItem] = []
+
+        if self._on_new_session:
+            items.append(ContextMenuItem(
+                icon=ft.Icons.ADD_COMMENT_OUTLINED,
+                label=t("chat.new_session"),
+                on_click=handle_action(self._on_new_session, session_id),
+            ))
+
+        items.append(ContextMenuItem(
+            icon=ft.Icons.EDIT,
+            label=t("chat.rename"),
+            on_click=handle_action(self._start_rename, session_id, page),
+        ))
 
         if session.status == "archived":
             if self._on_unarchive:
