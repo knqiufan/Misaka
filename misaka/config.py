@@ -105,6 +105,8 @@ class SettingKeys:
     ACCENT_COLOR = "accent_color"
     CHAT_GROUP_MODE = "chat_group_mode"
     SETUP_WIZARD_COMPLETED = "setup_wizard_completed"
+    VECTOR_BACKEND = "vector_backend"
+    VECTOR_BACKEND_PENDING_KBS = "vector_backend_pending_kbs"
 
 
 # ---------------------------------------------------------------------------
@@ -158,11 +160,3 @@ def get_expanded_path() -> str:
             parts.append(p)
             seen.add(p)
     return os.pathsep.join(parts)
-
-
-# ---------------------------------------------------------------------------
-# UI feature flags (temporary toggles; do not remove underlying code)
-# ---------------------------------------------------------------------------
-
-KNOWLEDGE_BASE_UI_ENABLED: bool = False
-"""Show knowledge base nav item and chat KB selector. Set True to re-enable."""

@@ -28,6 +28,8 @@ class LCHybridRetriever(Retriever):
     search is performed.
     """
 
+    requires_bm25_chunks = True
+
     def __init__(
         self,
         vector_store: VectorStore,

@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 
 import flet as ft
 
-from misaka.config import KNOWLEDGE_BASE_UI_ENABLED
 from misaka.ui.chat.pages.chat_page import ChatPage
 from misaka.ui.common.theme import apply_theme
 from misaka.ui.dashboard.pages.dashboard_page import DashboardPage
@@ -147,14 +146,10 @@ class AppShell(ft.Row):
             "extensions": self._extensions_page,
         }
         page_key = self.state.current_page
-        if page_key == "knowledge" and not KNOWLEDGE_BASE_UI_ENABLED:
-            page_key = "chat"
         return page_map.get(page_key, self._dashboard_page)
 
     def _on_nav_change(self, page_name: str) -> None:
         """Handle navigation rail selection changes."""
-        if page_name == "knowledge" and not KNOWLEDGE_BASE_UI_ENABLED:
-            return
         if page_name == self.state.current_page:
             return
 

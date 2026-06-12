@@ -194,6 +194,23 @@ class DatabaseBackend(ABC):
     def get_all_settings(self) -> dict[str, str]:
         """Return all settings as a dict."""
 
+    # ----- SeekDB Configuration -----
+
+    @abstractmethod
+    def get_seekdb_config(self) -> dict[str, Any] | None:
+        """Return the singleton SeekDB remote connection configuration."""
+
+    @abstractmethod
+    def save_seekdb_config(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+        database_name: str,
+    ) -> None:
+        """Insert or update the singleton SeekDB remote connection configuration."""
+
     # ----- Tasks -----
 
     @abstractmethod

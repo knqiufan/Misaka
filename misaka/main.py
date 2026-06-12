@@ -178,13 +178,91 @@ class ServiceContainer:
         # Knowledge Base / RAG services
         from misaka.services.knowledge.document_service import DocumentService
         from misaka.services.knowledge.kb_service import KnowledgeBaseService
+
+        self.rag_orchestrator = self._create_rag_orchestrator()
+        self.kb_service = KnowledgeBaseService(db, self.rag_orchestrator)
+        self.document_service = DocumentService(db, self.rag_orchestrator)
+
+    def _create_rag_orchestrator(self):
+        """Build the RAG pipeline for the currently persisted vector backend."""
         from misaka.services.knowledge.rag.factory import RAGComponentFactory
         from misaka.services.knowledge.rag_orchestrator import RAGOrchestrator
 
-        rag_factory = RAGComponentFactory(str(config.DB_PATH), backend="langchain")
-        self.rag_orchestrator = RAGOrchestrator(rag_factory, db)
-        self.kb_service = KnowledgeBaseService(db, self.rag_orchestrator)
-        self.document_service = DocumentService(db, self.rag_orchestrator)
+        vector_backend = (
+            self.settings_service.get(SettingKeys.VECTOR_BACKEND) or "sqlite"
+        )
+        backend = "langchain"
+        seekdb_mode = ""
+        seekdb_config = None
+
+        if vector_backend == "seekdb_embedded":
+            backend = "seekdb"
+            seekdb_mode = vector_backend
+        elif vector_backend == "seekdb_remote":
+            backend = "seekdb"
+            seekdb_mode = vector_backend
+            seekdb_config = self.db.get_seekdb_config()
+        elif vector_backend != "sqlite":
+            logger.warning(
+                "Unknown vector backend %r; falling back to sqlite",
+                vector_backend,
+            )
+
+        db_path = getattr(self.db, "_db_path", str(config.DB_PATH))
+        factory = RAGComponentFactory(
+            str(db_path),
+            backend=backend,
+            seekdb_mode=seekdb_mode,
+            seekdb_config=seekdb_config,
+        )
+        return RAGOrchestrator(factory, self.db)
+
+    def rebuild_rag(self) -> None:
+        """Re-create the RAG pipeline after vector backend configuration changes."""
+        old_orchestrator = getattr(self, "rag_orchestrator", None)
+        if old_orchestrator is not None:
+            old_orchestrator.close()
+
+        self.rag_orchestrator = self._create_rag_orchestrator()
+        if hasattr(self, "kb_service"):
+            self.kb_service._orchestrator = self.rag_orchestrator
+        if hasattr(self, "document_service"):
+            self.document_service._orchestrator = self.rag_orchestrator
+
+    def configure_vector_backend(
+        self,
+        vector_backend: str,
+        seekdb_config: dict[str, object] | None = None,
+    ) -> bool:
+        """Persist vector backend settings and rebuild the live RAG pipeline.
+
+        Returns True when the backend itself changed. Remote connection edits
+        rebuild the pipeline but do not invalidate existing indexes.
+        """
+        valid_backends = {"sqlite", "seekdb_embedded", "seekdb_remote"}
+        if vector_backend not in valid_backends:
+            raise ValueError(f"Unknown vector backend: {vector_backend}")
+
+        previous = self.settings_service.get(SettingKeys.VECTOR_BACKEND) or "sqlite"
+        if vector_backend == "seekdb_remote":
+            config_values = seekdb_config or {}
+            self.db.save_seekdb_config(
+                host=str(config_values.get("host", "")).strip(),
+                port=int(config_values.get("port", 2881)),
+                user=str(config_values.get("user", "root")).strip() or "root",
+                password=str(config_values.get("password", "")),
+                database_name=(
+                    str(config_values.get("database_name", "misaka_kb")).strip()
+                    or "misaka_kb"
+                ),
+            )
+
+        changed = previous != vector_backend
+        self.settings_service.set(SettingKeys.VECTOR_BACKEND, vector_backend)
+        if changed and hasattr(self, "kb_service"):
+            self.kb_service.mark_all_indexes_stale()
+        self.rebuild_rag()
+        return changed
 
     async def close(self) -> None:
         """Release resources held by services."""

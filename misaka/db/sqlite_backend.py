@@ -437,6 +437,40 @@ class SQLiteBackend(DatabaseBackend):
         rows = conn.execute("SELECT key, value FROM settings").fetchall()
         return {row["key"]: row["value"] for row in rows}
 
+    # ----- SeekDB Configuration -----
+
+    def get_seekdb_config(self) -> dict[str, Any] | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT host, port, user, password, database_name, updated_at
+               FROM seekdb_config WHERE id = 'default'"""
+        ).fetchone()
+        return dict(row) if row else None
+
+    def save_seekdb_config(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+        database_name: str,
+    ) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT INTO seekdb_config
+               (id, host, port, user, password, database_name, updated_at)
+               VALUES ('default', ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET
+                   host = excluded.host,
+                   port = excluded.port,
+                   user = excluded.user,
+                   password = excluded.password,
+                   database_name = excluded.database_name,
+                   updated_at = excluded.updated_at""",
+            (host, port, user, password, database_name, _now()),
+        )
+        self._maybe_commit()
+
     # ----- Tasks -----
 
     def get_tasks_by_session(self, session_id: str) -> list[TaskItem]:

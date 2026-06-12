@@ -104,6 +104,7 @@ class DocumentService:
                 kb=kb,
                 embedding_config=embedding_config,
                 on_progress=on_progress,
+                document_id=doc_id,
             )
 
             if result.error:
@@ -261,6 +262,7 @@ class DocumentService:
             kb=kb,
             embedding_config=embedding_config,
             on_progress=on_progress,
+            document_id=doc.id,
         )
 
         if result.error:

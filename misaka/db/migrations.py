@@ -12,7 +12,7 @@ import sqlite3
 logger = logging.getLogger(__name__)
 
 # Current schema version. Increment when adding new migrations.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def run_migrations(conn: sqlite3.Connection) -> None:
@@ -39,6 +39,9 @@ def run_migrations(conn: sqlite3.Connection) -> None:
 
     if current < 5:
         _migrate_v5(conn)
+
+    if current < 6:
+        _migrate_v6(conn)
 
     _set_version(conn, SCHEMA_VERSION)
     conn.commit()
@@ -276,3 +279,19 @@ def _migrate_v5(conn: sqlite3.Connection) -> None:
             CREATE INDEX IF NOT EXISTS idx_kb_chunks_kb_id
                 ON kb_chunks(knowledge_base_id)
         """)
+
+
+def _migrate_v6(conn: sqlite3.Connection) -> None:
+    """Migration v6: Add the singleton SeekDB remote connection configuration."""
+    logger.info("Running migration v6")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS seekdb_config (
+            id TEXT PRIMARY KEY DEFAULT 'default',
+            host TEXT NOT NULL DEFAULT '127.0.0.1',
+            port INTEGER NOT NULL DEFAULT 2881,
+            user TEXT NOT NULL DEFAULT 'root',
+            password TEXT NOT NULL DEFAULT '',
+            database_name TEXT NOT NULL DEFAULT 'misaka_kb',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)

@@ -79,10 +79,13 @@ class KBDetailPage(ft.Column):
 
         header = self._build_header(kb_name, kb)
         warning_banner = self._build_warning_banner()
+        backend_warning = self._build_backend_warning_banner(kb_svc)
         doc_table = self._build_document_section()
         controls: list[ft.Control] = [header]
         if warning_banner:
             controls.append(warning_banner)
+        if backend_warning:
+            controls.append(backend_warning)
         controls.append(doc_table)
         self.controls = controls
 
@@ -158,6 +161,33 @@ class KBDetailPage(ft.Column):
             margin=ft.Margin(left=0, right=0, top=0, bottom=0),
             border_radius=6,
             bgcolor=ft.Colors.with_opacity(0.06, ft.Colors.AMBER),
+        )
+
+    def _build_backend_warning_banner(self, kb_svc) -> ft.Container | None:
+        if not kb_svc or not kb_svc.is_index_stale(self._kb_id):
+            return None
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.SYNC_PROBLEM, size=17, color=ft.Colors.AMBER),
+                    ft.Text(
+                        t("kb.vector_backend_changed_warning"),
+                        size=12,
+                        color=ft.Colors.AMBER,
+                        expand=True,
+                    ),
+                    make_button(
+                        t("kb.rebuild_all_indexes"),
+                        icon=ft.Icons.REFRESH,
+                        on_click=lambda _: self._on_rebuild_index(),
+                        disabled=not self._embedding_available,
+                    ),
+                ],
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding(left=24, right=24, top=8, bottom=8),
+            bgcolor=ft.Colors.with_opacity(0.08, ft.Colors.AMBER),
         )
 
     def _build_document_section(self) -> ft.Control:
@@ -263,6 +293,50 @@ class KBDetailPage(ft.Column):
                 show_snackbar(page, f"Reprocess failed: {exc}", bgcolor=ft.Colors.ERROR)
             finally:
                 self.refresh()
+
+        page.run_task(_run)
+
+    def _on_rebuild_index(self) -> None:
+        page = self.state.page
+        kb_svc = self.state.get_service("kb_service")
+        router_svc = self.state.get_service("router_config_service")
+        if not kb_svc or not router_svc:
+            return
+
+        kb = kb_svc.get(self._kb_id)
+        if not kb:
+            return
+        embed_config = _find_embed_config(
+            router_svc.get_available_embedding_models(),
+            kb,
+        )
+        if not embed_config:
+            show_snackbar(
+                page,
+                t("kb.embedding_config_not_found"),
+                bgcolor=ft.Colors.ERROR,
+            )
+            return
+
+        async def _run() -> None:
+            from misaka.services.knowledge.rag.abstractions import EmbeddingConfig
+
+            show_snackbar(page, t("kb.rebuilding_embeddings"))
+            result = await kb_svc.rebuild_embeddings(
+                self._kb_id,
+                EmbeddingConfig(**embed_config),
+            )
+            message = (
+                t("kb.rebuild_complete")
+                .replace("{success}", str(result["success_count"]))
+                .replace("{errors}", str(result["error_count"]))
+            )
+            show_snackbar(
+                page,
+                message,
+                bgcolor=ft.Colors.ERROR if result["error_count"] else None,
+            )
+            self.refresh()
 
         page.run_task(_run)
 

@@ -24,6 +24,7 @@ _MENU_ITEMS: list[tuple[str, str, object]] = [
     ("appearance", "settings.settings_menu_appearance", ft.Icons.PALETTE_OUTLINED),
     ("permission", "settings.settings_menu_permission", ft.Icons.SECURITY_OUTLINED),
     ("router", "settings.settings_menu_router", ft.Icons.ROUTER_OUTLINED),
+    ("vector_backend", "settings.settings_menu_vector_backend", ft.Icons.STORAGE_OUTLINED),
     ("system_prompt", "settings.settings_menu_system_prompt", ft.Icons.PSYCHOLOGY_OUTLINED),
     ("update", "settings.settings_menu_update", ft.Icons.SYSTEM_UPDATE_OUTLINED),
     ("env_status", "settings.settings_menu_env", ft.Icons.SETTINGS_APPLICATIONS_OUTLINED),
@@ -177,6 +178,8 @@ class SettingsPage(ft.Column):
             return self._create_permission_panel()
         elif panel_id == "router":
             return self._create_router_panel()
+        elif panel_id == "vector_backend":
+            return self._create_vector_backend_panel()
         elif panel_id == "system_prompt":
             return self._create_system_prompt_panel()
         elif panel_id == "update":
@@ -208,6 +211,10 @@ class SettingsPage(ft.Column):
     def _create_router_panel(self) -> ft.Control:
         from misaka.ui.settings.components.router_panel import RouterPanel
         return RouterPanel(self.state, db=self.db)
+
+    def _create_vector_backend_panel(self) -> ft.Control:
+        from misaka.ui.settings.components.vector_backend_panel import VectorBackendPanel
+        return VectorBackendPanel(self.state, db=self.db)
 
     def _create_system_prompt_panel(self) -> ft.Control:
         from misaka.ui.settings.components.system_prompt_panel import SystemPromptPanel

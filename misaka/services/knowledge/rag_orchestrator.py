@@ -8,12 +8,14 @@ instances are injected via :class:`RAGComponentFactory`.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from misaka.services.knowledge.rag.abstractions import (
+    ChunkData,
     EmbeddingConfig,
     IngestResult,
     RerankerConfig,
@@ -70,6 +72,7 @@ class RAGOrchestrator:
         kb: KnowledgeBase,
         embedding_config: EmbeddingConfig,
         on_progress: Callable[[str], None] | None = None,
+        document_id: str = "",
     ) -> IngestResult:
         """Full ingestion pipeline: parse → chunk → embed → store.
 
@@ -119,6 +122,8 @@ class RAGOrchestrator:
 
             for c in chunks:
                 c.metadata["chunk_db_id"] = str(uuid.uuid4())
+                c.metadata["document_id"] = document_id
+                c.metadata["chunk_index"] = c.index
 
             _notify(on_progress, "embedding")
             texts = [c.content for c in chunks]
@@ -290,11 +295,34 @@ class RAGOrchestrator:
     ) -> list[RetrievalResult]:
         """Retrieve from a single knowledge base and tag results."""
         table_name = self._get_table_name(kb_id)
+        chunks_for_bm25 = []
+        if getattr(self._retriever, "requires_bm25_chunks", False):
+            for chunk in self._db.get_kb_chunks_by_kb(kb_id):
+                metadata = {}
+                try:
+                    value = json.loads(chunk.metadata_json)
+                    if isinstance(value, dict):
+                        metadata = value
+                except (TypeError, ValueError):
+                    pass
+                metadata.setdefault("chunk_db_id", chunk.id)
+                metadata.setdefault("document_id", chunk.document_id)
+                metadata.setdefault("chunk_index", chunk.chunk_index)
+                chunks_for_bm25.append(
+                    ChunkData(
+                        content=chunk.content,
+                        index=chunk.chunk_index,
+                        start_char=chunk.start_char,
+                        end_char=chunk.end_char,
+                        metadata=metadata,
+                    )
+                )
         results = await self._retriever.retrieve(
             query=query,
             query_embedding=query_vec,
             table_name=table_name,
             top_k=top_k * 2,
+            chunks_for_bm25=chunks_for_bm25 or None,
         )
         for r in results:
             r.metadata["_kb_id"] = kb_id

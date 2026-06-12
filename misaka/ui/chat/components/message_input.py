@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING
 import flet as ft
 
 from misaka.commands import SlashCommand, filter_commands
-from misaka.config import KNOWLEDGE_BASE_UI_ENABLED
 from misaka.db.models import FileTreeNode, PendingImage
 from misaka.i18n import t
 from misaka.ui.chat.components.image_preview_bar import ImagePreviewBar
@@ -226,56 +225,51 @@ class MessageInput(ft.Container):
             on_view_image=self._handle_view_image,
         )
 
-        # Knowledge base button with badge (gated by KNOWLEDGE_BASE_UI_ENABLED)
-        kb_btn_stack: ft.Stack | None = None
-        if KNOWLEDGE_BASE_UI_ENABLED:
-            self._kb_badge_text = ft.Text("", size=8, color=ft.Colors.WHITE)
-            kb_badge = ft.Container(
-                content=self._kb_badge_text,
-                bgcolor=ft.Colors.PRIMARY,
-                border_radius=7,
-                width=14,
-                height=14,
-                alignment=ft.Alignment.CENTER,
-                visible=False,
-            )
-            kb_btn = self._build_utility_button(
-                icon=ft.Icons.MENU_BOOK_ROUNDED,
-                tooltip=t("chat.kb_select_title"),
-                on_click=self._toggle_kb_selector,
-            )
-            kb_btn_stack = ft.Stack(
-                controls=[kb_btn, ft.Container(content=kb_badge, right=0, top=0)],
-                width=36,
-                height=36,
-            )
-            self._kb_btn_container = kb_btn_stack
-            self._kb_badge = kb_badge
+        # Knowledge base button with badge
+        self._kb_badge_text = ft.Text("", size=8, color=ft.Colors.WHITE)
+        kb_badge = ft.Container(
+            content=self._kb_badge_text,
+            bgcolor=ft.Colors.PRIMARY,
+            border_radius=7,
+            width=14,
+            height=14,
+            alignment=ft.Alignment.CENTER,
+            visible=False,
+        )
+        kb_btn = self._build_utility_button(
+            icon=ft.Icons.MENU_BOOK_ROUNDED,
+            tooltip=t("chat.kb_select_title"),
+            on_click=self._toggle_kb_selector,
+        )
+        kb_btn_stack = ft.Stack(
+            controls=[kb_btn, ft.Container(content=kb_badge, right=0, top=0)],
+            width=36,
+            height=36,
+        )
+        self._kb_btn_container = kb_btn_stack
+        self._kb_badge = kb_badge
 
-            # KB selector popup
-            self._kb_selector = KBSelector(
-                self.state,
-                on_change=self._on_kb_selection_change,
-            )
-            self._kb_selector_container = ft.Container(
-                content=self._kb_selector,
-                visible=False,
-                margin=ft.Margin.only(left=52, bottom=8),
-            )
+        self._kb_selector = KBSelector(
+            self.state,
+            on_change=self._on_kb_selection_change,
+        )
+        self._kb_selector_container = ft.Container(
+            content=self._kb_selector,
+            visible=False,
+            margin=ft.Margin.only(left=52, bottom=8),
+        )
 
-            # Selected KB names bar (below input)
-            self._kb_selected_bar = ft.Container(
-                content=ft.Row(controls=[], spacing=4, wrap=True, run_spacing=4),
-                visible=False,
-                padding=ft.Padding.only(left=14, right=14, top=2, bottom=4),
-            )
+        self._kb_selected_bar = ft.Container(
+            content=ft.Row(controls=[], spacing=4, wrap=True, run_spacing=4),
+            visible=False,
+            padding=ft.Padding.only(left=14, right=14, top=2, bottom=4),
+        )
 
         input_row_controls: list[ft.Control] = [
             attach_btn,
             command_btn,
+            kb_btn_stack,
         ]
-        if kb_btn_stack is not None:
-            input_row_controls.append(kb_btn_stack)
         input_row_controls.extend(
             [
                 self._model_indicator,
@@ -315,11 +309,9 @@ class MessageInput(ft.Container):
         content_controls: list[ft.Control | None] = [
             self._command_menu_container,
             self._file_menu_container,
+            self._kb_selector_container,
+            self._kb_selected_bar,
         ]
-        if KNOWLEDGE_BASE_UI_ENABLED:
-            content_controls.extend(
-                [self._kb_selector_container, self._kb_selected_bar]
-            )
         content_controls.extend(
             [
                 self._image_preview_bar,

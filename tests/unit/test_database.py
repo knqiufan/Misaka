@@ -85,6 +85,25 @@ class TestSQLiteBackend:
         settings = db.get_all_settings()
         assert settings == {"a": "1", "b": "2"}
 
+    def test_seekdb_config_round_trip(self, db: DatabaseBackend) -> None:
+        assert db.get_seekdb_config() is None
+
+        db.save_seekdb_config(
+            host="seekdb.example.com",
+            port=2881,
+            user="admin",
+            password="secret",
+            database_name="misaka_test",
+        )
+
+        saved = db.get_seekdb_config()
+        assert saved is not None
+        assert saved["host"] == "seekdb.example.com"
+        assert saved["port"] == 2881
+        assert saved["user"] == "admin"
+        assert saved["password"] == "secret"
+        assert saved["database_name"] == "misaka_test"
+
     def test_create_and_get_task(self, db: DatabaseBackend) -> None:
         session = db.create_session(title="Chat")
         task = db.create_task(session.id, "Fix bug", description="Important fix")
@@ -171,4 +190,17 @@ class TestSQLiteBackend:
 
         assert row is None
         assert version is not None
-        assert version[0] == 5
+        assert version[0] == 6
+
+    def test_migration_creates_seekdb_config_table(self, tmp_path) -> None:
+        conn = sqlite3.connect(tmp_path / "seekdb-migrate.db")
+        conn.execute("CREATE TABLE _schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO _schema_version (version) VALUES (5)")
+        run_migrations(conn)
+
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='seekdb_config'"
+        ).fetchone()
+        conn.close()
+
+        assert row is not None

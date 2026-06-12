@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestSettingsMenuConfig:
     """Tests for settings menu item configuration and routing keys."""
@@ -12,6 +10,7 @@ class TestSettingsMenuConfig:
         "appearance",
         "permission",
         "router",
+        "vector_backend",
         "system_prompt",
         "update",
         "env_status",

@@ -6,8 +6,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
+from misaka.config import SettingKeys
 from misaka.db.database import DatabaseBackend
 from misaka.main import ServiceContainer
 
@@ -69,3 +68,30 @@ class TestServiceContainer:
     def test_claude_service_uses_permission_service(self, db: DatabaseBackend) -> None:
         container = ServiceContainer(db)
         assert container.claude_service._permission_service is container.permission_service
+
+    def test_configure_remote_vector_backend_rebuilds_services(
+        self,
+        db: DatabaseBackend,
+    ) -> None:
+        container = ServiceContainer(db)
+        old_orchestrator = container.rag_orchestrator
+
+        changed = container.configure_vector_backend(
+            "seekdb_remote",
+            {
+                "host": "seekdb.example.com",
+                "port": 2881,
+                "user": "root",
+                "password": "secret",
+                "database_name": "misaka_kb",
+            },
+        )
+
+        assert changed is True
+        assert db.get_setting(SettingKeys.VECTOR_BACKEND) == "seekdb_remote"
+        assert db.get_seekdb_config()["host"] == "seekdb.example.com"
+        assert container.rag_orchestrator is not old_orchestrator
+        assert container.kb_service._orchestrator is container.rag_orchestrator
+        assert container.document_service._orchestrator is container.rag_orchestrator
+        assert container.rag_orchestrator._factory._backend == "seekdb"
+        assert container.rag_orchestrator._factory._seekdb_mode == "seekdb_remote"

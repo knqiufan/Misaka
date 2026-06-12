@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import shutil
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from misaka.config import get_kb_storage_dir
+from misaka.config import SettingKeys, get_kb_storage_dir
 from misaka.db.models import KnowledgeBase
 
 if TYPE_CHECKING:
@@ -165,6 +166,10 @@ class KnowledgeBaseService:
         errors: list[str] = []
 
         self._db.update_knowledge_base(kb_id, status="building")
+        try:
+            self._orchestrator.drop_kb_vectors(kb_id)
+        except Exception:
+            logger.info("No existing vector collection to drop for kb %s", kb_id)
 
         for doc in docs:
             try:
@@ -178,12 +183,55 @@ class KnowledgeBaseService:
         new_status = "active" if error_count == 0 else "error"
         self._db.update_knowledge_base(kb_id, status=new_status)
         self.update_statistics(kb_id)
+        if error_count == 0:
+            self.mark_index_rebuilt(kb_id)
 
         return {
             "success_count": success_count,
             "error_count": error_count,
             "errors": errors,
         }
+
+    # ----- Vector backend rebuild state -----
+
+    def mark_all_indexes_stale(self) -> None:
+        """Persist the KB IDs whose vectors must be rebuilt on the new backend."""
+        pending_ids = [
+            kb.id
+            for kb in self._db.get_all_knowledge_bases()
+            if self._db.get_kb_documents_by_kb(kb.id)
+        ]
+        self._save_pending_kb_ids(pending_ids)
+
+    def is_index_stale(self, kb_id: str) -> bool:
+        """Return whether a KB still needs an index rebuild after switching backend."""
+        return kb_id in self._load_pending_kb_ids()
+
+    def mark_index_rebuilt(self, kb_id: str) -> None:
+        """Clear a KB from the persistent backend-switch rebuild queue."""
+        pending_ids = self._load_pending_kb_ids()
+        if kb_id in pending_ids:
+            pending_ids.remove(kb_id)
+            self._save_pending_kb_ids(sorted(pending_ids))
+
+    def _load_pending_kb_ids(self) -> set[str]:
+        raw = self._db.get_setting(SettingKeys.VECTOR_BACKEND_PENDING_KBS)
+        if not raw:
+            return set()
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError):
+            logger.warning("Ignoring invalid vector backend pending KB setting")
+            return set()
+        if not isinstance(value, list):
+            return set()
+        return {str(item) for item in value if item}
+
+    def _save_pending_kb_ids(self, kb_ids: list[str]) -> None:
+        self._db.set_setting(
+            SettingKeys.VECTOR_BACKEND_PENDING_KBS,
+            json.dumps(kb_ids),
+        )
 
     async def _rebuild_single_doc(
         self,
@@ -204,6 +252,7 @@ class KnowledgeBaseService:
             kb=kb,
             embedding_config=embedding_config,
             on_progress=on_progress,
+            document_id=doc.id,
         )
         if result.error:
             self._db.update_kb_document(doc.id, status="error", error_message=result.error)
@@ -276,6 +325,8 @@ class KnowledgeBaseService:
         result: list[dict[str, Any]] = []
         for kb in all_kbs:
             if kb.status != "active":
+                continue
+            if self.is_index_stale(kb.id):
                 continue
             if kb.chunk_count <= 0:
                 continue
