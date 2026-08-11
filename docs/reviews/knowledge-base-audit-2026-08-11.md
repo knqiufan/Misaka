@@ -477,3 +477,4 @@ UI 上传文件
 - 新增了分段 metadata、`.xls` 拒绝、数值配置、文档分页/切片、BM25 缓存、上下文转义、重排器畸形响应、migration v9 和 copy-on-write 索引路径的回归用例。
 - 静态检查执行 `ruff check misaka`、`mypy misaka`；全量测试和冻结 RAG smoke 作为发布门禁执行。仓库原有 `ruff check tests` 的历史告警不影响源代码检查结论，未在本次范围内修改无关测试文件。
 - 二次审查重点复核了索引切换时旧资源地址、后端指纹不匹配的删除保护、异常补偿顺序、异步边界、HTML 转义和界面分页是否出现新的数据丢失或竞态；未发现新的阻断性问题。
+- 首次 `v0.3.0` tag 发布的 Windows 任务在下载 Inno Setup 中文语言包时因旧的 `Unofficial/ChineseSimplified.isl` 路径返回 404 而停止；CI、冻结 smoke 和 macOS 包均已成功。已将发布工作流改为官方现行 `Files/Languages/ChineseSimplified.isl` 路径，待修复 PR 全绿并合并后重新推送同一发布标签。
