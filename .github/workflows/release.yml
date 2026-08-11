@@ -55,6 +55,9 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller misaka.spec
 
+      - name: Run frozen RAG smoke test
+        run: .\dist\Misaka\Misaka.exe --rag-smoke
+
       - name: Install Inno Setup
         run: choco install innosetup -y
 

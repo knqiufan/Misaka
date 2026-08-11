@@ -351,12 +351,31 @@ class KBDetailPage(ft.Column):
         page = self.state.page
 
         def _do_delete(_: ft.ControlEvent) -> None:
-            doc_svc.delete_document(doc_id)
             kb_svc = self.state.get_service("kb_service")
-            if kb_svc:
-                kb_svc.update_statistics(self._kb_id)
-            page.pop_dialog()
-            self.refresh()
+            router_svc = self.state.get_service("router_config_service")
+            kb = kb_svc.get(self._kb_id) if kb_svc else None
+            embed_config = _find_embed_config(
+                router_svc.get_available_embedding_models(), kb,
+            ) if router_svc and kb else None
+            if not embed_config:
+                show_snackbar(
+                    page, t("kb.embedding_config_not_found"), bgcolor=ft.Colors.ERROR,
+                )
+                return
+
+            async def _run_delete() -> None:
+                from misaka.services.knowledge.rag.abstractions import EmbeddingConfig
+
+                try:
+                    await doc_svc.delete_document(doc_id, EmbeddingConfig(**embed_config))
+                except Exception as exc:
+                    logger.exception("Delete failed for doc %s", doc_id)
+                    show_snackbar(page, f"Delete failed: {exc}", bgcolor=ft.Colors.ERROR)
+                else:
+                    page.pop_dialog()
+                    self.refresh()
+
+            page.run_task(_run_delete)
 
         page.show_dialog(
             ft.AlertDialog(

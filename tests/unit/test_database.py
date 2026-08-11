@@ -190,7 +190,7 @@ class TestSQLiteBackend:
 
         assert row is None
         assert version is not None
-        assert version[0] == 6
+        assert version[0] == 7
 
     def test_migration_creates_seekdb_config_table(self, tmp_path) -> None:
         conn = sqlite3.connect(tmp_path / "seekdb-migrate.db")

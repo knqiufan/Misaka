@@ -20,6 +20,7 @@ from misaka.db.database import DatabaseBackend
 from misaka.db.models import (
     ChatSession,
     KBChunk,
+    KBCleanupJob,
     KBDocument,
     KnowledgeBase,
     Message,
@@ -731,8 +732,8 @@ class SQLiteBackend(DatabaseBackend):
                 chunk_size, chunk_overlap,
                 top_k, similarity_threshold, reranker_top_k,
                 document_count, chunk_count,
-                status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 status, active_index_version, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 kb.id, kb.name, kb.description,
                 kb.embedding_model_id, kb.embedding_router_config_id, kb.embedding_dimensions,
@@ -740,7 +741,8 @@ class SQLiteBackend(DatabaseBackend):
                 kb.chunk_size, kb.chunk_overlap,
                 kb.top_k, kb.similarity_threshold, kb.reranker_top_k,
                 kb.document_count, kb.chunk_count,
-                kb.status, kb.created_at or _now(), kb.updated_at or _now(),
+                kb.status, kb.active_index_version,
+                kb.created_at or _now(), kb.updated_at or _now(),
             ),
         )
         self._maybe_commit()
@@ -769,7 +771,7 @@ class SQLiteBackend(DatabaseBackend):
             "reranker_model_id", "reranker_router_config_id",
             "chunk_size", "chunk_overlap",
             "top_k", "similarity_threshold", "reranker_top_k",
-            "document_count", "chunk_count", "status",
+            "document_count", "chunk_count", "status", "active_index_version",
         }
         sets: list[str] = ["updated_at = ?"]
         params: list[Any] = [_now()]
@@ -874,7 +876,7 @@ class SQLiteBackend(DatabaseBackend):
                 c.id, c.document_id, c.knowledge_base_id,
                 c.content, c.chunk_index,
                 c.start_char, c.end_char, c.metadata_json,
-                c.is_embedded, c.created_at or now,
+                c.is_embedded, c.index_version, c.created_at or now,
             )
             for c in chunks
         ]
@@ -883,8 +885,8 @@ class SQLiteBackend(DatabaseBackend):
                (id, document_id, knowledge_base_id,
                 content, chunk_index,
                 start_char, end_char, metadata_json,
-                is_embedded, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 is_embedded, index_version, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
         self._maybe_commit()
@@ -905,6 +907,93 @@ class SQLiteBackend(DatabaseBackend):
         ).fetchall()
         return [row_to_kb_chunk(r) for r in rows]
 
+    def get_kb_chunks_by_index(
+        self, kb_id: str, index_version: str,
+    ) -> list[KBChunk]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT * FROM kb_chunks
+               WHERE knowledge_base_id = ? AND index_version = ?
+               ORDER BY document_id ASC, chunk_index ASC""",
+            (kb_id, index_version),
+        ).fetchall()
+        return [row_to_kb_chunk(r) for r in rows]
+
+    def activate_kb_index(
+        self,
+        kb_id: str,
+        index_version: str,
+        chunks: list[KBChunk],
+        document_updates: dict[str, dict[str, Any]],
+        dimensions: int,
+    ) -> None:
+        """Publish a complete staged index with its matching DB metadata.
+
+        The vector store is built before this method runs.  Keeping all DB
+        mutations in one SQLite transaction guarantees readers observe
+        either the complete old index or the complete new index, never an
+        empty/mixed set of chunk rows.
+        """
+        conn = self._get_conn()
+        now = _now()
+        try:
+            conn.execute("BEGIN")
+            if chunks:
+                conn.executemany(
+                    """INSERT INTO kb_chunks
+                       (id, document_id, knowledge_base_id,
+                        content, chunk_index,
+                        start_char, end_char, metadata_json,
+                        is_embedded, index_version, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    [
+                        (
+                            c.id, c.document_id, c.knowledge_base_id,
+                            c.content, c.chunk_index,
+                            c.start_char, c.end_char, c.metadata_json,
+                            c.is_embedded, c.index_version, c.created_at or now,
+                        )
+                        for c in chunks
+                    ],
+                )
+            for doc_id, values in document_updates.items():
+                conn.execute(
+                    """UPDATE kb_documents
+                       SET content_text = ?, content_length = ?, chunk_count = ?,
+                           status = ?, error_message = ?, updated_at = ?
+                       WHERE id = ?""",
+                    (
+                        str(values.get("content_text", "")),
+                        int(values.get("content_length", 0)),
+                        int(values.get("chunk_count", 0)),
+                        str(values.get("status", "ready")),
+                        str(values.get("error_message", "")),
+                        now,
+                        doc_id,
+                    ),
+                )
+            document_count = len(document_updates)
+            conn.execute(
+                """UPDATE knowledge_bases
+                   SET active_index_version = ?, embedding_dimensions = ?,
+                       document_count = ?, chunk_count = ?, status = 'active',
+                       updated_at = ?
+                   WHERE id = ?""",
+                (index_version, dimensions, document_count, len(chunks), now, kb_id),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    def delete_kb_chunks_by_index(self, kb_id: str, index_version: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "DELETE FROM kb_chunks WHERE knowledge_base_id = ? AND index_version = ?",
+            (kb_id, index_version),
+        )
+        self._maybe_commit()
+
     def delete_kb_chunks_by_document(self, doc_id: str) -> None:
         conn = self._get_conn()
         conn.execute(
@@ -920,6 +1009,80 @@ class SQLiteBackend(DatabaseBackend):
         conn.execute(
             f"UPDATE kb_chunks SET is_embedded = 1 WHERE id IN ({placeholders})",  # noqa: S608
             chunk_ids,
+        )
+        self._maybe_commit()
+
+    # ----- KB background jobs and durable cleanup -----
+
+    def create_kb_job(self, kb_id: str, document_id: str, operation: str) -> str:
+        job_id = _generate_id()
+        conn = self._get_conn()
+        now = _now()
+        conn.execute(
+            """INSERT INTO kb_jobs
+               (id, knowledge_base_id, document_id, operation, status, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'queued', ?, ?)""",
+            (job_id, kb_id, document_id, operation, now, now),
+        )
+        self._maybe_commit()
+        return job_id
+
+    def update_kb_job(self, job_id: str, status: str, error_message: str = "") -> None:
+        conn = self._get_conn()
+        conn.execute(
+            """UPDATE kb_jobs
+               SET status = ?, error_message = ?, updated_at = ?
+               WHERE id = ?""",
+            (status, error_message, _now(), job_id),
+        )
+        self._maybe_commit()
+
+    def create_kb_cleanup_job(
+        self, kb_id: str, index_version: str, operation: str, error_message: str,
+    ) -> str:
+        job_id = _generate_id()
+        conn = self._get_conn()
+        now = _now()
+        conn.execute(
+            """INSERT INTO kb_cleanup_jobs
+               (id, knowledge_base_id, index_version, operation, status,
+                attempts, error_message, created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)""",
+            (job_id, kb_id, index_version, operation, error_message, now, now),
+        )
+        self._maybe_commit()
+        return job_id
+
+    def get_pending_kb_cleanup_jobs(self) -> list[KBCleanupJob]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT * FROM kb_cleanup_jobs
+               WHERE status = 'pending' ORDER BY created_at ASC"""
+        ).fetchall()
+        return [
+            KBCleanupJob(
+                id=row["id"],
+                knowledge_base_id=row["knowledge_base_id"],
+                index_version=row["index_version"],
+                operation=row["operation"],
+                status=row["status"],
+                attempts=row["attempts"],
+                error_message=row["error_message"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
+            for row in rows
+        ]
+
+    def update_kb_cleanup_job(
+        self, job_id: str, status: str, error_message: str = "",
+    ) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            """UPDATE kb_cleanup_jobs
+               SET status = ?, attempts = attempts + 1, error_message = ?, updated_at = ?
+               WHERE id = ?""",
+            (status, error_message, _now(), job_id),
         )
         self._maybe_commit()
 

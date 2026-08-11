@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import shutil
@@ -11,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 from misaka.config import SettingKeys, get_kb_storage_dir
 from misaka.db.models import KnowledgeBase
+from misaka.services.knowledge.index_manager import KBIndexManager
+from misaka.services.knowledge.job_coordinator import KnowledgeBaseJobCoordinator
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
@@ -26,9 +27,14 @@ class KnowledgeBaseService:
         self,
         db: DatabaseBackend,
         orchestrator: RAGOrchestrator | None = None,
+        coordinator: KnowledgeBaseJobCoordinator | None = None,
     ) -> None:
         self._db = db
         self._orchestrator = orchestrator
+        self._coordinator = coordinator or KnowledgeBaseJobCoordinator(db)
+        self._index_manager = (
+            KBIndexManager(db, orchestrator) if orchestrator is not None else None
+        )
 
     # ── Queries ───────────────────────────────────────────────────────
 
@@ -74,22 +80,28 @@ class KnowledgeBaseService:
         self._db.update_knowledge_base(kb_id, **kwargs)
         return self._db.get_knowledge_base(kb_id)
 
-    def delete(self, kb_id: str) -> bool:
+    async def delete(self, kb_id: str) -> bool:
+        """Delete a KB after cancelling work; retain failed vector cleanup durably."""
         kb = self._db.get_knowledge_base(kb_id)
         if not kb:
             return False
 
-        if self._orchestrator:
-            try:
-                self._orchestrator.drop_kb_vectors(kb_id)
-            except Exception:
-                logger.exception("Failed to drop vectors for kb %s", kb_id)
+        await self._coordinator.cancel_and_wait(kb_id)
+        async with self._coordinator.job(kb_id, "delete_knowledge_base"):
+            if self._index_manager:
+                versions = {chunk.index_version for chunk in self._db.get_kb_chunks_by_kb(kb_id)}
+                if kb.active_index_version:
+                    versions.add(kb.active_index_version)
+                for version in versions:
+                    await self._index_manager.delete_index_or_enqueue(
+                        kb_id, version, "delete_knowledge_base",
+                    )
 
-        self._db.delete_knowledge_base(kb_id)
+            self._db.delete_knowledge_base(kb_id)
 
-        storage_dir = get_kb_storage_dir(kb_id)
-        if storage_dir.exists():
-            shutil.rmtree(storage_dir, ignore_errors=True)
+            storage_dir = get_kb_storage_dir(kb_id)
+            if storage_dir.exists():
+                shutil.rmtree(storage_dir, ignore_errors=True)
 
         logger.info("Deleted knowledge base '%s' (id=%s)", kb.name, kb_id)
         return True
@@ -98,9 +110,12 @@ class KnowledgeBaseService:
 
     def update_statistics(self, kb_id: str) -> None:
         """Recompute document_count and chunk_count from related rows."""
-        docs = self._db.get_kb_documents_by_kb(kb_id)
-        doc_count = len(docs)
-        chunk_count = sum(d.chunk_count for d in docs)
+        kb = self._db.get_knowledge_base(kb_id)
+        if kb is None:
+            return
+        chunks = self._db.get_kb_chunks_by_index(kb_id, kb.active_index_version)
+        doc_count = len({chunk.document_id for chunk in chunks})
+        chunk_count = len(chunks)
         self._db.update_knowledge_base(
             kb_id,
             document_count=doc_count,
@@ -153,7 +168,7 @@ class KnowledgeBaseService:
         on_progress: Any = None,
     ) -> dict[str, Any]:
         """Re-embed all documents after an embedding model change."""
-        if not self._orchestrator:
+        if not self._orchestrator or not self._index_manager:
             return {"success_count": 0, "error_count": 0, "errors": ["No orchestrator"]}
 
         kb = self._db.get_knowledge_base(kb_id)
@@ -161,36 +176,19 @@ class KnowledgeBaseService:
             return {"success_count": 0, "error_count": 0, "errors": ["KB not found"]}
 
         docs = self._db.get_kb_documents_by_kb(kb_id)
-        success_count = 0
-        error_count = 0
-        errors: list[str] = []
-
-        self._db.update_knowledge_base(kb_id, status="building")
         try:
-            self._orchestrator.drop_kb_vectors(kb_id)
-        except Exception:
-            logger.info("No existing vector collection to drop for kb %s", kb_id)
+            async with self._coordinator.job(kb_id, "rebuild"):
+                await self._index_manager.build_and_activate(
+                    kb, docs, embedding_config, on_progress,
+                )
+        except Exception as exc:
+            logger.exception("Rebuild failed for KB %s", kb_id)
+            # Keep the old active version and its reconciled statistics intact.
+            self.update_statistics(kb_id)
+            return {"success_count": 0, "error_count": 1, "errors": [str(exc)]}
 
-        for doc in docs:
-            try:
-                await self._rebuild_single_doc(kb, doc, embedding_config, on_progress)
-                success_count += 1
-            except Exception as exc:
-                logger.exception("Rebuild failed for doc %s", doc.id)
-                error_count += 1
-                errors.append(f"{doc.file_name}: {exc}")
-
-        new_status = "active" if error_count == 0 else "error"
-        self._db.update_knowledge_base(kb_id, status=new_status)
-        self.update_statistics(kb_id)
-        if error_count == 0:
-            self.mark_index_rebuilt(kb_id)
-
-        return {
-            "success_count": success_count,
-            "error_count": error_count,
-            "errors": errors,
-        }
+        self.mark_index_rebuilt(kb_id)
+        return {"success_count": len(docs), "error_count": 0, "errors": []}
 
     # ----- Vector backend rebuild state -----
 
@@ -233,85 +231,11 @@ class KnowledgeBaseService:
             json.dumps(kb_ids),
         )
 
-    async def _rebuild_single_doc(
-        self,
-        kb: KnowledgeBase,
-        doc: Any,
-        embedding_config: Any,
-        on_progress: Any,
-    ) -> None:
-        """Delete old chunks/vectors and re-ingest a single document."""
-        self._remove_old_chunks(doc)
-
-        if not doc.storage_path:
-            return
-
-        result = await self._orchestrator.ingest_document(
-            file_path=doc.storage_path,
-            file_type=doc.file_type,
-            kb=kb,
-            embedding_config=embedding_config,
-            on_progress=on_progress,
-            document_id=doc.id,
-        )
-        if result.error:
-            self._db.update_kb_document(doc.id, status="error", error_message=result.error)
-            raise RuntimeError(result.error)
-
-        self._persist_rebuilt_chunks(doc.id, doc.knowledge_base_id, result.chunks)
-        self._db.update_kb_document(
-            doc.id,
-            content_text=result.content_text,
-            content_length=result.content_length,
-            chunk_count=result.chunk_count,
-            status="ready",
-        )
-        if result.dimensions and kb.embedding_dimensions != result.dimensions:
-            self._db.update_knowledge_base(
-                kb.id, embedding_dimensions=result.dimensions,
-            )
-
-    def _remove_old_chunks(self, doc: Any) -> None:
-        """Remove existing chunk rows and their vectors."""
-        old_chunks = self._db.get_kb_chunks_by_document(doc.id)
-        old_ids = [c.id for c in old_chunks]
-        if old_ids:
-            try:
-                self._orchestrator.delete_chunks_from_vector_store(
-                    doc.knowledge_base_id, old_ids,
-                )
-            except Exception:
-                logger.warning("Failed to remove old vectors for doc %s", doc.id)
-        self._db.delete_kb_chunks_by_document(doc.id)
-
-    def _persist_rebuilt_chunks(
-        self, doc_id: str, kb_id: str, chunks: list,
-    ) -> None:
-        """Write ChunkData objects to the kb_chunks table."""
-        import json
-
-        from misaka.db.models import KBChunk
-
-        db_chunks: list[KBChunk] = []
-        for c in chunks:
-            cid = str(c.metadata.get("chunk_db_id", f"chunk_{c.index}"))
-            meta = "{}"
-            with contextlib.suppress(TypeError, ValueError):
-                meta = json.dumps(c.metadata, ensure_ascii=False)
-            db_chunks.append(KBChunk(
-                id=cid,
-                document_id=doc_id,
-                knowledge_base_id=kb_id,
-                content=c.content,
-                chunk_index=c.index,
-                start_char=c.start_char,
-                end_char=c.end_char,
-                metadata_json=meta,
-                is_embedded=1,
-            ))
-        if db_chunks:
-            self._db.create_kb_chunks_batch(db_chunks)
-            self._db.update_kb_chunk_embedded([c.id for c in db_chunks])
+    async def retry_pending_cleanup(self) -> int:
+        """Retry failed remote/local vector cleanup recorded in the outbox."""
+        if not self._index_manager:
+            return 0
+        return await self._index_manager.retry_pending_cleanup()
 
     # ── Chat selection ────────────────────────────────────────────────
 
@@ -328,13 +252,14 @@ class KnowledgeBaseService:
                 continue
             if self.is_index_stale(kb.id):
                 continue
-            if kb.chunk_count <= 0:
+            chunks = self._db.get_kb_chunks_by_index(kb.id, kb.active_index_version)
+            if not chunks:
                 continue
             result.append({
                 "id": kb.id,
                 "name": kb.name,
                 "description": kb.description,
-                "document_count": kb.document_count,
-                "chunk_count": kb.chunk_count,
+                "document_count": len({chunk.document_id for chunk in chunks}),
+                "chunk_count": len(chunks),
             })
         return result

@@ -84,3 +84,23 @@ jobs:
           tests/unit/test_platform.py
           tests/unit/test_mcp_market_service.py
           tests/unit/test_skill_market_service.py
+
+  frozen-rag-smoke:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: pip install -e ".[dev,build]"
+
+      - name: Build frozen application
+        run: pyinstaller misaka.spec
+
+      - name: Run frozen RAG smoke test
+        run: .\dist\Misaka\Misaka.exe --rag-smoke

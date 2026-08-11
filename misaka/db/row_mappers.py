@@ -108,6 +108,7 @@ def row_to_knowledge_base(row: sqlite3.Row) -> KnowledgeBase:
         document_count=row["document_count"],
         chunk_count=row["chunk_count"],
         status=row["status"],
+        active_index_version=row["active_index_version"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -143,5 +144,6 @@ def row_to_kb_chunk(row: sqlite3.Row) -> KBChunk:
         end_char=row["end_char"],
         metadata_json=row["metadata_json"],
         is_embedded=row["is_embedded"],
+        index_version=row["index_version"],
         created_at=row["created_at"],
     )

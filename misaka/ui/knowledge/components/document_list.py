@@ -117,6 +117,7 @@ def _build_doc_row(
     status_color = _STATUS_COLORS.get(doc.status, ft.Colors.GREY)
     status_icon = _STATUS_ICONS.get(doc.status, ft.Icons.HELP_OUTLINE)
     type_icon = _TYPE_ICONS.get(doc.file_type, ft.Icons.INSERT_DRIVE_FILE_OUTLINED)
+    is_processing = doc.status in {"pending", "parsing", "embedding"}
 
     actions = ft.Row(
         controls=[
@@ -131,12 +132,14 @@ def _build_doc_row(
                 tooltip=t("kb.doc_reprocess"),
                 on_click=lambda _, did=doc.id: on_reprocess(did) if on_reprocess else None,
                 icon_size=15,
+                disabled=is_processing,
             ),
             make_icon_button(
                 ft.Icons.DELETE_OUTLINE,
                 tooltip=t("kb.doc_delete"),
                 on_click=lambda _, did=doc.id: on_delete(did) if on_delete else None,
                 icon_size=15,
+                disabled=is_processing,
             ),
         ],
         spacing=0,

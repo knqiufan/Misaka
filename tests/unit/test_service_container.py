@@ -95,5 +95,7 @@ class TestServiceContainer:
         assert container.rag_orchestrator is not old_orchestrator
         assert container.kb_service._orchestrator is container.rag_orchestrator
         assert container.document_service._orchestrator is container.rag_orchestrator
+        assert container.kb_service._index_manager._orchestrator is container.rag_orchestrator
+        assert container.document_service._index_manager._orchestrator is container.rag_orchestrator
         assert container.rag_orchestrator._factory._backend == "seekdb"
         assert container.rag_orchestrator._factory._seekdb_mode == "seekdb_remote"

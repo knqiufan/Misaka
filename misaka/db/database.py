@@ -15,6 +15,7 @@ from typing import Any
 from misaka.db.models import (
     ChatSession,
     KBChunk,
+    KBCleanupJob,
     KBDocument,
     KnowledgeBase,
     Message,
@@ -363,12 +364,59 @@ class DatabaseBackend(ABC):
         """Return all chunks for a knowledge base, ordered by chunk_index."""
 
     @abstractmethod
+    def get_kb_chunks_by_index(
+        self, kb_id: str, index_version: str,
+    ) -> list[KBChunk]:
+        """Return chunks belonging to one immutable KB index version."""
+
+    @abstractmethod
+    def activate_kb_index(
+        self,
+        kb_id: str,
+        index_version: str,
+        chunks: list[KBChunk],
+        document_updates: dict[str, dict[str, Any]],
+        dimensions: int,
+    ) -> None:
+        """Atomically publish staged chunks and their corresponding document state."""
+
+    @abstractmethod
+    def delete_kb_chunks_by_index(self, kb_id: str, index_version: str) -> None:
+        """Remove persisted chunks belonging to a retired index version."""
+
+    @abstractmethod
     def delete_kb_chunks_by_document(self, doc_id: str) -> None:
         """Delete all chunks belonging to a specific document."""
 
     @abstractmethod
     def update_kb_chunk_embedded(self, chunk_ids: list[str]) -> None:
         """Mark chunks as embedded (``is_embedded = 1``)."""
+
+    # ----- KB background jobs and durable cleanup -----
+
+    @abstractmethod
+    def create_kb_job(self, kb_id: str, document_id: str, operation: str) -> str:
+        """Create and return a durable KB operation record."""
+
+    @abstractmethod
+    def update_kb_job(self, job_id: str, status: str, error_message: str = "") -> None:
+        """Update a KB operation record."""
+
+    @abstractmethod
+    def create_kb_cleanup_job(
+        self, kb_id: str, index_version: str, operation: str, error_message: str,
+    ) -> str:
+        """Persist vector cleanup that must be retried."""
+
+    @abstractmethod
+    def get_pending_kb_cleanup_jobs(self) -> list[KBCleanupJob]:
+        """Return all cleanup jobs still awaiting successful vector deletion."""
+
+    @abstractmethod
+    def update_kb_cleanup_job(
+        self, job_id: str, status: str, error_message: str = "",
+    ) -> None:
+        """Record a cleanup attempt or completion."""
 
     # ----- Dashboard aggregation -----
 
