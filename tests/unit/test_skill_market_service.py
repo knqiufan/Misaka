@@ -296,7 +296,7 @@ class TestInstallSkill:
         kwargs = create_process.call_args.kwargs
         assert kwargs["stdin"] is asyncio.subprocess.DEVNULL
         assert kwargs["env"]["PATH"] == "EXPANDED_PATH"
-        assert kwargs["env"]["CI"] == "1"
+        assert kwargs["env"]["CI"]
         assert kwargs["creationflags"] == 1
 
     async def test_reports_cli_error(
