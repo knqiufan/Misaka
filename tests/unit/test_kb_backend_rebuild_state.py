@@ -37,3 +37,26 @@ def test_backend_switch_marks_only_kbs_with_documents(db) -> None:
     service.mark_index_rebuilt(populated.id)
     assert service.is_index_stale(populated.id) is False
     assert service.get_kb_for_chat_selection()[0]["id"] == populated.id
+
+
+def test_chunking_edit_marks_existing_index_stale(db) -> None:
+    service = KnowledgeBaseService(db)
+    kb = service.create("Configured")
+    db.create_kb_document(KBDocument(
+        id="doc-configured",
+        knowledge_base_id=kb.id,
+        file_name="notes.txt",
+        status="ready",
+    ))
+    db.create_kb_chunks_batch([KBChunk(
+        id="chunk-configured",
+        document_id="doc-configured",
+        knowledge_base_id=kb.id,
+        content="Old chunking",
+        is_embedded=1,
+    )])
+
+    service.update(kb.id, chunk_size=768)
+
+    assert service.is_index_stale(kb.id) is True
+    assert service.get_kb_for_chat_selection() == []

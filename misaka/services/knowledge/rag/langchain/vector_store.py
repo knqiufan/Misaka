@@ -7,6 +7,7 @@ import json
 import logging
 import sqlite3
 import struct
+import threading
 
 from misaka.services.knowledge.rag.abstractions import (
     ChunkData,
@@ -32,22 +33,24 @@ class LCSqliteVecStore(VectorStore):
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
         self._conn: sqlite3.Connection | None = None
+        self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Public interface
     # ------------------------------------------------------------------
 
     def ensure_table(self, table_name: str, dimensions: int) -> None:
-        conn = self._get_conn()
-        conn.execute(f"""
-            CREATE VIRTUAL TABLE IF NOT EXISTS [{table_name}]
-            USING vec0(
-                chunk_id TEXT PRIMARY KEY,
-                embedding float[{dimensions}]
-            )
-        """)
-        self._ensure_metadata_table(conn, table_name)
-        conn.commit()
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(f"""
+                CREATE VIRTUAL TABLE IF NOT EXISTS [{table_name}]
+                USING vec0(
+                    chunk_id TEXT PRIMARY KEY,
+                    embedding float[{dimensions}]
+                )
+            """)
+            self._ensure_metadata_table(conn, table_name)
+            conn.commit()
 
     def add_chunks(
         self,
@@ -57,10 +60,11 @@ class LCSqliteVecStore(VectorStore):
     ) -> None:
         if not chunks:
             return
-        conn = self._get_conn()
-        self._insert_vectors(conn, table_name, chunks, embeddings)
-        self._insert_metadata(conn, table_name, chunks)
-        conn.commit()
+        with self._lock:
+            conn = self._get_conn()
+            self._insert_vectors(conn, table_name, chunks, embeddings)
+            self._insert_metadata(conn, table_name, chunks)
+            conn.commit()
 
     def search(
         self,
@@ -68,37 +72,38 @@ class LCSqliteVecStore(VectorStore):
         query_embedding: list[float],
         top_k: int = 5,
     ) -> list[RetrievalResult]:
-        conn = self._get_conn()
-        meta_table = f"{table_name}_meta"
+        with self._lock:
+            conn = self._get_conn()
+            meta_table = f"{table_name}_meta"
 
-        query_blob = _serialize_f32(query_embedding)
-        rows = conn.execute(
-            f"""
-            SELECT v.chunk_id, v.distance, m.content, m.metadata_json
-            FROM [{table_name}] v
-            LEFT JOIN [{meta_table}] m ON v.chunk_id = m.chunk_id
-            WHERE v.embedding MATCH ?
-              AND k = ?
-            ORDER BY v.distance
-            """,
-            (query_blob, top_k),
-        ).fetchall()
+            query_blob = _serialize_f32(query_embedding)
+            rows = conn.execute(
+                f"""
+                SELECT v.chunk_id, v.distance, m.content, m.metadata_json
+                FROM [{table_name}] v
+                LEFT JOIN [{meta_table}] m ON v.chunk_id = m.chunk_id
+                WHERE v.embedding MATCH ?
+                  AND k = ?
+                ORDER BY v.distance
+                """,
+                (query_blob, top_k),
+            ).fetchall()
 
-        results: list[RetrievalResult] = []
-        for row in rows:
-            chunk_id = row[0]
-            distance = float(row[1])
-            score = 1.0 / (1.0 + distance)
-            content = row[2] or ""
-            metadata = json.loads(row[3]) if row[3] else {}
+            results: list[RetrievalResult] = []
+            for row in rows:
+                chunk_id = row[0]
+                distance = float(row[1])
+                score = 1.0 / (1.0 + distance)
+                content = row[2] or ""
+                metadata = json.loads(row[3]) if row[3] else {}
 
-            results.append(RetrievalResult(
-                chunk_id=chunk_id,
-                content=content,
-                score=score,
-                metadata=metadata,
-            ))
-        return results
+                results.append(RetrievalResult(
+                    chunk_id=chunk_id,
+                    content=content,
+                    score=score,
+                    metadata=metadata,
+                ))
+            return results
 
     def delete_by_ids(
         self,
@@ -107,31 +112,34 @@ class LCSqliteVecStore(VectorStore):
     ) -> None:
         if not chunk_ids:
             return
-        conn = self._get_conn()
-        meta_table = f"{table_name}_meta"
-        placeholders = ",".join("?" for _ in chunk_ids)
+        with self._lock:
+            conn = self._get_conn()
+            meta_table = f"{table_name}_meta"
+            placeholders = ",".join("?" for _ in chunk_ids)
 
-        conn.execute(
-            f"DELETE FROM [{table_name}] WHERE chunk_id IN ({placeholders})",
-            chunk_ids,
-        )
-        with contextlib.suppress(sqlite3.OperationalError):
             conn.execute(
-                f"DELETE FROM [{meta_table}] WHERE chunk_id IN ({placeholders})",
+                f"DELETE FROM [{table_name}] WHERE chunk_id IN ({placeholders})",
                 chunk_ids,
             )
-        conn.commit()
+            with contextlib.suppress(sqlite3.OperationalError):
+                conn.execute(
+                    f"DELETE FROM [{meta_table}] WHERE chunk_id IN ({placeholders})",
+                    chunk_ids,
+                )
+            conn.commit()
 
     def drop_table(self, table_name: str) -> None:
-        conn = self._get_conn()
-        conn.execute(f"DROP TABLE IF EXISTS [{table_name}]")
-        conn.execute(f"DROP TABLE IF EXISTS [{table_name}_meta]")
-        conn.commit()
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(f"DROP TABLE IF EXISTS [{table_name}]")
+            conn.execute(f"DROP TABLE IF EXISTS [{table_name}_meta]")
+            conn.commit()
 
     def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+        with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -139,7 +147,10 @@ class LCSqliteVecStore(VectorStore):
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._conn is None:
-            self._conn = sqlite3.connect(self._db_path)
+            # Searches run in ``asyncio.to_thread`` so the chat event loop can
+            # honor the global retrieval deadline. The store serializes access
+            # with ``_lock`` because this connection is shared across workers.
+            self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
             self._conn.enable_load_extension(True)
             import sqlite_vec  # noqa: F401
 

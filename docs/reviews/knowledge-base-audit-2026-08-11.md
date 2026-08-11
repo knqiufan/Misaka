@@ -155,7 +155,7 @@ UI 上传文件
 
 建议：删除应有可恢复状态（`deleting/delete_failed`）和持久化清理队列。只有远程清理确认完成后才最终删除元数据；若业务要求本地先删除，也至少保留 tombstone、backend fingerprint、表名和待清理 document IDs，并向用户明确报告部分失败。
 
-### KB-005（P1，已复现）：SeekDB 远程目标变化不会把索引标记为 stale
+### KB-005（P1，已修复，第二阶段）：SeekDB 远程目标变化不会把索引标记为 stale
 
 证据：
 
@@ -165,7 +165,7 @@ UI 上传文件
 
 建议：存储并比较后端身份 fingerprint（backend type + host + port + database/tenant；密码变化通常不需要重建）。目标身份变化时全部标 stale，并阻止选择直到重建成功。
 
-### KB-006（P1，已复现）：RRF 使用不一致的分块 ID，重复返回同一内容
+### KB-006（P1，已修复，第二阶段）：RRF 使用不一致的分块 ID，重复返回同一内容
 
 证据：
 
@@ -177,7 +177,7 @@ UI 上传文件
 
 建议：BM25 结果优先使用 `chunk.metadata["chunk_db_id"]`，缺失时才使用稳定、带文档 ID 的 fallback。融合后增加按真实 chunk ID 的唯一性断言和回归测试。
 
-### KB-007（P1，已复现）：用户配置的 `top_k` 和 `similarity_threshold` 不生效
+### KB-007（P1，已修复，第二阶段）：用户配置的 `top_k` 和 `similarity_threshold` 不生效
 
 证据：
 
@@ -190,7 +190,7 @@ UI 上传文件
 
 建议：明确多 KB 合并语义。推荐每个 KB 使用自身的 candidate top-k/threshold 先过滤，再以会话级 final top-k 合并；阈值需根据后端统一后的相似度定义应用。UI 保存后增加配置传播测试。
 
-### KB-008（P1，源码确认）：修改分块参数不会重建已有索引
+### KB-008（P1，已修复，第二阶段）：修改分块参数不会重建已有索引
 
 证据：
 
@@ -201,7 +201,7 @@ UI 上传文件
 
 建议：将 chunk size/overlap、解析策略和 embedding 模型/维度都纳入 `index_fingerprint`。任何影响索引内容的字段变化都标 stale 并要求重建；也可先保存为 pending config，成功切换后再替换 active config。
 
-### KB-009（P1，源码确认）：没有 10 秒总检索超时，且单 KB 失败会静默降级
+### KB-009（P1，已修复，第二阶段）：没有 10 秒总检索超时，且单 KB 失败会静默降级
 
 证据：
 
@@ -342,7 +342,7 @@ UI 上传文件
 
 | 设计要求 | 当前实现 | 结论 |
 |---|---|---|
-| RAG 超过 10 秒取消并通知 | 无总 timeout；分支异常被吞并退化为空 | 未实现 |
+| RAG 超过 10 秒取消并通知 | `retrieve_with_diagnostics()` 以 10 秒全局 deadline 返回 `timed_out`，聊天页显示通知 | 已实现 |
 | 文档后台处理不阻塞 UI | 解析使用 `to_thread`，但 hash/copy/chunk/BM25/SeekDB 等仍同步 | 部分实现 |
 | 嵌入批次并发度 3 | 批次顺序执行 | 未实现 |
 | 上传显示 parse/chunk/embed 进度 | 对话框只显示每个文件的粗状态，未传 `on_progress` | 部分实现 |
@@ -351,7 +351,7 @@ UI 上传文件
 | KB 在处理期使用 building/error 状态机 | 普通上传/重处理通常不改变 KB 状态 | 部分实现 |
 | PDF 按页、Excel 按表保留 metadata | 全部文本压平并只保留首项 metadata | 未实现 |
 | 聊天选择依据真实可用嵌入分块 | 依赖反规范化的 KB `chunk_count` | 不可靠 |
-| KB 的 top-k/threshold 配置生效 | 两者未传入检索 | 未实现 |
+| KB 的 top-k/threshold 配置生效 | 预处理器传递每 KB 策略；归一化后阈值过滤，再应用会话级 final top-k | 已实现 |
 
 ## 6. 修复优先级与实施建议
 
@@ -418,19 +418,41 @@ UI 上传文件
 - 已执行针对性回归、静态检查和源代码 RAG smoke；冻结产物 smoke 由新增 CI job 验证。
 - 可选的真实 SeekDB 远程集成测试与真实 OpenAI-compatible embedding/reranker contract test（凭据由 CI secret 提供）。
 
-## 8. 最终判定
+## 9. 第二阶段实施记录（2026-08-11）
+
+### 9.1 已完成范围
+
+本次落实第 6 节“第二阶段”的五项内容，对应 KB-005、KB-006、KB-007、KB-008 和 KB-009。第一阶段的修复保持有效；第三阶段项目仍维持原审查结论，未在本次变更中标记完成。
+
+### 9.2 实施方案与变更
+
+1. 为远程 SeekDB 保存无凭据的后端目标 fingerprint：包含 backend、host、port、user 和 database，明确排除 password。目标变化会把有源文档的 KB 加入持久化 stale 队列，密码轮换仅重建连接而不要求重嵌入。
+2. LangChain BM25 检索改为优先使用 `chunk_db_id`；缺失时采用包含 document ID、chunk index 与内容摘要的稳定 fallback。RRF 在各路结果内部和融合时均按真实 ID 去重，因此同一命中只保留一次并获得两路权重。
+3. 新增 `KBRetrievalConfig`。`RAGPreprocessor` 从已保存的 KB 配置构造每 KB candidate top-k、归一化阈值和 reranker 配置；编排器先分别检索、可选地按该 KB 独立重排、归一化并过滤，再按会话级 final top-k 合并。该策略不再依赖 KB 选择顺序，也不会用一个 KB 的重排器覆盖另一个 KB。
+4. 新增 `RAGRetrievalOutcome` 和 `retrieve_with_diagnostics()`：整个检索管道有 10 秒全局 deadline，返回 `results`、`per_kb_errors` 与 `timed_out`。单 KB/重排失败保留其他 KB 结果；聊天页面对超时、全部失败和部分失败分别显示可见提示。向量与 SeekDB 检索被移至工作线程，避免同步查询阻塞 deadline 的事件循环。
+5. 新增 migration v8 和 `knowledge_bases.active_index_fingerprint`。该 fingerprint 覆盖 embedding model/router/dimensions、chunk size/overlap 以及 parser/chunker 策略版本；成功激活新索引时原子保存。编辑分块或嵌入配置会显示重建确认、进入 stale 队列并阻止聊天选择，重建成功后才清除 stale。
+
+### 9.3 新增回归验证
+
+- 同一分块同时命中向量与 BM25 时仅输出一次，融合分数包含两路权重；没有 `chunk_db_id` 的不同文档不会发生 fallback ID 碰撞。
+- 每 KB 的 candidate top-k、阈值、会话级 final top-k 与 reranker 配置均经过 preprocessor 到 orchestrator 的传播验证。
+- SeekDB host 改变会 stale；仅 password 改变不会 stale，且 password 不会写入 fingerprint。
+- 分块设置改动会 stale 并从聊天选择中移除；数据库升级会添加 active index fingerprint 列。
+- 10 秒 deadline、单 KB 部分失败和 fake SeekDB/SQLite 聊天主路径均有自动化回归覆盖。
+
+## 10. 最新修复后判定
 
 | 判定项 | 结论 |
 |---|---|
 | 架构完整度 | 良好，抽象和模块边界清楚 |
 | 开发环境基础流程 | 可运行 |
-| 失败恢复与数据一致性 | 不合格，存在可复现数据丢失和孤儿数据 |
-| 检索逻辑正确性 | 部分正确，RRF、top-k、threshold、多 KB reranker 有实质错误 |
+| 失败恢复与数据一致性 | 第一阶段已修复 copy-on-write、作业协调和清理队列；第三阶段仍需继续处理文件系统与规模化项 |
+| 检索逻辑正确性 | 第二阶段已修复 RRF ID、一致去重、每 KB top-k/threshold、确定性多 KB reranker 策略 |
 | 文件格式语义 | 部分正确，内容可读但 page/sheet metadata 错，`.xls` 虚假支持 |
 | UI 响应与规模化 | 小规模可用，大文件/大 KB 有阻塞风险 |
-| 错误可观察性 | 不足，检索失败可能静默退化 |
+| 错误可观察性 | 第二阶段已提供 deadline/部分失败结构化结果与聊天可见通知；其余后台任务可观测性持续改进 |
 | 安全与隐私边界 | 需加强，存在孤儿远程向量和 prompt injection 风险 |
 | 冻结发布版 | 当前不可判定为可用，已有证据显示关键依赖缺失 |
 | 生产发布建议 | 暂缓；先完成 P0/P1 修复与真实/冻结 E2E |
 
-因此，本次审查的最终结论是：知识库功能已经达到“功能原型和开发环境主流程可演示”的程度，但尚未达到“可靠、逻辑一致、可安全发布”的标准。
+因此，完成第一、二阶段后，知识库的失败恢复和检索语义关键路径已具备回归保护；仍须完成第三阶段的格式语义、性能、输入验证和可信性工作，才可达到完整的生产发布标准。

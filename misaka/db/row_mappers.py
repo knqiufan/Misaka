@@ -109,6 +109,7 @@ def row_to_knowledge_base(row: sqlite3.Row) -> KnowledgeBase:
         chunk_count=row["chunk_count"],
         status=row["status"],
         active_index_version=row["active_index_version"],
+        active_index_fingerprint=row["active_index_fingerprint"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

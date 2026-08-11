@@ -12,7 +12,7 @@ import sqlite3
 logger = logging.getLogger(__name__)
 
 # Current schema version. Increment when adding new migrations.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def run_migrations(conn: sqlite3.Connection) -> None:
@@ -45,6 +45,9 @@ def run_migrations(conn: sqlite3.Connection) -> None:
 
     if current < 7:
         _migrate_v7(conn)
+
+    if current < 8:
+        _migrate_v8(conn)
 
     _set_version(conn, SCHEMA_VERSION)
     conn.commit()
@@ -366,3 +369,22 @@ def _migrate_v7(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_kb_jobs_active
             ON kb_jobs(knowledge_base_id, status, updated_at)
     """)
+
+
+def _migrate_v8(conn: sqlite3.Connection) -> None:
+    """Migration v8: retain the configuration fingerprint of active indexes."""
+    logger.info("Running migration v8")
+    existing_tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "knowledge_bases" not in existing_tables:
+        return
+    kb_columns = _get_column_names(conn, "knowledge_bases")
+    if "active_index_fingerprint" not in kb_columns:
+        conn.execute(
+            "ALTER TABLE knowledge_bases "
+            "ADD COLUMN active_index_fingerprint TEXT NOT NULL DEFAULT ''"
+        )

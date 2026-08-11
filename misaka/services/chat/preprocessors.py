@@ -80,7 +80,7 @@ class RAGPreprocessor:
             return text, images
 
         augmented_text, search_results = await self._do_rag_retrieve(
-            text, selected_kb_ids,
+            text, selected_kb_ids, context,
         )
 
         # Store results in context so the caller can cache them.
@@ -94,18 +94,25 @@ class RAGPreprocessor:
         self,
         query: str,
         kb_ids: list[str],
+        context: dict,
     ) -> tuple[str, list]:
         """Execute RAG retrieval and build the augmented prompt text."""
-        embedding_configs, reranker_config = self._build_rag_configs(kb_ids)
+        embedding_configs, kb_retrieval_configs = self._build_rag_configs(kb_ids)
         if not embedding_configs:
+            context["_rag_per_kb_errors"] = {
+                kb_id: "No embedding configuration is available" for kb_id in kb_ids
+            }
             return query, []
 
-        results = await self._rag.retrieve(
+        outcome = await self._rag.retrieve_with_diagnostics(
             query=query,
             kb_ids=kb_ids,
             embedding_configs=embedding_configs,
-            reranker_config=reranker_config,
+            kb_retrieval_configs=kb_retrieval_configs,
         )
+        context["_rag_per_kb_errors"] = outcome.per_kb_errors
+        context["_rag_timed_out"] = outcome.timed_out
+        results = outcome.results
 
         if not results:
             return query, []
@@ -115,18 +122,19 @@ class RAGPreprocessor:
             return f"{query}\n\n{context_text}", results
         return query, results
 
-    def _build_rag_configs(self, kb_ids: list[str]) -> tuple[dict, Any | None]:
-        """Build embedding/reranker configs for each selected KB."""
+    def _build_rag_configs(self, kb_ids: list[str]) -> tuple[dict, dict]:
+        """Build embedding and retrieval policies for each selected KB."""
         from misaka.services.knowledge.rag.abstractions import (
             EmbeddingConfig,
+            KBRetrievalConfig,
             RerankerConfig,
         )
 
         if not self._router_svc:
-            return {}, None
+            return {}, {}
 
         embedding_configs: dict[str, EmbeddingConfig] = {}
-        reranker_config = None
+        kb_retrieval_configs: dict[str, KBRetrievalConfig] = {}
 
         for kb_id in kb_ids:
             kb = self._kb_service.get(kb_id)
@@ -141,7 +149,8 @@ class RAGPreprocessor:
                     base_url=emb_info.base_url,
                     api_key=emb_info.api_key,
                 )
-            if not reranker_config and kb.reranker_model_id:
+            reranker_config = None
+            if kb.reranker_model_id:
                 rnk_info = _find_model_info(
                     self._router_svc, kb.reranker_model_id, kb.reranker_router_config_id,
                 )
@@ -152,8 +161,13 @@ class RAGPreprocessor:
                         api_key=rnk_info.api_key,
                         top_n=kb.reranker_top_k,
                     )
+            kb_retrieval_configs[kb_id] = KBRetrievalConfig(
+                top_k=kb.top_k,
+                similarity_threshold=kb.similarity_threshold,
+                reranker_config=reranker_config,
+            )
 
-        return embedding_configs, reranker_config
+        return embedding_configs, kb_retrieval_configs
 
 
 # ---------------------------------------------------------------------------

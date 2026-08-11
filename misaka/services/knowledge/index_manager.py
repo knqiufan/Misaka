@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from misaka.db.models import KBChunk
+from misaka.services.knowledge.index_fingerprint import build_index_fingerprint
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -98,6 +99,10 @@ class KBIndexManager:
                 staged_chunks,
                 document_updates,
                 dimensions or kb.embedding_dimensions,
+                build_index_fingerprint(
+                    kb,
+                    embedding_dimensions=dimensions or kb.embedding_dimensions,
+                ),
             )
         except BaseException as exc:
             await self._discard_staging(kb.id, new_version, str(exc))

@@ -8,10 +8,34 @@ from unittest.mock import AsyncMock, MagicMock
 
 from misaka.config import SettingKeys
 from misaka.db.database import DatabaseBackend
-from misaka.main import ServiceContainer
+from misaka.db.models import KBDocument
+from misaka.main import ServiceContainer, _vector_backend_fingerprint
 
 
 class TestServiceContainer:
+
+    def test_remote_fingerprint_covers_target_but_not_password(self) -> None:
+        target = {
+            "host": "seekdb-one.example.com",
+            "port": 2881,
+            "user": "root",
+            "password": "old-secret",
+            "database_name": "misaka_one",
+        }
+        fingerprint = _vector_backend_fingerprint("seekdb_remote", target)
+
+        assert fingerprint != _vector_backend_fingerprint(
+            "seekdb_remote", {**target, "host": "seekdb-two.example.com"},
+        )
+        assert fingerprint != _vector_backend_fingerprint(
+            "seekdb_remote", {**target, "port": 2882},
+        )
+        assert fingerprint != _vector_backend_fingerprint(
+            "seekdb_remote", {**target, "database_name": "misaka_two"},
+        )
+        assert fingerprint == _vector_backend_fingerprint(
+            "seekdb_remote", {**target, "password": "new-secret"},
+        )
 
     def test_initializes_all_services(self, db: DatabaseBackend) -> None:
         container = ServiceContainer(db)
@@ -99,3 +123,35 @@ class TestServiceContainer:
         assert container.document_service._index_manager._orchestrator is container.rag_orchestrator
         assert container.rag_orchestrator._factory._backend == "seekdb"
         assert container.rag_orchestrator._factory._seekdb_mode == "seekdb_remote"
+
+    def test_remote_target_change_marks_indexes_stale_but_password_change_does_not(
+        self,
+        db: DatabaseBackend,
+    ) -> None:
+        container = ServiceContainer(db)
+        kb = container.kb_service.create("Remote target")
+        db.create_kb_document(KBDocument(
+            id="remote-target-doc",
+            knowledge_base_id=kb.id,
+            file_name="notes.txt",
+        ))
+        first_target = {
+            "host": "seekdb-one.example.com",
+            "port": 2881,
+            "user": "root",
+            "password": "old-secret",
+            "database_name": "misaka_one",
+        }
+        assert container.configure_vector_backend("seekdb_remote", first_target) is True
+        container.kb_service.mark_index_rebuilt(kb.id)
+
+        assert container.configure_vector_backend(
+            "seekdb_remote", {**first_target, "password": "new-secret"},
+        ) is False
+        assert container.kb_service.is_index_stale(kb.id) is False
+        assert "secret" not in db.get_setting(SettingKeys.VECTOR_BACKEND_FINGERPRINT)
+
+        assert container.configure_vector_backend(
+            "seekdb_remote", {**first_target, "host": "seekdb-two.example.com"},
+        ) is True
+        assert container.kb_service.is_index_stale(kb.id) is True

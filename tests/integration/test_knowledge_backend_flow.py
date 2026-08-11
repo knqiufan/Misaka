@@ -10,6 +10,7 @@ import pytest
 
 from misaka.services.chat.preprocessors import RAGPreprocessor
 from misaka.services.knowledge.document_service import DocumentService
+from misaka.services.knowledge.index_fingerprint import build_index_fingerprint
 from misaka.services.knowledge.kb_service import KnowledgeBaseService
 from misaka.services.knowledge.rag.abstractions import (
     ChunkData,
@@ -235,6 +236,9 @@ async def test_create_upload_and_chat_rag_flow(
 
     assert document.status == "ready"
     assert document.chunk_count == 1
+    indexed_kb = kb_service.get(kb.id)
+    assert indexed_kb is not None
+    assert indexed_kb.active_index_fingerprint == build_index_fingerprint(indexed_kb)
     assert context["_rag_results"]
     assert context["_rag_results"][0].document_name == source.name
     assert "Misaka RAG" in augmented

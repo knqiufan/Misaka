@@ -84,6 +84,20 @@ class RerankerConfig:
     top_n: int = 3
 
 
+@dataclass
+class KBRetrievalConfig:
+    """Retrieval policy belonging to one knowledge base.
+
+    ``top_k`` limits the candidates contributed by this KB. After every KB
+    has applied its own policy, the orchestrator applies the session-level
+    final limit.
+    """
+
+    top_k: int = 5
+    similarity_threshold: float = 0.0
+    reranker_config: RerankerConfig | None = None
+
+
 # ---------------------------------------------------------------------------
 # ABC interfaces
 # ---------------------------------------------------------------------------

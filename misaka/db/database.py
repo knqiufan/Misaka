@@ -377,6 +377,7 @@ class DatabaseBackend(ABC):
         chunks: list[KBChunk],
         document_updates: dict[str, dict[str, Any]],
         dimensions: int,
+        index_fingerprint: str,
     ) -> None:
         """Atomically publish staged chunks and their corresponding document state."""
 

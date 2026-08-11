@@ -12,12 +12,14 @@ import json
 import logging
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from misaka.services.knowledge.rag.abstractions import (
     ChunkData,
     EmbeddingConfig,
     IngestResult,
+    KBRetrievalConfig,
     RerankerConfig,
     RetrievalResult,
 )
@@ -28,6 +30,17 @@ if TYPE_CHECKING:
     from misaka.db.models import KBSearchResult, KnowledgeBase
 
 logger = logging.getLogger(__name__)
+
+RETRIEVAL_DEADLINE_SECONDS = 10.0
+
+
+@dataclass
+class RAGRetrievalOutcome:
+    """Observable outcome of a multi-KB retrieval request."""
+
+    results: list[KBSearchResult] = field(default_factory=list)
+    per_kb_errors: dict[str, str] = field(default_factory=dict)
+    timed_out: bool = False
 
 
 class RAGOrchestrator:
@@ -168,25 +181,88 @@ class RAGOrchestrator:
         embedding_configs: dict[str, EmbeddingConfig],
         reranker_config: RerankerConfig | None = None,
         top_k: int = 5,
+        kb_retrieval_configs: dict[str, KBRetrievalConfig] | None = None,
     ) -> list[KBSearchResult]:
-        """Retrieve across multiple knowledge bases, optionally reranking.
+        """Retrieve across multiple KBs and return only the final results.
 
-        Groups knowledge bases by embedding model so each distinct model
-        only produces one ``embed_query`` call.  When no reranker is
-        available and results come from different embedding models, scores
-        are Min-Max normalised per group to a common [0, 1] range.
+        This compatibility wrapper intentionally hides diagnostics. Call
+        :meth:`retrieve_with_diagnostics` when the caller needs to inform the
+        user about partial failures or a global deadline.
+        """
+        outcome = await self.retrieve_with_diagnostics(
+            query=query,
+            kb_ids=kb_ids,
+            embedding_configs=embedding_configs,
+            reranker_config=reranker_config,
+            top_k=top_k,
+            kb_retrieval_configs=kb_retrieval_configs,
+        )
+        return outcome.results
+
+    async def retrieve_with_diagnostics(
+        self,
+        query: str,
+        kb_ids: list[str],
+        embedding_configs: dict[str, EmbeddingConfig],
+        reranker_config: RerankerConfig | None = None,
+        top_k: int = 5,
+        kb_retrieval_configs: dict[str, KBRetrievalConfig] | None = None,
+    ) -> RAGRetrievalOutcome:
+        """Retrieve with a ten-second global deadline and structured errors.
+
+        Every KB supplies a candidate limit and threshold. Its candidates are
+        optionally reranked by *that KB's* configured reranker, normalized to
+        ``[0, 1]``, filtered by its threshold, and only then merged into the
+        session-level ``top_k``. This avoids one selected KB's reranker or
+        score scale changing the semantics of another.
+
+        ``reranker_config`` is retained for callers using the legacy API: it
+        becomes the default per-KB reranker when no per-KB policy is supplied.
+        New callers should use ``kb_retrieval_configs``.
 
         Args:
             query: User query text.
             kb_ids: IDs of knowledge bases to search.
             embedding_configs: ``{kb_id: EmbeddingConfig}`` mapping.
-            reranker_config: If provided, results are reranked.
-            top_k: Final number of results to return.
+            reranker_config: Backwards-compatible default reranker.
+            top_k: Session-level final number of results to return.
+            kb_retrieval_configs: Per-KB candidate/reranker policies.
         """
+        try:
+            return await asyncio.wait_for(
+                self._retrieve_with_diagnostics_impl(
+                    query=query,
+                    kb_ids=kb_ids,
+                    embedding_configs=embedding_configs,
+                    reranker_config=reranker_config,
+                    top_k=top_k,
+                    kb_retrieval_configs=kb_retrieval_configs or {},
+                ),
+                timeout=RETRIEVAL_DEADLINE_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("RAG retrieval exceeded %.1f seconds", RETRIEVAL_DEADLINE_SECONDS)
+            return RAGRetrievalOutcome(timed_out=True)
+
+    async def _retrieve_with_diagnostics_impl(
+        self,
+        *,
+        query: str,
+        kb_ids: list[str],
+        embedding_configs: dict[str, EmbeddingConfig],
+        reranker_config: RerankerConfig | None,
+        top_k: int,
+        kb_retrieval_configs: dict[str, KBRetrievalConfig],
+    ) -> RAGRetrievalOutcome:
         self._ensure_components()
         all_results: list[RetrievalResult] = []
+        per_kb_errors: dict[str, str] = {}
 
         groups = self._group_by_embedding_model(kb_ids, embedding_configs)
+        configured_kb_ids = {kb_id for _, ids in groups for kb_id in ids}
+        for kb_id in kb_ids:
+            if kb_id not in configured_kb_ids:
+                per_kb_errors[kb_id] = "No embedding configuration is available"
 
         for config, group_kb_ids in groups:
             try:
@@ -195,29 +271,41 @@ class RAGOrchestrator:
                 logger.warning(
                     "Embedding query failed for model %s: %s", config.model_id, exc,
                 )
+                message = f"Query embedding failed: {exc}"
+                per_kb_errors.update({kb_id: message for kb_id in group_kb_ids})
                 continue
             for kb_id in group_kb_ids:
+                policy = kb_retrieval_configs.get(kb_id, KBRetrievalConfig())
+                candidate_top_k = max(1, policy.top_k)
                 try:
                     results = await self._retrieve_single_kb(
-                        query, query_vec, kb_id, top_k,
+                        query, query_vec, kb_id, candidate_top_k,
                     )
-                    all_results.extend(results)
                 except Exception as exc:
                     logger.warning("Retrieval failed for kb %s: %s", kb_id, exc)
+                    per_kb_errors[kb_id] = f"Retrieval failed: {exc}"
                     continue
 
-        if reranker_config and reranker_config.model_id:
-            try:
-                all_results = await self._reranker.rerank(
-                    query, all_results, reranker_config,
-                )
-            except Exception as exc:
-                logger.warning("Reranker failed, falling back to vector results: %s", exc)
-        elif len(groups) > 1:
-            all_results = self._normalize_scores(all_results)
+                kb_reranker = policy.reranker_config or reranker_config
+                if kb_reranker and kb_reranker.model_id and results:
+                    try:
+                        results = await self._reranker.rerank(query, results, kb_reranker)
+                    except Exception as exc:
+                        logger.warning("Reranker failed for kb %s: %s", kb_id, exc)
+                        per_kb_errors[kb_id] = f"Reranker failed: {exc}"
 
-        all_results.sort(key=lambda r: r.score, reverse=True)
-        return self._to_search_results(all_results[:top_k])
+                results = self._normalize_scores(results)
+                all_results.extend(
+                    result
+                    for result in results
+                    if result.score >= policy.similarity_threshold
+                )
+
+        all_results.sort(key=lambda r: (-r.score, r.chunk_id))
+        return RAGRetrievalOutcome(
+            results=self._to_search_results(all_results[:max(1, top_k)]),
+            per_kb_errors=per_kb_errors,
+        )
 
     def format_context(self, results: list[KBSearchResult]) -> str:
         """Format retrieval results as a text block for prompt injection."""
@@ -327,7 +415,7 @@ class RAGOrchestrator:
             query=query,
             query_embedding=query_vec,
             table_name=table_name,
-            top_k=top_k * 2,
+            top_k=top_k,
             chunks_for_bm25=chunks_for_bm25 or None,
         )
         for r in results:
