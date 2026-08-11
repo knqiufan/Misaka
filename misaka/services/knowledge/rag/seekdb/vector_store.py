@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -81,8 +80,10 @@ class SeekDBVectorStore(VectorStore):
 
     def drop_table(self, table_name: str) -> None:
         client = self._get_client()
-        with contextlib.suppress(Exception):
-            client.delete_collection(table_name)
+        # Callers use failures to enqueue durable cleanup work.  Suppressing
+        # remote deletion errors here previously made orphaned vectors look
+        # successfully deleted.
+        client.delete_collection(table_name)
 
     def close(self) -> None:
         client = self._client

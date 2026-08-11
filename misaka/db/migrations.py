@@ -12,7 +12,7 @@ import sqlite3
 logger = logging.getLogger(__name__)
 
 # Current schema version. Increment when adding new migrations.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def run_migrations(conn: sqlite3.Connection) -> None:
@@ -42,6 +42,9 @@ def run_migrations(conn: sqlite3.Connection) -> None:
 
     if current < 6:
         _migrate_v6(conn)
+
+    if current < 7:
+        _migrate_v7(conn)
 
     _set_version(conn, SCHEMA_VERSION)
     conn.commit()
@@ -294,4 +297,72 @@ def _migrate_v6(conn: sqlite3.Connection) -> None:
             database_name TEXT NOT NULL DEFAULT 'misaka_kb',
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
+    """)
+
+
+def _migrate_v7(conn: sqlite3.Connection) -> None:
+    """Migration v7: versioned KB indexes and durable cleanup jobs.
+
+    Existing rows continue to address the legacy vector-table name through
+    the empty version string.  New writes always receive an opaque version
+    and are made visible only after a complete index has been built.
+    """
+    logger.info("Running migration v7")
+    existing_tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "knowledge_bases" in existing_tables:
+        kb_columns = _get_column_names(conn, "knowledge_bases")
+        if "active_index_version" not in kb_columns:
+            conn.execute(
+                "ALTER TABLE knowledge_bases "
+                "ADD COLUMN active_index_version TEXT NOT NULL DEFAULT ''"
+            )
+
+    if "kb_chunks" in existing_tables:
+        chunk_columns = _get_column_names(conn, "kb_chunks")
+        if "index_version" not in chunk_columns:
+            conn.execute(
+                "ALTER TABLE kb_chunks "
+                "ADD COLUMN index_version TEXT NOT NULL DEFAULT ''"
+            )
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_kb_chunks_index_version
+                ON kb_chunks(knowledge_base_id, index_version)
+        """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS kb_cleanup_jobs (
+            id TEXT PRIMARY KEY,
+            knowledge_base_id TEXT NOT NULL,
+            index_version TEXT NOT NULL DEFAULT '',
+            operation TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_kb_cleanup_jobs_pending
+            ON kb_cleanup_jobs(status, created_at)
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS kb_jobs (
+            id TEXT PRIMARY KEY,
+            knowledge_base_id TEXT NOT NULL,
+            document_id TEXT NOT NULL DEFAULT '',
+            operation TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued',
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_kb_jobs_active
+            ON kb_jobs(knowledge_base_id, status, updated_at)
     """)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from misaka.db.models import KBDocument
+from misaka.db.models import KBChunk, KBDocument
 from misaka.services.knowledge.kb_service import KnowledgeBaseService
 
 
@@ -17,6 +17,15 @@ def test_backend_switch_marks_only_kbs_with_documents(db) -> None:
             file_name="notes.txt",
         )
     )
+    db.create_kb_chunks_batch([
+        KBChunk(
+            id="chunk-1",
+            document_id="doc-1",
+            knowledge_base_id=populated.id,
+            content="Indexed note",
+            is_embedded=1,
+        ),
+    ])
     db.update_knowledge_base(populated.id, document_count=1, chunk_count=1)
 
     service.mark_all_indexes_stale()

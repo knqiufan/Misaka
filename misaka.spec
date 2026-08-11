@@ -19,6 +19,7 @@ from pathlib import Path
 import certifi
 import flet
 import flet_desktop
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
 block_cipher = None
 
@@ -62,6 +63,12 @@ _certifi_datas = [
     (str(_certifi_pem), "certifi"),
 ]
 
+# sqlite-vec loads vec0 dynamically at runtime, so PyInstaller cannot infer
+# the native library from the import graph.  Collect its package data and
+# dynamic libraries explicitly; rank-bm25 also requires NumPy at runtime.
+_sqlite_vec_datas = collect_data_files("sqlite_vec")
+_sqlite_vec_binaries = collect_dynamic_libs("sqlite_vec")
+
 _datas = [
     (str(_i18n_dir / "en.json"), "misaka/i18n"),
     (str(_i18n_dir / "zh_CN.json"), "misaka/i18n"),
@@ -70,12 +77,13 @@ _datas = [
     *_flet_datas,
     *_flet_desktop_datas,
     *_certifi_datas,
+    *_sqlite_vec_datas,
 ]
 
 a = Analysis(
     [str(project_root / "misaka" / "main.py")],
     pathex=[str(project_root)],
-    binaries=[],
+    binaries=_sqlite_vec_binaries,
     datas=_datas,
     hiddenimports=[
         "misaka",
@@ -99,6 +107,22 @@ a = Analysis(
         "misaka.services.file",
         "misaka.services.file.file_service",
         "misaka.services.file.update_check_service",
+        "misaka.services.knowledge",
+        "misaka.services.knowledge.document_service",
+        "misaka.services.knowledge.frozen_smoke",
+        "misaka.services.knowledge.index_manager",
+        "misaka.services.knowledge.job_coordinator",
+        "misaka.services.knowledge.kb_service",
+        "misaka.services.knowledge.rag",
+        "misaka.services.knowledge.rag.abstractions",
+        "misaka.services.knowledge.rag.factory",
+        "misaka.services.knowledge.rag.langchain.chunker",
+        "misaka.services.knowledge.rag.langchain.embedding",
+        "misaka.services.knowledge.rag.langchain.parser",
+        "misaka.services.knowledge.rag.langchain.reranker",
+        "misaka.services.knowledge.rag.langchain.retriever",
+        "misaka.services.knowledge.rag.langchain.vector_store",
+        "misaka.services.knowledge.rag_orchestrator",
         "misaka.services.mcp",
         "misaka.services.mcp.mcp_service",
         "misaka.services.session",
@@ -154,6 +178,9 @@ a = Analysis(
         "watchdog",
         "watchdog.observers",
         "sqlite3",
+        "sqlite_vec",
+        "rank_bm25",
+        "numpy",
         "certifi",
     ],
     hookspath=[],
@@ -165,7 +192,6 @@ a = Analysis(
     excludes=[
         "tkinter",
         "matplotlib",
-        "numpy",
         "pandas",
         "scipy",
         "IPython",

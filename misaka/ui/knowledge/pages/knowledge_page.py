@@ -211,7 +211,7 @@ class KnowledgePage(ft.Column):
     async def _async_delete_kb(self, kb_id: str) -> None:
         svc = self.state.get_service("kb_service")
         if svc:
-            svc.delete(kb_id)
+            await svc.delete(kb_id)
         self._refresh_and_update()
 
     def _back_to_list(self) -> None:

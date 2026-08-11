@@ -73,6 +73,7 @@ class RAGOrchestrator:
         embedding_config: EmbeddingConfig,
         on_progress: Callable[[str], None] | None = None,
         document_id: str = "",
+        index_version: str = "",
     ) -> IngestResult:
         """Full ingestion pipeline: parse → chunk → embed → store.
 
@@ -130,7 +131,7 @@ class RAGOrchestrator:
             embeddings = await self._embedding.embed_texts(texts, embedding_config)
 
             dimensions = self._embedding.get_dimensions(embeddings[0])
-            table_name = self._get_table_name(kb.id)
+            table_name = self._get_table_name(kb.id, index_version)
 
             _notify(on_progress, "storing")
             self._vector_store.ensure_table(table_name, dimensions)
@@ -240,21 +241,22 @@ class RAGOrchestrator:
 
     # ── Resource management ───────────────────────────────────────────
 
-    def drop_kb_vectors(self, kb_id: str) -> None:
-        """Delete the vector table for a knowledge base."""
+    def drop_kb_vectors(self, kb_id: str, index_version: str = "") -> None:
+        """Delete a specific version of a knowledge-base vector table."""
         self._ensure_components()
-        self._vector_store.drop_table(self._get_table_name(kb_id))
+        self._vector_store.drop_table(self._get_table_name(kb_id, index_version))
 
     def delete_chunks_from_vector_store(
         self,
         kb_id: str,
         chunk_ids: list[str],
+        index_version: str = "",
     ) -> None:
         """Remove specific chunk vectors from the store."""
         if chunk_ids:
             self._ensure_components()
             self._vector_store.delete_by_ids(
-                self._get_table_name(kb_id), chunk_ids,
+                self._get_table_name(kb_id, index_version), chunk_ids,
             )
 
     def close(self) -> None:
@@ -294,10 +296,14 @@ class RAGOrchestrator:
         top_k: int,
     ) -> list[RetrievalResult]:
         """Retrieve from a single knowledge base and tag results."""
-        table_name = self._get_table_name(kb_id)
+        kb = self._db.get_knowledge_base(kb_id)
+        if kb is None:
+            return []
+        index_version = kb.active_index_version
+        table_name = self._get_table_name(kb_id, index_version)
         chunks_for_bm25 = []
         if getattr(self._retriever, "requires_bm25_chunks", False):
-            for chunk in self._db.get_kb_chunks_by_kb(kb_id):
+            for chunk in self._db.get_kb_chunks_by_index(kb_id, index_version):
                 metadata = {}
                 try:
                     value = json.loads(chunk.metadata_json)
@@ -359,8 +365,15 @@ class RAGOrchestrator:
         return normalised
 
     @staticmethod
-    def _get_table_name(kb_id: str) -> str:
-        return f"kb_vec_{kb_id.replace('-', '')[:8]}"
+    def _get_table_name(kb_id: str, index_version: str = "") -> str:
+        """Return the stable legacy or immutable-version vector table name."""
+        base = f"kb_vec_{kb_id.replace('-', '')[:8]}"
+        if not index_version:
+            return base
+        suffix = "".join(char for char in index_version if char.isalnum())[:16]
+        if not suffix:
+            raise ValueError("Index version must contain at least one alphanumeric character")
+        return f"{base}_{suffix}"
 
     def _to_search_results(
         self,

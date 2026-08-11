@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from misaka.config import get_kb_storage_dir
-from misaka.db.models import KBChunk, KBDocument
+from misaka.db.models import KBDocument
+from misaka.services.knowledge.index_manager import KBIndexManager
+from misaka.services.knowledge.job_coordinator import KnowledgeBaseJobCoordinator
 from misaka.services.knowledge.rag.abstractions import EmbeddingConfig
 
 if TYPE_CHECKING:
@@ -42,9 +44,12 @@ class DocumentService:
         self,
         db: DatabaseBackend,
         orchestrator: RAGOrchestrator,
+        coordinator: KnowledgeBaseJobCoordinator | None = None,
     ) -> None:
         self._db = db
         self._orchestrator = orchestrator
+        self._index_manager = KBIndexManager(db, orchestrator)
+        self._coordinator = coordinator or KnowledgeBaseJobCoordinator(db)
 
     # ── Upload ────────────────────────────────────────────────────────
 
@@ -98,39 +103,15 @@ class DocumentService:
         self._db.create_kb_document(doc)
 
         try:
-            result = await self._orchestrator.ingest_document(
-                file_path=str(dest),
-                file_type=file_type,
-                kb=kb,
-                embedding_config=embedding_config,
-                on_progress=on_progress,
-                document_id=doc_id,
-            )
-
-            if result.error:
-                self._db.update_kb_document(doc_id, status="error", error_message=result.error)
-                doc.status = "error"
-                doc.error_message = result.error
-                return doc
-
-            self._persist_chunks(doc_id, kb_id, result.chunks)
-            self._db.update_kb_document(
-                doc_id,
-                content_text=result.content_text,
-                content_length=result.content_length,
-                chunk_count=result.chunk_count,
-                status="ready",
-            )
-            if result.dimensions and kb.embedding_dimensions == 0:
-                self._db.update_knowledge_base(
-                    kb_id, embedding_dimensions=result.dimensions,
+            async with self._coordinator.job(kb_id, "upload", doc_id):
+                self._db.update_kb_document(doc_id, status="parsing", error_message="")
+                current_docs = self._documents_for_next_index(kb_id, {doc_id})
+                await self._index_manager.build_and_activate(
+                    kb, current_docs, embedding_config, on_progress,
                 )
-
-            doc.status = "ready"
-            doc.content_text = result.content_text
-            doc.content_length = result.content_length
-            doc.chunk_count = result.chunk_count
-
+                updated = self._db.get_kb_document(doc_id)
+                if updated is not None:
+                    return updated
         except asyncio.CancelledError:
             logger.warning("Upload cancelled for document %s", src.name)
             self._db.update_kb_document(doc_id, status="error", error_message="Upload cancelled")
@@ -142,7 +123,7 @@ class DocumentService:
             doc.status = "error"
             doc.error_message = str(exc)
 
-        return doc
+        return self._db.get_kb_document(doc_id) or doc
 
     async def upload_documents_batch(
         self,
@@ -201,27 +182,32 @@ class DocumentService:
 
     # ── Delete ────────────────────────────────────────────────────────
 
-    def delete_document(self, doc_id: str) -> bool:
+    async def delete_document(
+        self, doc_id: str, embedding_config: EmbeddingConfig,
+    ) -> bool:
+        """Cancel in-flight work, publish an index without this document, then delete it."""
         doc = self._db.get_kb_document(doc_id)
         if not doc:
             return False
 
-        chunks = self._db.get_kb_chunks_by_document(doc_id)
-        chunk_ids = [c.id for c in chunks]
-        if chunk_ids:
-            try:
-                self._orchestrator.delete_chunks_from_vector_store(
-                    doc.knowledge_base_id, chunk_ids,
-                )
-            except Exception:
-                logger.exception("Failed to remove vectors for doc %s", doc_id)
+        await self._coordinator.cancel_and_wait(doc.knowledge_base_id)
+        async with self._coordinator.job(doc.knowledge_base_id, "delete_document", doc_id):
+            kb = self._db.get_knowledge_base(doc.knowledge_base_id)
+            if kb is None:
+                return False
+            remaining_docs = [
+                item for item in self._documents_for_next_index(doc.knowledge_base_id, set())
+                if item.id != doc_id
+            ]
+            await self._index_manager.build_and_activate(
+                kb, remaining_docs, embedding_config,
+            )
+            self._db.delete_kb_document(doc_id)
 
-        self._db.delete_kb_document(doc_id)
-
-        if doc.storage_path:
-            p = Path(doc.storage_path)
-            if p.exists():
-                p.unlink(missing_ok=True)
+            if doc.storage_path:
+                path = Path(doc.storage_path)
+                if path.exists():
+                    path.unlink(missing_ok=True)
 
         logger.info("Deleted document '%s' (id=%s)", doc.file_name, doc_id)
         return True
@@ -243,42 +229,29 @@ class DocumentService:
         if not kb:
             return None
 
-        old_chunks = self._db.get_kb_chunks_by_document(doc_id)
-        old_ids = [c.id for c in old_chunks]
-        if old_ids:
-            try:
-                self._orchestrator.delete_chunks_from_vector_store(
-                    doc.knowledge_base_id, old_ids,
+        try:
+            async with self._coordinator.job(doc.knowledge_base_id, "reprocess", doc_id):
+                # This only signals UI activity; the active chunk rows and
+                # document statistics remain untouched until activation.
+                self._db.update_kb_document(doc_id, status="embedding", error_message="")
+                current_docs = self._documents_for_next_index(
+                    doc.knowledge_base_id, {doc_id},
                 )
-            except Exception:
-                logger.exception("Failed to remove old vectors for doc %s", doc_id)
-        self._db.delete_kb_chunks_by_document(doc_id)
-
-        self._db.update_kb_document(doc_id, status="parsing", error_message="")
-
-        result = await self._orchestrator.ingest_document(
-            file_path=doc.storage_path,
-            file_type=doc.file_type,
-            kb=kb,
-            embedding_config=embedding_config,
-            on_progress=on_progress,
-            document_id=doc.id,
-        )
-
-        if result.error:
+                await self._index_manager.build_and_activate(
+                    kb, current_docs, embedding_config, on_progress,
+                )
+        except asyncio.CancelledError:
             self._db.update_kb_document(
-                doc_id, status="error", error_message=result.error,
+                doc_id, status=doc.status, error_message=doc.error_message,
             )
-        else:
-            self._persist_chunks(doc_id, doc.knowledge_base_id, result.chunks)
+            raise
+        except Exception:
+            # Reprocessing an existing document must not make its known-good
+            # active version appear failed or unavailable.
             self._db.update_kb_document(
-                doc_id,
-                content_text=result.content_text,
-                content_length=result.content_length,
-                chunk_count=result.chunk_count,
-                status="ready",
+                doc_id, status=doc.status, error_message=doc.error_message,
             )
-
+            raise
         return self._db.get_kb_document(doc_id)
 
     # ── Dedup helper ──────────────────────────────────────────────────
@@ -290,35 +263,16 @@ class DocumentService:
 
     # ── Private helpers ───────────────────────────────────────────────
 
-    def _persist_chunks(
-        self,
-        doc_id: str,
-        kb_id: str,
-        chunks: list,
-    ) -> None:
-        """Write ChunkData objects to the kb_chunks table.
+    def _documents_for_next_index(
+        self, kb_id: str, include_ids: set[str],
+    ) -> list[KBDocument]:
+        """Return documents represented by the next complete index snapshot."""
+        return [
+            doc
+            for doc in self._db.get_kb_documents_by_kb(kb_id)
+            if doc.status == "ready" or doc.id in include_ids
+        ]
 
-        The chunk ID is derived from the same logic used by the vector
-        store, so that ``delete_document`` can reliably remove vectors by
-        ID later.
-        """
-        db_chunks: list[KBChunk] = []
-        for c in chunks:
-            cid = str(c.metadata.get("chunk_db_id", f"chunk_{c.index}"))
-            db_chunks.append(KBChunk(
-                id=cid,
-                document_id=doc_id,
-                knowledge_base_id=kb_id,
-                content=c.content,
-                chunk_index=c.index,
-                start_char=c.start_char,
-                end_char=c.end_char,
-                metadata_json=self._safe_json(c.metadata),
-                is_embedded=1,
-            ))
-        if db_chunks:
-            self._db.create_kb_chunks_batch(db_chunks)
-            self._db.update_kb_chunk_embedded([c.id for c in db_chunks])
 
     @staticmethod
     def _resolve_file_type(path: Path) -> str:
@@ -341,15 +295,6 @@ class DocumentService:
                     break
                 sha.update(data)
         return sha.hexdigest()
-
-    @staticmethod
-    def _safe_json(data: dict) -> str:
-        import json
-        try:
-            return json.dumps(data, ensure_ascii=False)
-        except (TypeError, ValueError):
-            return "{}"
-
 
 class DuplicateDocumentError(Exception):
     """Raised when attempting to upload a document that already exists."""

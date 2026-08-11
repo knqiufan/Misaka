@@ -383,6 +383,11 @@ class KnowledgeBase:
 
     status: Literal["active", "building", "error"] = "active"
 
+    # The version suffix of the vector index currently served to chat.  An
+    # empty value refers to the pre-versioning table name used by v6 and
+    # earlier databases.
+    active_index_version: str = ""
+
     created_at: str = ""
     updated_at: str = ""
 
@@ -428,7 +433,26 @@ class KBChunk:
 
     is_embedded: int = 0
 
+    # Chunks are staged under a new index version and become visible only
+    # once that version has been atomically activated.
+    index_version: str = ""
+
     created_at: str = ""
+
+
+@dataclass
+class KBCleanupJob:
+    """A durable retry record for vector-index cleanup."""
+
+    id: str
+    knowledge_base_id: str
+    index_version: str
+    operation: str
+    status: str = "pending"
+    attempts: int = 0
+    error_message: str = ""
+    created_at: str = ""
+    updated_at: str = ""
 
 
 @dataclass

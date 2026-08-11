@@ -179,11 +179,17 @@ class ServiceContainer:
 
         # Knowledge Base / RAG services
         from misaka.services.knowledge.document_service import DocumentService
+        from misaka.services.knowledge.job_coordinator import KnowledgeBaseJobCoordinator
         from misaka.services.knowledge.kb_service import KnowledgeBaseService
 
         self.rag_orchestrator = self._create_rag_orchestrator()
-        self.kb_service = KnowledgeBaseService(db, self.rag_orchestrator)
-        self.document_service = DocumentService(db, self.rag_orchestrator)
+        self.kb_job_coordinator = KnowledgeBaseJobCoordinator(db)
+        self.kb_service = KnowledgeBaseService(
+            db, self.rag_orchestrator, self.kb_job_coordinator,
+        )
+        self.document_service = DocumentService(
+            db, self.rag_orchestrator, self.kb_job_coordinator,
+        )
 
     def _create_rag_orchestrator(self):
         """Build the RAG pipeline for the currently persisted vector backend."""
@@ -228,8 +234,11 @@ class ServiceContainer:
         self.rag_orchestrator = self._create_rag_orchestrator()
         if hasattr(self, "kb_service"):
             self.kb_service._orchestrator = self.rag_orchestrator
+            if self.kb_service._index_manager is not None:
+                self.kb_service._index_manager._orchestrator = self.rag_orchestrator
         if hasattr(self, "document_service"):
             self.document_service._orchestrator = self.rag_orchestrator
+            self.document_service._index_manager._orchestrator = self.rag_orchestrator
 
     def configure_vector_backend(
         self,
@@ -445,6 +454,17 @@ def _main(page: ft.Page) -> None:
 
     page.run_task(_run_env_check)
 
+    # --- Retry durable vector cleanup from interrupted/failed operations ---
+    async def _retry_kb_cleanup() -> None:
+        try:
+            completed = await services.kb_service.retry_pending_cleanup()
+            if completed:
+                logger.info("Completed %d deferred knowledge-base vector cleanups", completed)
+        except Exception:
+            logger.exception("Deferred knowledge-base vector cleanup retry failed")
+
+    page.run_task(_retry_kb_cleanup)
+
     # --- Check for Claude Code updates ---
     async def _run_update_check() -> None:
         result = await services.update_check_service.check_for_update()
@@ -477,6 +497,12 @@ def _main(page: ft.Page) -> None:
 def main() -> None:
     """Application entry point."""
     multiprocessing.freeze_support()
+
+    if "--rag-smoke" in sys.argv:
+        from misaka.services.knowledge.frozen_smoke import run_frozen_rag_smoke
+
+        run_frozen_rag_smoke()
+        return
 
     if _maybe_delegate_hot_reload():
         return
