@@ -190,7 +190,7 @@ class TestSQLiteBackend:
 
         assert row is None
         assert version is not None
-        assert version[0] == 8
+        assert version[0] == 9
 
     def test_migration_creates_seekdb_config_table(self, tmp_path) -> None:
         conn = sqlite3.connect(tmp_path / "seekdb-migrate.db")
@@ -217,3 +217,5 @@ class TestSQLiteBackend:
         conn.close()
 
         assert "active_index_fingerprint" in columns
+        assert "active_vector_table_name" in columns
+        assert "active_vector_backend_fingerprint" in columns

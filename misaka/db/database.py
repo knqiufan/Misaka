@@ -338,6 +338,24 @@ class DatabaseBackend(ABC):
         """Return all documents belonging to a knowledge base."""
 
     @abstractmethod
+    def get_kb_documents_page(
+        self, kb_id: str, offset: int, limit: int, query: str = "",
+    ) -> list[KBDocument]:
+        """Return one bounded page of documents, optionally filtered by name."""
+
+    @abstractmethod
+    def count_kb_documents(self, kb_id: str, query: str = "") -> int:
+        """Return the number of documents matching a bounded-list query."""
+
+    @abstractmethod
+    def get_kb_document_metadata(self, doc_id: str) -> KBDocument | None:
+        """Return document metadata without loading its potentially large text."""
+
+    @abstractmethod
+    def get_kb_document_content_slice(self, doc_id: str, offset: int, limit: int) -> str:
+        """Return a bounded character slice of parsed document text."""
+
+    @abstractmethod
     def update_kb_document(self, doc_id: str, **kwargs: Any) -> None:
         """Update document fields. Only provided kwargs are changed."""
 
@@ -378,6 +396,8 @@ class DatabaseBackend(ABC):
         document_updates: dict[str, dict[str, Any]],
         dimensions: int,
         index_fingerprint: str,
+        vector_table_name: str,
+        vector_backend_fingerprint: str,
     ) -> None:
         """Atomically publish staged chunks and their corresponding document state."""
 
@@ -405,7 +425,13 @@ class DatabaseBackend(ABC):
 
     @abstractmethod
     def create_kb_cleanup_job(
-        self, kb_id: str, index_version: str, operation: str, error_message: str,
+        self,
+        kb_id: str,
+        index_version: str,
+        operation: str,
+        error_message: str,
+        vector_table_name: str = "",
+        backend_fingerprint: str = "",
     ) -> str:
         """Persist vector cleanup that must be retried."""
 

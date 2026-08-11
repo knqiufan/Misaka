@@ -247,7 +247,7 @@ if sys.platform == "darwin":
         icon="assets/icon.ico",
         bundle_identifier="com.misaka.app",
         info_plist={
-            "CFBundleShortVersionString": "0.1.2",
+            "CFBundleShortVersionString": "0.3.0",
             "CFBundleVersion": "0.1.2",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "12.0",

@@ -12,7 +12,7 @@ import sqlite3
 logger = logging.getLogger(__name__)
 
 # Current schema version. Increment when adding new migrations.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def run_migrations(conn: sqlite3.Connection) -> None:
@@ -48,6 +48,9 @@ def run_migrations(conn: sqlite3.Connection) -> None:
 
     if current < 8:
         _migrate_v8(conn)
+
+    if current < 9:
+        _migrate_v9(conn)
 
     _set_version(conn, SCHEMA_VERSION)
     conn.commit()
@@ -388,3 +391,50 @@ def _migrate_v8(conn: sqlite3.Connection) -> None:
             "ALTER TABLE knowledge_bases "
             "ADD COLUMN active_index_fingerprint TEXT NOT NULL DEFAULT ''"
         )
+
+
+def _migrate_v9(conn: sqlite3.Connection) -> None:
+    """Persist physical vector resources for collision-safe lifecycle handling."""
+    logger.info("Running migration v9")
+    existing_tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "knowledge_bases" in existing_tables:
+        kb_columns = _get_column_names(conn, "knowledge_bases")
+        if "active_vector_table_name" not in kb_columns:
+            conn.execute(
+                "ALTER TABLE knowledge_bases "
+                "ADD COLUMN active_vector_table_name TEXT NOT NULL DEFAULT ''"
+            )
+        if "active_vector_backend_fingerprint" not in kb_columns:
+            conn.execute(
+                "ALTER TABLE knowledge_bases "
+                "ADD COLUMN active_vector_backend_fingerprint TEXT NOT NULL DEFAULT ''"
+            )
+        # Existing physical indexes use the legacy eight-character prefix.
+        # Preserve that exact address; new builds use a full UUID-derived name.
+        if "active_index_version" in kb_columns:
+            conn.execute("""
+                UPDATE knowledge_bases
+                   SET active_vector_table_name =
+                       'kb_vec_' || substr(replace(id, '-', ''), 1, 8) ||
+                       CASE WHEN active_index_version <> ''
+                            THEN '_' || substr(active_index_version, 1, 16)
+                            ELSE '' END
+                 WHERE active_vector_table_name = ''
+            """)
+    if "kb_cleanup_jobs" in existing_tables:
+        cleanup_columns = _get_column_names(conn, "kb_cleanup_jobs")
+        if "vector_table_name" not in cleanup_columns:
+            conn.execute(
+                "ALTER TABLE kb_cleanup_jobs "
+                "ADD COLUMN vector_table_name TEXT NOT NULL DEFAULT ''"
+            )
+        if "backend_fingerprint" not in cleanup_columns:
+            conn.execute(
+                "ALTER TABLE kb_cleanup_jobs "
+                "ADD COLUMN backend_fingerprint TEXT NOT NULL DEFAULT ''"
+            )

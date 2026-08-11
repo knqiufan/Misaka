@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _INITIAL_CHARS = 20000
 _LOAD_MORE_CHARS = 20000
+_MAX_CLIPBOARD_CHARS = 1_000_000
 
 
 def show_document_viewer(state: AppState, doc_id: str) -> None:
@@ -26,22 +28,22 @@ def show_document_viewer(state: AppState, doc_id: str) -> None:
     if not doc_svc:
         return
 
-    doc = doc_svc.get_document(doc_id)
+    doc = doc_svc.get_document_metadata(doc_id)
     if not doc:
         return
 
-    content_text = doc.content_text or ""
     file_info = _build_file_info(doc)
-    total_len = len(content_text)
+    total_len = doc.content_length
 
-    if not content_text.strip():
+    if not total_len:
         body = _build_empty_body(doc.status, doc.error_message)
         load_more_btn = ft.Container()
     else:
         displayed = [min(_INITIAL_CHARS, total_len)]
+        content_parts = [doc_svc.get_document_content_slice(doc_id, 0, displayed[0])]
 
         text_ctrl = ft.Text(
-            content_text[:displayed[0]],
+            content_parts[0],
             selectable=True,
             size=12,
             font_family="monospace",
@@ -56,15 +58,39 @@ def show_document_viewer(state: AppState, doc_id: str) -> None:
         )
 
         load_more_btn = _build_load_more_button(
-            content_text, displayed, text_ctrl, total_len,
+            doc_svc, doc_id, content_parts, displayed, text_ctrl, total_len,
         )
 
     copy_btn_text = ft.Text(t("kb.doc_viewer_copy"), size=11)
 
     async def _on_copy(_: ft.ControlEvent) -> None:
-        await ft.Clipboard().set(content_text)
+        if total_len > _MAX_CLIPBOARD_CHARS:
+            copy_btn_text.value = "Document is too large to copy; export it instead."
+            copy_btn_text.update()
+            return
+        content = await asyncio.to_thread(
+            doc_svc.get_document_content_slice, doc_id, 0, total_len,
+        )
+        await ft.Clipboard().set(content)
         copy_btn_text.value = t("kb.doc_viewer_copied")
         copy_btn_text.update()
+
+    async def _on_export(_: ft.ControlEvent) -> None:
+        picker = ft.FilePicker()
+        page.services.append(picker)
+        page.update()
+        try:
+            path = await picker.save_file(
+                dialog_title="Export document text",
+                file_name=f"{doc.file_name}.txt",
+                allowed_extensions=["txt"],
+            )
+            if path:
+                await asyncio.to_thread(doc_svc.export_document_content, doc_id, path)
+        finally:
+            if picker in page.services:
+                page.services.remove(picker)
+                page.update()
 
     dlg_content = ft.Column(
         controls=[
@@ -82,6 +108,17 @@ def show_document_viewer(state: AppState, doc_id: str) -> None:
                             tight=True,
                         ),
                         on_click=_on_copy,
+                    ),
+                    ft.TextButton(
+                        content=ft.Row(
+                            controls=[
+                                ft.Icon(ft.Icons.DOWNLOAD, size=14),
+                                ft.Text("Export", size=11),
+                            ],
+                            spacing=4,
+                            tight=True,
+                        ),
+                        on_click=_on_export,
                     ),
                 ],
             ),
@@ -129,7 +166,9 @@ def _build_empty_body(status: str = "", error_message: str = "") -> ft.Container
 
 
 def _build_load_more_button(
-    content_text: str,
+    doc_svc,
+    doc_id: str,
+    content_parts: list[str],
     displayed: list[int],
     text_ctrl: ft.Text,
     total_len: int,
@@ -148,9 +187,16 @@ def _build_load_more_button(
         color=ft.Colors.PRIMARY,
     )
 
-    def _on_load_more(_: ft.ControlEvent) -> None:
+    async def _on_load_more(_: ft.ControlEvent) -> None:
         new_end = min(displayed[0] + _LOAD_MORE_CHARS, total_len)
-        text_ctrl.value = content_text[:new_end]
+        next_part = await asyncio.to_thread(
+            doc_svc.get_document_content_slice,
+            doc_id,
+            displayed[0],
+            new_end - displayed[0],
+        )
+        content_parts.append(next_part)
+        text_ctrl.value = "".join(content_parts)
         displayed[0] = new_end
         text_ctrl.update()
         if new_end >= total_len:

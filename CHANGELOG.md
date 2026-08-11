@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-08-11
+
+### Added
+
+- Versioned, copy-on-write knowledge-base indexes with durable cleanup and backend-resource auditing
+- PDF page and XLSX worksheet provenance retained through chunking and retrieval
+- Database-backed document pagination, streamed content viewing, and export for large documents
+
+### Changed
+
+- Vector index resources now use full knowledge-base UUID names and retain legacy table addresses during migration
+- Hybrid retrieval reuses active-index BM25 corpora instead of rebuilding on every query
+
+### Fixed
+
+- Validate knowledge-base retrieval settings, selected model availability, malformed reranker responses, and chunk/vector count mismatches
+- Escape untrusted knowledge-base context and add an explicit prompt-injection boundary
+- Move upload, chunking, vector persistence, and large-document operations off the UI event loop
+- Remove unsupported legacy `.xls` uploads and harden filesystem/database compensation paths
+
 ## [0.2.1] - 2026-05-27
 
 ### Added

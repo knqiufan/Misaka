@@ -110,6 +110,8 @@ def row_to_knowledge_base(row: sqlite3.Row) -> KnowledgeBase:
         status=row["status"],
         active_index_version=row["active_index_version"],
         active_index_fingerprint=row["active_index_fingerprint"],
+        active_vector_table_name=row["active_vector_table_name"],
+        active_vector_backend_fingerprint=row["active_vector_backend_fingerprint"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )

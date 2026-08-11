@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import shutil
@@ -71,9 +72,18 @@ class KnowledgeBaseService:
             similarity_threshold=kwargs.get("similarity_threshold", 0.0),
             reranker_top_k=kwargs.get("reranker_top_k", 3),
         )
-        self._db.create_knowledge_base(kb)
         storage_dir = get_kb_storage_dir(kb.id)
+        created_storage = not storage_dir.exists()
         storage_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self._db.create_knowledge_base(kb)
+        except Exception:
+            # File-system creation precedes publication to avoid a DB row
+            # pointing to a missing directory. Undo only the directory this
+            # operation created; never remove a pre-existing user directory.
+            if created_storage:
+                shutil.rmtree(storage_dir)
+            raise
         logger.info("Created knowledge base '%s' (id=%s)", name, kb.id)
         return kb
 
@@ -93,20 +103,39 @@ class KnowledgeBaseService:
 
         await self._coordinator.cancel_and_wait(kb_id)
         async with self._coordinator.job(kb_id, "delete_knowledge_base"):
+            storage_dir = get_kb_storage_dir(kb_id)
+            if await asyncio.to_thread(storage_dir.exists):
+                try:
+                    await asyncio.to_thread(shutil.rmtree, storage_dir)
+                except OSError as exc:
+                    logger.exception("Failed to delete KB storage for %s", kb_id)
+                    raise RuntimeError(
+                        f"Knowledge-base files could not be deleted: {exc}"
+                    ) from exc
+
             if self._index_manager:
                 versions = {chunk.index_version for chunk in self._db.get_kb_chunks_by_kb(kb_id)}
                 if kb.active_index_version:
                     versions.add(kb.active_index_version)
                 for version in versions:
                     await self._index_manager.delete_index_or_enqueue(
-                        kb_id, version, "delete_knowledge_base",
+                        kb_id,
+                        version,
+                        "delete_knowledge_base",
+                        (
+                            kb.active_vector_table_name
+                            if version == kb.active_index_version
+                            else ""
+                        ),
+                        (
+                            kb.active_vector_backend_fingerprint
+                            if version == kb.active_index_version
+                            else ""
+                        ),
                     )
 
             self._db.delete_knowledge_base(kb_id)
-
-            storage_dir = get_kb_storage_dir(kb_id)
-            if storage_dir.exists():
-                shutil.rmtree(storage_dir, ignore_errors=True)
+            self.mark_index_rebuilt(kb_id)
 
         logger.info("Deleted knowledge base '%s' (id=%s)", kb.name, kb_id)
         return True
@@ -143,18 +172,18 @@ class KnowledgeBaseService:
 
         if kb.embedding_model_id and kb.embedding_router_config_id:
             config = self._db.get_router_config(kb.embedding_router_config_id)
-            if config:
+            if config and config.base_url.strip() and config.api_key.strip():
                 models = self._db.get_router_models(kb.embedding_router_config_id)
                 embedding_available = any(
-                    m.model_id == kb.embedding_model_id for m in models
+                    m.model_id == kb.embedding_model_id and m.is_selected for m in models
                 )
 
         if kb.reranker_model_id and kb.reranker_router_config_id:
             config = self._db.get_router_config(kb.reranker_router_config_id)
-            if config:
+            if config and config.base_url.strip() and config.api_key.strip():
                 models = self._db.get_router_models(kb.reranker_router_config_id)
                 reranker_available = any(
-                    m.model_id == kb.reranker_model_id for m in models
+                    m.model_id == kb.reranker_model_id and m.is_selected for m in models
                 )
             else:
                 reranker_available = False
@@ -264,6 +293,25 @@ class KnowledgeBaseService:
         if not self._index_manager:
             return 0
         return await self._index_manager.retry_pending_cleanup()
+
+    def get_orphaned_vector_resources(self) -> list[dict[str, str]]:
+        """List cleanup jobs that need their original backend to be selected.
+
+        This is intentionally read-only: automated retries never send a
+        delete operation to a backend other than the one recorded at index
+        creation time.
+        """
+        current = self._db.get_setting(SettingKeys.VECTOR_BACKEND_FINGERPRINT) or "local-default"
+        return [
+            {
+                "job_id": job.id,
+                "knowledge_base_id": job.knowledge_base_id,
+                "table_name": job.vector_table_name,
+                "required_backend_fingerprint": job.backend_fingerprint,
+            }
+            for job in self._db.get_pending_kb_cleanup_jobs()
+            if job.backend_fingerprint != current
+        ]
 
     # ── Chat selection ────────────────────────────────────────────────
 

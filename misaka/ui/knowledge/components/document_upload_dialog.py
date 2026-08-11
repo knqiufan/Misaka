@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_ALLOWED_EXTENSIONS = ["*.txt", "*.md", "*.markdown", "*.docx", "*.xlsx", "*.xls", "*.pdf"]
+_ALLOWED_EXTENSIONS = ["*.txt", "*.md", "*.markdown", "*.docx", "*.xlsx", "*.pdf"]
 
 
 def show_upload_dialog(

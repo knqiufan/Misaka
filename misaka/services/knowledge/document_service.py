@@ -32,7 +32,6 @@ SUPPORTED_EXTENSIONS: dict[str, str] = {
     ".markdown": "markdown",
     ".docx": "docx",
     ".xlsx": "xlsx",
-    ".xls": "xlsx",
     ".pdf": "pdf",
 }
 
@@ -62,16 +61,16 @@ class DocumentService:
     ) -> KBDocument:
         """Upload a single file: validate → hash → dedup → ingest → persist."""
         src = Path(file_path)
-        file_type = self._resolve_file_type(src)
+        file_type = await asyncio.to_thread(self._resolve_file_type, src)
 
-        file_size = src.stat().st_size
+        file_size = await asyncio.to_thread(_file_size, src)
         if file_size > MAX_FILE_SIZE:
             raise ValueError(
                 f"File too large ({file_size / (1024*1024):.1f} MB). "
                 f"Maximum allowed size is {MAX_FILE_SIZE / (1024*1024):.0f} MB."
             )
 
-        file_hash = self._compute_hash(src)
+        file_hash = await asyncio.to_thread(self._compute_hash, src)
 
         dup = self._db.get_kb_document_by_hash(kb_id, file_hash)
         if dup:
@@ -86,21 +85,27 @@ class DocumentService:
 
         doc_id = str(uuid.uuid4())
         storage_dir = get_kb_storage_dir(kb_id)
-        storage_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(storage_dir.mkdir, parents=True, exist_ok=True)
         dest = storage_dir / f"{doc_id}_{src.name}"
-        shutil.copy2(str(src), str(dest))
+        await asyncio.to_thread(shutil.copy2, str(src), str(dest))
 
         doc = KBDocument(
             id=doc_id,
             knowledge_base_id=kb_id,
             file_name=src.name,
             file_type=file_type,
-            file_size=src.stat().st_size,
+            file_size=file_size,
             file_hash=file_hash,
             storage_path=str(dest),
             status="parsing",
         )
-        self._db.create_kb_document(doc)
+        try:
+            self._db.create_kb_document(doc)
+        except Exception:
+            # The file is copied before the record is published. Compensate
+            # when the DB half fails so no untracked source remains.
+            await asyncio.to_thread(dest.unlink, missing_ok=True)
+            raise
 
         try:
             async with self._coordinator.job(kb_id, "upload", doc_id):
@@ -172,13 +177,39 @@ class DocumentService:
     def get_documents(self, kb_id: str) -> list[KBDocument]:
         return self._db.get_kb_documents_by_kb(kb_id)
 
+    def get_documents_page(
+        self, kb_id: str, offset: int, limit: int, query: str = "",
+    ) -> list[KBDocument]:
+        return self._db.get_kb_documents_page(kb_id, offset, limit, query)
+
+    def count_documents(self, kb_id: str, query: str = "") -> int:
+        return self._db.count_kb_documents(kb_id, query)
+
     def get_document(self, doc_id: str) -> KBDocument | None:
         return self._db.get_kb_document(doc_id)
+
+    def get_document_metadata(self, doc_id: str) -> KBDocument | None:
+        return self._db.get_kb_document_metadata(doc_id)
 
     def get_document_content(self, doc_id: str) -> str:
         """Return the parsed plain-text content stored in the DB."""
         doc = self._db.get_kb_document(doc_id)
         return doc.content_text if doc else ""
+
+    def get_document_content_slice(self, doc_id: str, offset: int, limit: int) -> str:
+        return self._db.get_kb_document_content_slice(doc_id, offset, limit)
+
+    def export_document_content(self, doc_id: str, destination: str) -> None:
+        """Stream parsed text to a user-selected file without a giant copy."""
+        path = Path(destination)
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            offset = 0
+            while True:
+                part = self.get_document_content_slice(doc_id, offset, 64 * 1024)
+                if not part:
+                    return
+                handle.write(part)
+                offset += len(part)
 
     # ── Delete ────────────────────────────────────────────────────────
 
@@ -202,12 +233,27 @@ class DocumentService:
             await self._index_manager.build_and_activate(
                 kb, remaining_docs, embedding_config,
             )
-            self._db.delete_kb_document(doc_id)
 
             if doc.storage_path:
                 path = Path(doc.storage_path)
-                if path.exists():
-                    path.unlink(missing_ok=True)
+                try:
+                    if await asyncio.to_thread(path.exists):
+                        await asyncio.to_thread(path.unlink, missing_ok=True)
+                except OSError:
+                    # The vector snapshot has already been published without
+                    # this document. Compensate with a complete rebuild before
+                    # returning the filesystem failure to the caller.
+                    logger.exception("Failed to delete source file for %s", doc_id)
+                    try:
+                        await self._index_manager.build_and_activate(
+                            kb,
+                            self._documents_for_next_index(doc.knowledge_base_id, set()),
+                            embedding_config,
+                        )
+                    except Exception:
+                        logger.exception("Failed to compensate document index after file error")
+                    raise
+            self._db.delete_kb_document(doc_id)
 
         logger.info("Deleted document '%s' (id=%s)", doc.file_name, doc_id)
         return True
@@ -298,3 +344,8 @@ class DocumentService:
 
 class DuplicateDocumentError(Exception):
     """Raised when attempting to upload a document that already exists."""
+
+
+def _file_size(path: Path) -> int:
+    """Read file size in a worker thread when called from async flows."""
+    return path.stat().st_size

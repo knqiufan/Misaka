@@ -27,6 +27,8 @@ _STATUS_ICONS = {
     "error": (ft.Icons.ERROR_OUTLINE, ft.Colors.ERROR),
 }
 
+_DOCUMENT_PAGE_SIZE = 100
+
 
 class KBDetailPage(ft.Column):
     """Detail page showing documents of a single knowledge base."""
@@ -42,6 +44,8 @@ class KBDetailPage(ft.Column):
         self._kb_id = kb_id
         self._on_back = on_back
         self._search_query = ""
+        self._document_offset = 0
+        self._document_total = 0
         self.refresh()
 
     def refresh(self) -> None:
@@ -59,7 +63,23 @@ class KBDetailPage(ft.Column):
         kb_svc = self.state.get_service("kb_service")
         if doc_svc:
             kb = self.state.ensure_kb_state()
-            kb.kb_documents = doc_svc.get_documents(self._kb_id)
+            kb.kb_documents = doc_svc.get_documents_page(
+                self._kb_id,
+                self._document_offset,
+                _DOCUMENT_PAGE_SIZE,
+                self._search_query,
+            )
+            self._document_total = doc_svc.count_documents(
+                self._kb_id, self._search_query,
+            )
+            if self._document_offset >= self._document_total and self._document_offset:
+                self._document_offset = max(0, self._document_total - _DOCUMENT_PAGE_SIZE)
+                kb.kb_documents = doc_svc.get_documents_page(
+                    self._kb_id,
+                    self._document_offset,
+                    _DOCUMENT_PAGE_SIZE,
+                    self._search_query,
+                )
         if kb_svc:
             kb_svc.update_statistics(self._kb_id)
 
@@ -192,9 +212,7 @@ class KBDetailPage(ft.Column):
 
     def _build_document_section(self) -> ft.Control:
         docs = self.state.kb.kb_documents if self.state.kb else []
-        filtered = self._filter_docs(docs)
-
-        if not docs:
+        if not self._document_total:
             return self._build_empty_docs()
 
         search_field = make_text_field(
@@ -210,14 +228,14 @@ class KBDetailPage(ft.Column):
         )
 
         table = build_document_table(
-            filtered,
+            docs,
             on_view=self._on_view_doc,
             on_reprocess=self._on_reprocess_doc,
             on_delete=self._on_delete_doc,
         )
 
         return ft.Column(
-            controls=[search_row, table],
+            controls=[search_row, table, self._build_document_pager()],
             scroll=ft.ScrollMode.AUTO,
             expand=True,
         )
@@ -245,6 +263,45 @@ class KBDetailPage(ft.Column):
 
     def _on_search(self, e: ft.ControlEvent) -> None:
         self._search_query = e.data or ""
+        self._document_offset = 0
+        self.refresh()
+
+    def _build_document_pager(self) -> ft.Control:
+        if self._document_total <= _DOCUMENT_PAGE_SIZE:
+            return ft.Container()
+        first = self._document_offset + 1
+        last = min(self._document_offset + _DOCUMENT_PAGE_SIZE, self._document_total)
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.IconButton(
+                        ft.Icons.CHEVRON_LEFT,
+                        icon_size=18,
+                        disabled=self._document_offset == 0,
+                        on_click=lambda _: self._change_document_page(-1),
+                    ),
+                    ft.Text(f"{first}-{last} / {self._document_total}", size=11, opacity=0.6),
+                    ft.IconButton(
+                        ft.Icons.CHEVRON_RIGHT,
+                        icon_size=18,
+                        disabled=last >= self._document_total,
+                        on_click=lambda _: self._change_document_page(1),
+                    ),
+                ],
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=4,
+            ),
+            padding=ft.Padding.only(bottom=12),
+        )
+
+    def _change_document_page(self, direction: int) -> None:
+        self._document_offset = max(
+            0,
+            min(
+                self._document_offset + direction * _DOCUMENT_PAGE_SIZE,
+                max(0, self._document_total - 1),
+            ),
+        )
         self.refresh()
 
     # ── Doc actions ───────────────────────────────────────────────────

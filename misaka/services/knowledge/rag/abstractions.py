@@ -35,12 +35,23 @@ class ChunkData:
 
 
 @dataclass
+class ParsedDocumentSegment:
+    """A logical unit of parsed content, such as a PDF page or Excel sheet."""
+
+    text: str
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass
 class ParsedDocument:
     """Result of parsing a file into plain text."""
 
     text: str
     metadata: dict = field(default_factory=dict)
     page_breaks: list[int] = field(default_factory=list)
+    # Keep source-level boundaries so retrieval can cite the original PDF
+    # page or workbook sheet instead of an anonymous flattened document.
+    segments: list[ParsedDocumentSegment] = field(default_factory=list)
 
 
 @dataclass
