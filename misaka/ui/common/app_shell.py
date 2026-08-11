@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import flet as ft
 
+from misaka.i18n import t
 from misaka.ui.chat.pages.chat_page import ChatPage
 from misaka.ui.common.theme import apply_theme
 from misaka.ui.dashboard.pages.dashboard_page import DashboardPage
@@ -276,17 +277,28 @@ class AppShell(ft.Row):
 
     def _handle_env_install(self, tool_name: str) -> None:
         """Handle tool install request from env check dialog."""
-        env_svc = self.state.get_service('env_check_service')
-        if env_svc:
-            async def _do_install():
-                await env_svc.install_tool(tool_name)
-                result = await env_svc.check_all()
-                self.state.env_check_result = result
-                if self._env_check_dialog:
-                    self._env_check_dialog.refresh()
-                self.state.update()
+        env_svc = self.state.get_service("env_check_service")
+        if not env_svc or not self.state.page:
+            return
 
-            self.state.page.run_task(_do_install)
+        def _on_progress(message: str) -> None:
+            if self._env_check_dialog:
+                self._env_check_dialog.set_install_progress(
+                    t("env_check.installing_tool", tool=tool_name)
+                )
+            self.state.update()
+
+        async def _do_install() -> None:
+            install_result = await env_svc.install_tool(
+                tool_name,
+                on_progress=_on_progress,
+            )
+            self.state.env_check_result = await env_svc.check_all()
+            if self._env_check_dialog:
+                self._env_check_dialog.finish_install(install_result)
+            self.state.update()
+
+        self.state.page.run_task(_do_install)
 
     def _dismiss_env_check(self) -> None:
         """Dismiss the environment check dialog."""
@@ -299,7 +311,7 @@ class AppShell(ft.Row):
 
     def _recheck_env(self) -> None:
         """Re-run environment checks."""
-        env_svc = self.state.get_service('env_check_service')
+        env_svc = self.state.get_service("env_check_service")
         if env_svc:
             async def _do_recheck():
                 await asyncio.sleep(0)

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -17,6 +18,7 @@ from pathlib import Path
 from misaka.config import IS_WINDOWS, get_expanded_path
 
 logger = logging.getLogger(__name__)
+_CLAUDE_VERSION_RE = re.compile(r"v?\d+\.\d+(?:\.\d+)?")
 
 
 # ---------------------------------------------------------------------------
@@ -213,13 +215,16 @@ def _validate_claude_binary(path: str) -> bool:
         return False
     try:
         command = wrap_windows_script_command(path, ["--version"])
-        subprocess.run(
+        result = subprocess.run(
             command,
             capture_output=True,
             timeout=5,
             **build_background_subprocess_kwargs(),
         )
-        return True
+        output = b"\n".join((result.stdout or b"", result.stderr or b"")).decode(
+            errors="replace"
+        )
+        return bool(_CLAUDE_VERSION_RE.search(output))
     except (subprocess.SubprocessError, OSError):
         return False
 

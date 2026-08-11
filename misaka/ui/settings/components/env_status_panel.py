@@ -18,6 +18,7 @@ from misaka.ui.common.theme import (
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
+    from misaka.services.skills.env_check_service import InstallResult
     from misaka.state import AppState
 
 
@@ -35,6 +36,8 @@ class EnvStatusPanel(ft.Container):
         self.padding = ft.Padding.symmetric(horizontal=24, vertical=16)
         self._env_checking: bool = False
         self._env_installing_tool: str | None = None
+        self._install_message: str | None = None
+        self._install_error = False
         self._build_ui()
 
     def refresh(self) -> None:
@@ -65,10 +68,38 @@ class EnvStatusPanel(ft.Container):
                 ),
                 ft.Text(t("settings.env_status_desc"), size=12, opacity=0.6),
                 ft.Column(controls=tool_rows, spacing=8),
+                self._build_install_status(),
             ],
             spacing=12,
             scroll=ft.ScrollMode.AUTO,
             expand=True,
+        )
+
+    def _build_install_status(self) -> ft.Control:
+        return ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(
+                        ft.Icons.ERROR if self._install_error else ft.Icons.INFO,
+                        color=ERROR_RED if self._install_error else ft.Colors.PRIMARY,
+                        size=18,
+                    ),
+                    ft.Text(
+                        self._install_message or "",
+                        color=ERROR_RED if self._install_error else None,
+                        size=12,
+                        expand=True,
+                    ),
+                ],
+                spacing=8,
+            ),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+            border_radius=RADIUS_LG,
+            bgcolor=ft.Colors.with_opacity(
+                0.08,
+                ERROR_RED if self._install_error else ft.Colors.PRIMARY,
+            ),
+            visible=bool(self._install_message),
         )
 
     def _build_header_button(self) -> ft.Control:
@@ -150,11 +181,13 @@ class EnvStatusPanel(ft.Container):
                 ],
                 spacing=6,
             )
-        return make_button(
+        button = make_button(
             t("env_check.install"),
             icon=ft.Icons.DOWNLOAD,
             on_click=lambda e, name=tool.name: self._handle_install(e, name),
         )
+        button.disabled = self._env_installing_tool is not None
+        return button
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -165,6 +198,8 @@ class EnvStatusPanel(ft.Container):
         if not page:
             return
         self._env_checking = True
+        self._install_message = None
+        self._install_error = False
         self._build_ui()
         self.state.update()
         page.run_task(self._do_recheck)
@@ -182,6 +217,8 @@ class EnvStatusPanel(ft.Container):
         if not page:
             return
         self._env_installing_tool = tool_name
+        self._install_message = None
+        self._install_error = False
         self._build_ui()
         self.state.update()
 
@@ -193,8 +230,26 @@ class EnvStatusPanel(ft.Container):
     async def _do_install(self, tool_name: str) -> None:
         svc = self.state.get_service("env_check_service")
         if svc:
-            await svc.install_tool(tool_name)
+            result = await svc.install_tool(tool_name, on_progress=self._on_install_progress)
             self.state.env_check_result = await svc.check_all()
+            self._finish_install(result)
         self._env_installing_tool = None
         self._build_ui()
         self.state.update()
+
+    def _on_install_progress(self, message: str) -> None:
+        self._install_message = t(
+            "env_check.installing_tool",
+            tool=self._env_installing_tool or "",
+        )
+        self._install_error = False
+        self._build_ui()
+        self.state.update()
+
+    def _finish_install(self, result: InstallResult) -> None:
+        self._install_message = (
+            t("env_check.install_success", tool=result.tool_name)
+            if result.success
+            else t("env_check.install_failed_detail", error=result.message)
+        )
+        self._install_error = not result.success

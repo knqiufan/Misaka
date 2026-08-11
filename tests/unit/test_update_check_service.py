@@ -134,7 +134,10 @@ class TestUpdateCheckService:
         """_http_get_version should return None on network failure."""
         from urllib.error import URLError
 
-        with patch("misaka.services.file.update_check_service.urlopen", side_effect=URLError("fail")):
+        with patch(
+            "misaka.services.file.update_check_service.urlopen",
+            side_effect=URLError("fail"),
+        ):
             version = service._http_get_version()
             assert version is None
 
@@ -157,8 +160,11 @@ class TestUpdateCheckService:
 
         progress_messages: list[str] = []
 
-        with patch("shutil.which", return_value="C:/npm/npm.cmd"), \
-             patch(
+        with patch.object(
+                 service,
+                 "_resolve_update_command",
+                 return_value=["C:/npm/npm.cmd", "install", "-g", "package"],
+             ), patch(
                  "misaka.services.file.update_check_service.build_background_subprocess_kwargs",
                  return_value={"creationflags": 1, "startupinfo": "hidden"},
              ) as mock_kwargs, \
@@ -167,25 +173,23 @@ class TestUpdateCheckService:
             result = await service.perform_update(on_progress=progress_messages.append)
             assert result is True
             mock_kwargs.assert_called_once_with()
-            mock_exec.assert_called_once_with(
-                "C:/npm/npm.cmd",
-                "install",
-                "-g",
-                "@anthropic-ai/claude-code@latest",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                creationflags=1,
-                startupinfo="hidden",
+            mock_exec.assert_awaited_once()
+            assert mock_exec.await_args.args == (
+                "C:/npm/npm.cmd", "install", "-g", "package"
             )
+            assert mock_exec.await_args.kwargs["stdin"] == asyncio.subprocess.DEVNULL
+            assert mock_exec.await_args.kwargs["env"] is not None
+            assert mock_exec.await_args.kwargs["creationflags"] == 1
+            assert mock_exec.await_args.kwargs["startupinfo"] == "hidden"
 
-    async def test_perform_update_no_npm(self, service: UpdateCheckService) -> None:
-        """perform_update should return False when npm is not found."""
+    async def test_perform_update_no_manager(self, service: UpdateCheckService) -> None:
+        """perform_update should return False when no manager is found."""
         progress_messages: list[str] = []
 
-        with patch("shutil.which", return_value=None):
+        with patch.object(service, "_resolve_update_command", return_value=None):
             result = await service.perform_update(on_progress=progress_messages.append)
             assert result is False
-            assert any("npm not found" in m for m in progress_messages)
+            assert any("manager" in m for m in progress_messages)
 
     async def test_perform_update_failure(self, service: UpdateCheckService) -> None:
         """perform_update should return False on update failure."""
@@ -193,8 +197,9 @@ class TestUpdateCheckService:
         mock_proc.communicate.return_value = (b"", b"error occurred\n")
         mock_proc.returncode = 1
 
-        with patch("shutil.which", return_value="/usr/bin/npm"), \
-             patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        with patch.object(
+            service, "_resolve_update_command", return_value=["claude", "update"]
+        ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await service.perform_update()
             assert result is False
 
@@ -241,7 +246,10 @@ class TestUpdateCheckService:
             version = await service._fetch_version_via_npm_cli("@anthropic-ai/claude-code")
             assert version is None
 
-    async def test_fetch_version_via_npm_cli_failure_exit(self, service: UpdateCheckService) -> None:
+    async def test_fetch_version_via_npm_cli_failure_exit(
+        self,
+        service: UpdateCheckService,
+    ) -> None:
         """_fetch_version_via_npm_cli should return None on non-zero exit."""
         mock_proc = AsyncMock()
         mock_proc.communicate.return_value = (b"", b"error\n")
@@ -254,26 +262,99 @@ class TestUpdateCheckService:
 
     async def test_perform_update_timeout(self, service: UpdateCheckService) -> None:
         """perform_update should return False on timeout."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.side_effect = asyncio.TimeoutError()
+        mock_proc = MagicMock()
+        mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+        mock_proc.wait = AsyncMock()
+        mock_proc.kill = MagicMock()
 
         progress_messages: list[str] = []
 
-        with patch("shutil.which", return_value="/usr/bin/npm"), \
-             patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        with patch.object(
+            service, "_resolve_update_command", return_value=["claude", "update"]
+        ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await service.perform_update(on_progress=progress_messages.append)
             assert result is False
             assert any("timed out" in m.lower() for m in progress_messages)
+            mock_proc.kill.assert_called_once_with()
+            mock_proc.wait.assert_awaited_once_with()
 
     async def test_perform_update_exception(self, service: UpdateCheckService) -> None:
         """perform_update should return False on unexpected exception."""
         progress_messages: list[str] = []
 
-        with patch("shutil.which", return_value="/usr/bin/npm"), \
-             patch("asyncio.create_subprocess_exec", side_effect=OSError("broken")):
+        with patch.object(
+            service, "_resolve_update_command", return_value=["claude", "update"]
+        ), patch("asyncio.create_subprocess_exec", side_effect=OSError("broken")):
             result = await service.perform_update(on_progress=progress_messages.append)
             assert result is False
             assert any("failed" in m.lower() for m in progress_messages)
+
+    def test_resolve_update_command_for_npm_install(
+        self, service: UpdateCheckService
+    ) -> None:
+        with patch(
+            "misaka.utils.platform.find_claude_binary",
+            return_value="C:/npm/claude.cmd",
+        ), patch(
+            "misaka.services.file.update_check_service.shutil.which",
+            return_value="C:/npm/npm.cmd",
+        ):
+            command = service._resolve_update_command()
+        assert command == [
+            "C:/npm/npm.cmd",
+            "install",
+            "-g",
+            "@anthropic-ai/claude-code@latest",
+        ]
+
+    def test_resolve_update_command_for_winget_install(
+        self, service: UpdateCheckService
+    ) -> None:
+        with patch(
+            "misaka.utils.platform.find_claude_binary",
+            return_value="C:/Users/test/AppData/Local/Microsoft/WinGet/Links/claude.exe",
+        ), patch(
+            "misaka.services.file.update_check_service.IS_WINDOWS",
+            True,
+        ), patch(
+            "misaka.services.file.update_check_service.shutil.which",
+            return_value="C:/Windows/winget.exe",
+        ):
+            command = service._resolve_update_command()
+        assert command is not None
+        assert command[:4] == [
+            "C:/Windows/winget.exe",
+            "upgrade",
+            "--id",
+            "Anthropic.ClaudeCode",
+        ]
+        assert "--disable-interactivity" in command
+
+    def test_resolve_update_command_for_homebrew_install(
+        self, service: UpdateCheckService
+    ) -> None:
+        with patch(
+            "misaka.utils.platform.find_claude_binary",
+            return_value="/opt/homebrew/Caskroom/claude-code/2.1.204/claude",
+        ), patch(
+            "misaka.services.file.update_check_service.IS_MACOS",
+            True,
+        ), patch(
+            "misaka.services.file.update_check_service.shutil.which",
+            return_value="/opt/homebrew/bin/brew",
+        ):
+            command = service._resolve_update_command()
+        assert command == ["/opt/homebrew/bin/brew", "upgrade", "claude-code"]
+
+    def test_resolve_update_command_for_native_install(
+        self, service: UpdateCheckService
+    ) -> None:
+        with patch(
+            "misaka.utils.platform.find_claude_binary",
+            return_value="/home/test/.local/bin/claude",
+        ):
+            command = service._resolve_update_command()
+        assert command == ["/home/test/.local/bin/claude", "update"]
 
     async def test_http_get_version_missing_version_key(self, service: UpdateCheckService) -> None:
         """_http_get_version should return None when JSON has no version key."""
@@ -286,7 +367,10 @@ class TestUpdateCheckService:
             version = service._http_get_version()
             assert version is None
 
-    async def test_http_get_version_invalid_version_format(self, service: UpdateCheckService) -> None:
+    async def test_http_get_version_invalid_version_format(
+        self,
+        service: UpdateCheckService,
+    ) -> None:
         """_http_get_version should return None when version doesn't match pattern."""
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps({"version": "not-a-version"}).encode()
@@ -299,12 +383,17 @@ class TestUpdateCheckService:
 
     async def test_get_current_version_no_claude(self, service: UpdateCheckService) -> None:
         """_get_current_version should return None when claude CLI not found."""
-        with patch("misaka.services.file.update_check_service.find_claude_binary", return_value=None, create=True), \
-             patch.dict("sys.modules", {}):
-            # Patch the import chain
-            with patch.object(service, "_get_current_version", return_value=None):
-                result = await service.check_for_update()
-                assert result.current_version is None
+        with patch(
+            "misaka.services.file.update_check_service.find_claude_binary",
+            return_value=None,
+            create=True,
+        ), patch.dict("sys.modules", {}), patch.object(
+            service,
+            "_get_current_version",
+            return_value=None,
+        ):
+            result = await service.check_for_update()
+            assert result.current_version is None
 
     async def test_check_for_update_both_none(self, service: UpdateCheckService) -> None:
         """check_for_update should handle both versions being None."""

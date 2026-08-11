@@ -141,8 +141,8 @@
 | 依赖 | 要求 |
 |------|------|
 | Python | 3.10+ |
-| Node.js | 用于 Claude Code CLI |
-| Claude Code CLI | `npm install -g @anthropic-ai/claude-code` |
+| Node.js | 可选；仅 npm 方式安装 Claude Code 时需要 |
+| Claude Code CLI | 推荐使用[官方原生安装方式](https://code.claude.com/docs/en/setup) |
 | API Key | Anthropic API Key（环境变量或应用内配置） |
 
 ### 安装与运行

@@ -119,14 +119,25 @@ def get_extra_path_dirs() -> list[str]:
     if IS_WINDOWS:
         appdata = os.environ.get("APPDATA", os.path.join(home, "AppData", "Roaming"))
         local_appdata = os.environ.get("LOCALAPPDATA", os.path.join(home, "AppData", "Local"))
-        return [
+        program_files = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+        paths = [
             os.path.join(appdata, "npm"),
             os.path.join(local_appdata, "npm"),
+            os.path.join(local_appdata, "Microsoft", "WindowsApps"),
+            os.path.join(local_appdata, "Microsoft", "WinGet", "Links"),
+            os.path.join(local_appdata, "Programs", "Python"),
+            os.path.join(program_files, "nodejs"),
+            os.path.join(program_files, "Git", "cmd"),
             os.path.join(home, ".npm-global", "bin"),
             os.path.join(home, ".claude", "bin"),
             os.path.join(home, ".local", "bin"),
             os.path.join(home, ".nvm", "current", "bin"),
         ]
+        python_root = Path(local_appdata) / "Programs" / "Python"
+        if python_root.is_dir():
+            for python_dir in python_root.glob("Python*"):
+                paths.extend((str(python_dir), str(python_dir / "Scripts")))
+        return paths
     return [
         "/usr/local/bin",
         "/opt/homebrew/bin",
@@ -151,12 +162,42 @@ def get_assets_path() -> Path:
 
 
 def get_expanded_path() -> str:
-    """Build an expanded PATH that includes common CLI tool locations."""
+    """Build a fresh PATH including package-manager changes made after startup."""
     current = os.environ.get("PATH", "")
     parts = [p for p in current.split(os.pathsep) if p]
-    seen = set(parts)
-    for p in get_extra_path_dirs():
-        if p and p not in seen:
-            parts.append(p)
-            seen.add(p)
-    return os.pathsep.join(parts)
+    candidates = [*parts, *_get_windows_registry_path_dirs(), *get_extra_path_dirs()]
+    result: list[str] = []
+    seen: set[str] = set()
+    for path in candidates:
+        normalized = os.path.expandvars(path.strip().strip('"'))
+        key = os.path.normcase(normalized)
+        if normalized and key not in seen:
+            result.append(normalized)
+            seen.add(key)
+    return os.pathsep.join(result)
+
+
+def _get_windows_registry_path_dirs() -> list[str]:
+    """Read current user/machine PATH values so post-install checks see updates."""
+    if not IS_WINDOWS:
+        return []
+
+    import winreg
+
+    locations = (
+        (winreg.HKEY_CURRENT_USER, r"Environment"),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+    )
+    paths: list[str] = []
+    for hive, key_path in locations:
+        try:
+            with winreg.OpenKey(hive, key_path) as key:
+                value, _ = winreg.QueryValueEx(key, "Path")
+        except OSError:
+            continue
+        if isinstance(value, str):
+            paths.extend(part for part in value.split(os.pathsep) if part)
+    return paths

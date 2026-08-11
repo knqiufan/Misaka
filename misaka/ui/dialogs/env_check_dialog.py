@@ -7,6 +7,7 @@ progress indicators, and re-check functionality.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,7 @@ from misaka.ui.common.theme import (
 )
 
 if TYPE_CHECKING:
+    from misaka.services.skills.env_check_service import InstallResult
     from misaka.state import AppState
 
 
@@ -52,6 +54,8 @@ class EnvCheckDialog(ft.Column):
         self._on_dismiss = on_dismiss
         self._on_recheck = on_recheck
         self._installing_tool: str | None = None
+        self._status_message: str | None = None
+        self._status_is_error = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -83,6 +87,32 @@ class EnvCheckDialog(ft.Column):
             ),
             padding=ft.Padding.symmetric(vertical=8),
             visible=check_result.all_installed,
+        )
+
+        install_status = ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(
+                        ft.Icons.ERROR if self._status_is_error else ft.Icons.INFO,
+                        color=ERROR_RED if self._status_is_error else ft.Colors.PRIMARY,
+                        size=18,
+                    ),
+                    ft.Text(
+                        self._status_message or "",
+                        size=12,
+                        color=ERROR_RED if self._status_is_error else None,
+                        expand=True,
+                    ),
+                ],
+                spacing=8,
+            ),
+            padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+            border_radius=RADIUS_LG,
+            bgcolor=ft.Colors.with_opacity(
+                0.08,
+                ERROR_RED if self._status_is_error else ft.Colors.PRIMARY,
+            ),
+            visible=bool(self._status_message),
         )
 
         skip_btn = make_outlined_button(
@@ -137,6 +167,7 @@ class EnvCheckDialog(ft.Column):
                         controls=tool_cards,
                         spacing=8,
                     ),
+                    install_status,
                     all_ready_msg,
                     make_divider(),
                     actions,
@@ -210,6 +241,7 @@ class EnvCheckDialog(ft.Column):
                     icon=ft.Icons.DOWNLOAD,
                     on_click=lambda e, name=tool.name: self._handle_install(name),
                 )
+                status_badge.disabled = self._installing_tool is not None
 
         return ft.Container(
             content=ft.Row(
@@ -246,8 +278,14 @@ class EnvCheckDialog(ft.Column):
         )
 
     def _handle_install(self, tool_name: str) -> None:
+        if self._installing_tool is not None:
+            return
         self._installing_tool = tool_name
+        self._status_message = None
+        self._status_is_error = False
         self._build_ui()
+        with contextlib.suppress(AssertionError, RuntimeError):
+            self.update()
         if self._on_install:
             self._on_install(tool_name)
 
@@ -259,7 +297,26 @@ class EnvCheckDialog(ft.Column):
         if self._on_recheck:
             self._on_recheck()
 
+    def set_install_progress(self, message: str) -> None:
+        """Display an install progress message without rebuilding the page."""
+        self._status_message = message
+        self._status_is_error = False
+        self._build_ui()
+
+    def finish_install(self, result: InstallResult) -> None:
+        """Finish the active install and retain success/failure feedback."""
+        self._installing_tool = None
+        self._status_message = (
+            t("env_check.install_success", tool=result.tool_name)
+            if result.success
+            else t("env_check.install_failed_detail", error=result.message)
+        )
+        self._status_is_error = not result.success
+        self._build_ui()
+
     def refresh(self, check_result=None) -> None:
         """Update the dialog after an install attempt or recheck."""
         self._installing_tool = None
+        self._status_message = None
+        self._status_is_error = False
         self._build_ui()

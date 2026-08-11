@@ -1,19 +1,19 @@
-"""
-Environment check service for Misaka.
-
-Detects installed development tools (Claude Code CLI, Node.js, Python, Git)
-and provides one-click installation via platform-appropriate methods.
-"""
+"""Environment detection and guided tool installation for Misaka."""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import os
 import re
+import shlex
 import shutil
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Literal
 
 from misaka.config import IS_MACOS, IS_WINDOWS, get_expanded_path
 from misaka.utils.platform import (
@@ -23,25 +23,31 @@ from misaka.utils.platform import (
 
 logger = logging.getLogger(__name__)
 
-# Version extraction pattern
+PlatformName = Literal["windows", "macos", "linux"]
 _VERSION_RE = re.compile(r"v?(\d+\.\d+(?:\.\d+)?)")
+_INSTALL_TIMEOUT_SECONDS = 300
+_VERSION_TIMEOUT_SECONDS = 10
 
 
-# ---------------------------------------------------------------------------
-# Data models
-# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ToolDefinition:
+    """Definition of a tool checked by :class:`EnvCheckService`."""
+
+    name: str
+    commands: tuple[str, ...]
+    version_flag: str = "--version"
 
 
 @dataclass
 class ToolStatus:
     """Status of a single tool dependency."""
 
-    name: str  # "Claude Code CLI", "Node.js", "Python", "Git"
-    command: str  # "claude", "node", "python3", "git"
-    version: str | None  # "1.2.3" or None if not found
-    is_installed: bool  # True if binary found and responds to --version
-    install_url: str  # URL for manual download
-    install_command: str  # Platform-specific install command
+    name: str
+    command: str
+    version: str | None
+    is_installed: bool
+    install_url: str
+    install_command: str
 
 
 @dataclass
@@ -49,213 +55,234 @@ class EnvironmentCheckResult:
     """Aggregated result of all environment checks."""
 
     tools: list[ToolStatus]
-    all_installed: bool  # True if every tool is installed
-    checked_at: str  # ISO timestamp
+    all_installed: bool
+    checked_at: str
 
 
-# ---------------------------------------------------------------------------
-# Tool definitions
-# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class InstallSpec:
+    """Executable steps and prerequisites for one platform installer."""
 
-_TOOL_DEFINITIONS = [
-    {
-        "name": "Claude Code CLI",
-        "commands": ["claude"],
-        "version_flag": "--version",
-    },
-    {
-        "name": "Node.js",
-        "commands": ["node"],
-        "version_flag": "--version",
-    },
-    {
-        "name": "Python",
-        # On Windows try python first, on Unix try python3 first
-        "commands": ["python", "python3"] if IS_WINDOWS else ["python3", "python"],
-        "version_flag": "--version",
-    },
-    {
-        "name": "Git",
-        "commands": ["git"],
-        "version_flag": "--version",
-    },
-]
+    steps: tuple[tuple[str, ...], ...]
+    url: str
+    required_commands: tuple[str, ...] = ()
+    requires_elevation: bool = False
 
 
-# ---------------------------------------------------------------------------
-# Install info (platform-specific)
-# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class InstallResult:
+    """Structured result returned to UI callers after an install attempt."""
 
-def _get_install_info(tool_name: str) -> tuple[str, str]:
-    """Return (install_command, install_url) for the given tool.
+    tool_name: str
+    success: bool
+    message: str
+    command: str = ""
+    returncode: int | None = None
 
-    Returns platform-specific install commands and download URLs.
-    """
 
-    if tool_name == "Node.js":
-        url = "https://nodejs.org/en/download/"
-        if IS_WINDOWS:
-            return ("winget install OpenJS.NodeJS.LTS", url)
-        elif IS_MACOS:
-            return ("brew install node", url)
-        else:
-            return ("sudo apt install -y nodejs", url)
+_TOOL_DEFINITIONS = (
+    ToolDefinition("Claude Code CLI", ("claude",)),
+    ToolDefinition("Node.js", ("node",)),
+    ToolDefinition(
+        "Python",
+        ("py", "python", "python3") if IS_WINDOWS else ("python3", "python"),
+    ),
+    ToolDefinition("Git", ("git",)),
+)
 
-    if tool_name == "Python":
-        url = "https://www.python.org/downloads/"
-        if IS_WINDOWS:
-            return ("winget install Python.Python.3.12", url)
-        elif IS_MACOS:
-            return ("brew install python@3.12", url)
-        else:
-            return ("sudo apt install -y python3", url)
 
-    if tool_name == "Git":
-        url = "https://git-scm.com/downloads"
-        if IS_WINDOWS:
-            return ("winget install Git.Git", url)
-        elif IS_MACOS:
-            return ("brew install git", url)
-        else:
-            return ("sudo apt install -y git", url)
+def _current_platform() -> PlatformName:
+    if IS_WINDOWS:
+        return "windows"
+    if IS_MACOS:
+        return "macos"
+    return "linux"
+
+
+def _winget_step(package_id: str) -> tuple[str, ...]:
+    """Build a deterministic, non-interactive WinGet install command."""
+    return (
+        "winget",
+        "install",
+        "--id",
+        package_id,
+        "--exact",
+        "--source",
+        "winget",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--disable-interactivity",
+    )
+
+
+def _get_install_spec(
+    tool_name: str,
+    platform_name: PlatformName | None = None,
+) -> InstallSpec | None:
+    """Return the structured install specification for *tool_name*."""
+    platform_name = platform_name or _current_platform()
+
+    urls = {
+        "Claude Code CLI": "https://code.claude.com/docs/en/setup",
+        "Node.js": "https://nodejs.org/en/download/",
+        "Python": "https://www.python.org/downloads/",
+        "Git": "https://git-scm.com/downloads",
+    }
+    url = urls.get(tool_name)
+    if url is None:
+        return None
+
+    if platform_name == "windows":
+        package_ids = {
+            "Claude Code CLI": "Anthropic.ClaudeCode",
+            "Node.js": "OpenJS.NodeJS.LTS",
+            "Python": "Python.Python.3.13",
+            "Git": "Git.Git",
+        }
+        return InstallSpec(steps=(_winget_step(package_ids[tool_name]),), url=url)
+
+    if platform_name == "macos":
+        brew_args = {
+            "Claude Code CLI": ("brew", "install", "--cask", "claude-code"),
+            "Node.js": ("brew", "install", "node"),
+            "Python": ("brew", "install", "python"),
+            "Git": ("brew", "install", "git"),
+        }
+        return InstallSpec(steps=(brew_args[tool_name],), url=url)
+
     if tool_name == "Claude Code CLI":
-        return (
-            "npm install -g @anthropic-ai/claude-code",
-            "https://docs.anthropic.com/en/docs/claude-code/overview",
+        return InstallSpec(
+            steps=(("bash", "-c", "curl -fsSL https://claude.ai/install.sh | bash"),),
+            url=url,
+            required_commands=("bash", "curl"),
         )
 
-    return ("", "")
+    apt_packages = {
+        "Node.js": "nodejs",
+        "Python": "python3",
+        "Git": "git",
+    }
+    package = apt_packages[tool_name]
+    return InstallSpec(
+        steps=(
+            ("apt-get", "update"),
+            ("apt-get", "install", "-y", package),
+        ),
+        url=url,
+        required_commands=("apt-get",),
+        requires_elevation=True,
+    )
 
 
-# ---------------------------------------------------------------------------
-# Service
-# ---------------------------------------------------------------------------
+def _format_command(command: tuple[str, ...], platform_name: PlatformName) -> str:
+    if platform_name == "windows":
+        return subprocess.list2cmdline(command)
+    return shlex.join(command)
+
+
+def _get_install_info(tool_name: str) -> tuple[str, str]:
+    """Return a display command and manual-install URL for *tool_name*."""
+    platform_name = _current_platform()
+    spec = _get_install_spec(tool_name, platform_name)
+    if spec is None:
+        return "", ""
+    command = " && ".join(_format_command(step, platform_name) for step in spec.steps)
+    return command, spec.url
 
 
 class EnvCheckService:
-    """Service for checking and installing development tool dependencies."""
+    """Check and install the external tools used by Misaka."""
 
     async def check_all(self) -> EnvironmentCheckResult:
-        """Run all environment checks concurrently.
-
-        Uses asyncio.gather to check all tools in parallel.
-        Returns an EnvironmentCheckResult with status for each tool.
-        """
-        tasks = []
-        for tool_def in _TOOL_DEFINITIONS:
-            tasks.append(
-                self._check_tool_multi(
-                    tool_def["name"],
-                    tool_def["commands"],
-                    tool_def["version_flag"],
-                )
-            )
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        tools: list[ToolStatus] = []
-        for result in results:
-            if isinstance(result, Exception):
-                logger.warning("Tool check failed: %s", result)
-                tools.append(
-                    ToolStatus(
-                        name="Unknown",
-                        command="",
-                        version=None,
-                        is_installed=False,
-                        install_url="",
-                        install_command="",
-                    )
-                )
-            else:
-                tools.append(result)
-
+        """Check all tools concurrently while preserving failure identity."""
+        tools = await asyncio.gather(
+            *(self._check_definition_safe(definition) for definition in _TOOL_DEFINITIONS)
+        )
         return EnvironmentCheckResult(
-            tools=tools,
-            all_installed=all(t.is_installed for t in tools),
+            tools=list(tools),
+            all_installed=all(tool.is_installed for tool in tools),
             checked_at=datetime.now(timezone.utc).isoformat(),
         )
 
-    async def check_tool(
-        self, command: str, version_flag: str = "--version"
-    ) -> ToolStatus:
-        """Check a single tool by running `command version_flag`.
-
-        Handles Windows .cmd/.bat wrappers, expanded PATH lookup.
-        Parses version string from stdout.
-        """
-        expanded_path = get_expanded_path()
-
-        # Find the binary
-        binary_path = shutil.which(command, path=expanded_path)
-        if not binary_path:
-            install_cmd, install_url = _get_install_info(command)
+    async def _check_definition_safe(self, definition: ToolDefinition) -> ToolStatus:
+        try:
+            return await self._check_tool_multi(
+                definition.name,
+                list(definition.commands),
+                definition.version_flag,
+            )
+        except Exception as exc:
+            logger.warning("Tool check failed for %s: %s", definition.name, exc)
+            install_command, install_url = _get_install_info(definition.name)
             return ToolStatus(
-                name=command,
-                command=command,
+                name=definition.name,
+                command=definition.commands[0],
                 version=None,
                 is_installed=False,
                 install_url=install_url,
-                install_command=install_cmd,
+                install_command=install_command,
             )
 
-        # Run version check
-        version = await self._get_version(binary_path, version_flag)
-        install_cmd, install_url = _get_install_info(command)
-        return ToolStatus(
-            name=command,
-            command=command,
-            version=version,
-            is_installed=version is not None,
-            install_url=install_url,
-            install_command=install_cmd,
+    async def check_tool(
+        self,
+        command: str,
+        version_flag: str = "--version",
+    ) -> ToolStatus:
+        """Check a single command and return its executable version."""
+        definition = next(
+            (item for item in _TOOL_DEFINITIONS if command in item.commands),
+            ToolDefinition(command, (command,), version_flag),
+        )
+        return await self._check_tool_multi(
+            definition.name,
+            [command],
+            version_flag,
+            use_claude_resolver=False,
         )
 
     async def _check_tool_multi(
-        self, name: str, commands: list[str], version_flag: str
+        self,
+        name: str,
+        commands: list[str],
+        version_flag: str,
+        *,
+        use_claude_resolver: bool = True,
     ) -> ToolStatus:
-        """Check a tool that may have multiple command names.
-
-        Tries each command in order, returns the first one found.
-        """
+        """Try all supported command names and require a parseable version."""
         expanded_path = get_expanded_path()
-        install_cmd, install_url = _get_install_info(name)
+        install_command, install_url = _get_install_info(name)
 
-        # Special handling for Claude CLI: reuse existing platform utility
-        if name == "Claude Code CLI":
-            try:
-                from misaka.utils.platform import find_claude_binary
+        if name == "Claude Code CLI" and use_claude_resolver:
+            from misaka.utils.platform import find_claude_binary
 
-                claude_path = find_claude_binary()
-                if claude_path:
-                    version = await self._get_version(claude_path, version_flag)
-                    if version is None:
-                        version = await self._get_version_lenient(claude_path, version_flag)
+            claude_path = find_claude_binary()
+            if claude_path:
+                version = await self._get_version(claude_path, version_flag)
+                if version is None:
+                    version = await self._get_version_lenient(claude_path, version_flag)
+                if version is not None:
                     return ToolStatus(
                         name=name,
                         command="claude",
                         version=version,
                         is_installed=True,
                         install_url=install_url,
-                        install_command=install_cmd,
+                        install_command=install_command,
                     )
-            except OSError as exc:
-                logger.debug("Claude binary check failed: %s", exc)
 
-        for cmd in commands:
-            binary_path = shutil.which(cmd, path=expanded_path)
+        for command in commands:
+            binary_path = shutil.which(command, path=expanded_path)
             if not binary_path:
                 continue
-
             version = await self._get_version(binary_path, version_flag)
             if version is not None:
                 return ToolStatus(
                     name=name,
-                    command=cmd,
+                    command=command,
                     version=version,
                     is_installed=True,
                     install_url=install_url,
-                    install_command=install_cmd,
+                    install_command=install_command,
                 )
 
         return ToolStatus(
@@ -264,168 +291,251 @@ class EnvCheckService:
             version=None,
             is_installed=False,
             install_url=install_url,
-            install_command=install_cmd,
+            install_command=install_command,
         )
 
     async def install_tool(
         self,
         tool_name: str,
         on_progress: Callable[[str], None] | None = None,
-    ) -> bool:
-        """Install a tool via platform-appropriate method.
+    ) -> InstallResult:
+        """Install a tool and return a structured, user-displayable result."""
+        platform_name = _current_platform()
+        spec = _get_install_spec(tool_name, platform_name)
+        if spec is None:
+            return InstallResult(tool_name, False, f"No install command for {tool_name}")
 
-        Returns True on success, False on failure.
-        Calls on_progress with status messages during install.
-        """
-        install_cmd, _ = _get_install_info(tool_name)
-        if not install_cmd:
-            logger.warning("No install command for tool: %s", tool_name)
-            return False
+        display_command = " && ".join(
+            _format_command(step, platform_name) for step in spec.steps
+        )
+        missing = self._find_missing_prerequisite(spec)
+        if missing:
+            message = f"Required command not found: {missing}. Manual install: {spec.url}"
+            self._report_progress(on_progress, message)
+            return InstallResult(tool_name, False, message, display_command)
 
-        if on_progress:
-            on_progress(f"Installing {tool_name}...")
+        self._report_progress(on_progress, f"Installing {tool_name}...")
+        last_returncode: int | None = None
 
         try:
-            args = install_cmd.split()
-            executable = self._resolve_install_executable(args[0])
-            if not executable:
-                return self._report_install_launcher_missing(
-                    tool_name, args[0], on_progress
+            for step in spec.steps:
+                command = self._prepare_install_command(step, spec)
+                if command is None:
+                    message = (
+                        "Administrator authorization is unavailable. "
+                        f"Run manually: {display_command}"
+                    )
+                    self._report_progress(on_progress, message)
+                    return InstallResult(tool_name, False, message, display_command)
+
+                proc = await asyncio.create_subprocess_exec(
+                    *command,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=self._build_install_env(),
+                    **build_background_subprocess_kwargs(),
                 )
+                try:
+                    stdout, stderr = await asyncio.wait_for(
+                        proc.communicate(),
+                        timeout=_INSTALL_TIMEOUT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    await self._terminate_process(proc)
+                    raise
 
-            cmd = wrap_windows_script_command(executable, args[1:])
+                last_returncode = proc.returncode
+                if proc.returncode != 0:
+                    detail = self._decode_process_error(stdout, stderr)
+                    message = f"Install failed: {detail}"
+                    logger.warning(
+                        "Install of %s failed (rc=%s): %s",
+                        tool_name,
+                        proc.returncode,
+                        detail,
+                    )
+                    self._report_progress(on_progress, message)
+                    return InstallResult(
+                        tool_name,
+                        False,
+                        message,
+                        display_command,
+                        proc.returncode,
+                    )
 
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                **build_background_subprocess_kwargs(),
-            )
+            if tool_name == "Claude Code CLI":
+                from misaka.utils.platform import clear_claude_cache
 
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=300
-            )
+                clear_claude_cache()
 
-            if proc.returncode == 0:
-                if on_progress:
-                    on_progress(f"{tool_name} installed successfully")
-
-                # Clear cached claude binary path after installation
-                if tool_name == "Claude Code CLI":
-                    try:
-                        from misaka.utils.platform import clear_claude_cache
-
-                        clear_claude_cache()
-                    except (ImportError, OSError) as exc:
-                        logger.debug("Failed to clear claude cache: %s", exc)
-
-                return True
-            else:
-                error_msg = stderr.decode(errors="replace").strip() if stderr else "Unknown error"
-                logger.warning(
-                    "Install of %s failed (rc=%d): %s",
+            if not await self._verify_installed_tool(tool_name):
+                message = (
+                    f"Installer completed, but {tool_name} could not be detected. "
+                    f"Restart Misaka or install manually: {spec.url}"
+                )
+                self._report_progress(on_progress, message)
+                return InstallResult(
                     tool_name,
-                    proc.returncode,
-                    error_msg,
+                    False,
+                    message,
+                    display_command,
+                    last_returncode,
                 )
-                if on_progress:
-                    on_progress(f"Install failed: {error_msg}")
-                return False
 
+            message = f"{tool_name} installed successfully"
+            self._report_progress(on_progress, message)
+            return InstallResult(
+                tool_name,
+                True,
+                message,
+                display_command,
+                last_returncode,
+            )
         except asyncio.TimeoutError:
+            message = "Installation timed out"
             logger.warning("Install of %s timed out", tool_name)
-            if on_progress:
-                on_progress("Installation timed out")
-            return False
+            self._report_progress(on_progress, message)
+            return InstallResult(tool_name, False, message, display_command)
         except Exception as exc:
+            message = f"Install failed: {exc}"
             logger.warning("Install of %s failed: %s", tool_name, exc)
-            if on_progress:
-                on_progress(f"Install failed: {exc}")
-            return False
+            self._report_progress(on_progress, message)
+            return InstallResult(tool_name, False, message, display_command)
+
+    def _find_missing_prerequisite(self, spec: InstallSpec) -> str | None:
+        for command in spec.required_commands:
+            if not self._resolve_install_executable(command):
+                return command
+        for step in spec.steps:
+            if not self._resolve_install_executable(step[0]):
+                return step[0]
+        return None
+
+    def _prepare_install_command(
+        self,
+        step: tuple[str, ...],
+        spec: InstallSpec,
+    ) -> list[str] | None:
+        executable = self._resolve_install_executable(step[0])
+        if executable is None:
+            return None
+        command = [executable, *step[1:]]
+
+        if spec.requires_elevation and not self._is_root():
+            elevation = self._resolve_elevation_command()
+            if elevation is None:
+                return None
+            command = [*elevation, *command]
+
+        return wrap_windows_script_command(command[0], command[1:])
+
+    @staticmethod
+    def _is_root() -> bool:
+        get_euid = getattr(os, "geteuid", None)
+        return bool(get_euid and get_euid() == 0)
+
+    def _resolve_elevation_command(self) -> list[str] | None:
+        expanded_path = get_expanded_path()
+        if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+            pkexec = shutil.which("pkexec", path=expanded_path)
+            if pkexec:
+                return [pkexec]
+        sudo = shutil.which("sudo", path=expanded_path)
+        if sudo:
+            return [sudo, "--non-interactive"]
+        return None
+
+    @staticmethod
+    def _build_install_env() -> dict[str, str]:
+        env = os.environ.copy()
+        env["PATH"] = get_expanded_path()
+        env.setdefault("HOMEBREW_NO_AUTO_UPDATE", "1")
+        env.setdefault("DEBIAN_FRONTEND", "noninteractive")
+        return env
+
+    @staticmethod
+    async def _terminate_process(proc: asyncio.subprocess.Process) -> None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        with contextlib.suppress(Exception):
+            await proc.wait()
+
+    @staticmethod
+    def _decode_process_error(stdout: bytes, stderr: bytes) -> str:
+        output = (stderr or stdout).decode(errors="replace").strip()
+        if not output:
+            return "Unknown error"
+        return output[-2000:]
+
+    @staticmethod
+    def _report_progress(
+        callback: Callable[[str], None] | None,
+        message: str,
+    ) -> None:
+        if not callback:
+            return
+        try:
+            callback(message)
+        except Exception:
+            logger.debug("Install progress callback failed", exc_info=True)
 
     def _resolve_install_executable(self, executable: str) -> str | None:
-        """Resolve install launcher from the expanded PATH."""
-        expanded_path = get_expanded_path()
-        return shutil.which(executable, path=expanded_path)
+        return shutil.which(executable, path=get_expanded_path())
 
-    def _report_install_launcher_missing(
-        self,
-        tool_name: str,
-        executable: str,
-        on_progress: Callable[[str], None] | None,
-    ) -> bool:
-        """Report a missing launcher with a user-friendly message."""
-        logger.warning(
-            "Install of %s cannot start because launcher was not found: %s",
-            tool_name,
-            executable,
+    async def _verify_installed_tool(self, tool_name: str) -> bool:
+        definition = next(
+            (item for item in _TOOL_DEFINITIONS if item.name == tool_name),
+            None,
         )
-        if on_progress:
-            on_progress(f"Install failed: required command not found: {executable}")
-        return False
+        if definition is None:
+            return False
+        status = await self._check_definition_safe(definition)
+        return status.is_installed
 
-    async def _get_version(
-        self, binary_path: str, version_flag: str
-    ) -> str | None:
-        """Run a binary with its version flag and parse the version string."""
-        try:
-            cmd = wrap_windows_script_command(binary_path, [version_flag])
-
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                **build_background_subprocess_kwargs(),
-            )
-
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=10
-            )
-
-            if proc.returncode != 0:
-                return None
-
-            output = (stdout or b"").decode(errors="replace")
-            # Some tools output version to stderr (e.g., python --version on some systems)
-            if not output.strip():
-                output = (stderr or b"").decode(errors="replace")
-
-            match = _VERSION_RE.search(output)
-            return match.group(1) if match else None
-
-        except (asyncio.TimeoutError, OSError, Exception) as exc:
-            logger.debug("Version check failed for %s: %s", binary_path, exc)
-            return None
+    async def _get_version(self, binary_path: str, version_flag: str) -> str | None:
+        return await self._capture_version(binary_path, version_flag, require_success=True)
 
     async def _get_version_lenient(
-        self, binary_path: str, version_flag: str
+        self,
+        binary_path: str,
+        version_flag: str,
     ) -> str | None:
-        """Like _get_version but ignores non-zero exit codes.
+        return await self._capture_version(binary_path, version_flag, require_success=False)
 
-        Some CLI wrappers (e.g. .cmd on Windows) may report a non-zero
-        return code even though they print valid version output.
-        """
+    async def _capture_version(
+        self,
+        binary_path: str,
+        version_flag: str,
+        *,
+        require_success: bool,
+    ) -> str | None:
+        proc: asyncio.subprocess.Process | None = None
         try:
-            cmd = wrap_windows_script_command(binary_path, [version_flag])
-
+            command = wrap_windows_script_command(binary_path, [version_flag])
             proc = await asyncio.create_subprocess_exec(
-                *cmd,
+                *command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=self._build_install_env(),
                 **build_background_subprocess_kwargs(),
             )
-
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=10
+                proc.communicate(),
+                timeout=_VERSION_TIMEOUT_SECONDS,
             )
-
-            output = (stdout or b"").decode(errors="replace")
-            if not output.strip():
-                output = (stderr or b"").decode(errors="replace")
-
+            if require_success and proc.returncode != 0:
+                return None
+            output = "\n".join(
+                part.decode(errors="replace") for part in (stdout, stderr) if part
+            )
             match = _VERSION_RE.search(output)
             return match.group(1) if match else None
-
-        except (asyncio.TimeoutError, OSError, Exception) as exc:
-            logger.debug("Lenient version check failed for %s: %s", binary_path, exc)
+        except asyncio.TimeoutError:
+            if proc is not None:
+                await self._terminate_process(proc)
+            logger.debug("Version check timed out for %s", binary_path)
+            return None
+        except Exception as exc:
+            logger.debug("Version check failed for %s: %s", binary_path, exc)
             return None

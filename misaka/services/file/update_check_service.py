@@ -8,16 +8,20 @@ and provides one-click upgrade functionality.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import os
 import re
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from misaka.config import get_expanded_path
+from misaka.config import IS_MACOS, IS_WINDOWS, get_expanded_path
 from misaka.utils.platform import (
     build_background_subprocess_kwargs,
     wrap_windows_script_command,
@@ -88,40 +92,34 @@ class UpdateCheckService:
         self,
         on_progress: Callable[[str], None] | None = None,
     ) -> bool:
-        """Update Claude Code CLI to the latest version.
-
-        Runs: npm install -g @anthropic-ai/claude-code@latest
-        Returns True on success.
-        After update, clears the cached claude binary path.
-        """
+        """Update Claude Code with its detected installation manager."""
         if on_progress:
             on_progress("Updating Claude Code CLI...")
 
         try:
-            expanded_path = get_expanded_path()
-            import shutil
-
-            npm_path = shutil.which("npm", path=expanded_path)
-            if not npm_path:
+            cmd = self._resolve_update_command()
+            if not cmd:
                 if on_progress:
-                    on_progress("npm not found, cannot update")
+                    on_progress("Claude Code installation manager was not found")
                 return False
-
-            cmd = wrap_windows_script_command(
-                npm_path,
-                ["install", "-g", "@anthropic-ai/claude-code@latest"],
-            )
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env={**dict(os.environ), "PATH": get_expanded_path()},
                 **build_background_subprocess_kwargs(),
             )
 
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=300
-            )
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+            except asyncio.TimeoutError:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                with contextlib.suppress(Exception):
+                    await proc.wait()
+                raise
 
             if proc.returncode == 0:
                 # Clear cached claude binary path
@@ -155,6 +153,51 @@ class UpdateCheckService:
             if on_progress:
                 on_progress(f"Update failed: {exc}")
             return False
+
+    def _resolve_update_command(self) -> list[str] | None:
+        """Select npm, WinGet, Homebrew, or the native updater."""
+        from misaka.utils.platform import find_claude_binary
+
+        claude_path = find_claude_binary()
+        if not claude_path:
+            return None
+
+        expanded_path = get_expanded_path()
+        resolved_path = str(Path(claude_path).resolve()).lower()
+        suffix = Path(claude_path).suffix.lower()
+
+        if "node_modules" in resolved_path or suffix in {".cmd", ".bat", ".ps1"}:
+            npm_path = shutil.which("npm", path=expanded_path)
+            if npm_path:
+                return wrap_windows_script_command(
+                    npm_path,
+                    ["install", "-g", "@anthropic-ai/claude-code@latest"],
+                )
+
+        if IS_WINDOWS and (
+            "winget" in resolved_path or "windowsapps" in resolved_path
+        ):
+            winget_path = shutil.which("winget", path=expanded_path)
+            if winget_path:
+                return [
+                    winget_path,
+                    "upgrade",
+                    "--id",
+                    "Anthropic.ClaudeCode",
+                    "--exact",
+                    "--source",
+                    "winget",
+                    "--accept-source-agreements",
+                    "--accept-package-agreements",
+                    "--disable-interactivity",
+                ]
+
+        if IS_MACOS and "caskroom" in resolved_path:
+            brew_path = shutil.which("brew", path=expanded_path)
+            if brew_path:
+                return [brew_path, "upgrade", "claude-code"]
+
+        return wrap_windows_script_command(claude_path, ["update"])
 
     async def _get_current_version(self) -> str | None:
         """Get the currently installed Claude Code CLI version."""
