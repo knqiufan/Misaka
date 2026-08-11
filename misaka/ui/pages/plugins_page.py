@@ -7,6 +7,7 @@ allows adding/editing/removing them, and shows their status.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -27,10 +28,14 @@ from misaka.ui.common.theme import (
     make_text_button,
     show_snackbar,
 )
+from misaka.ui.pages.mcp_market_panel import MCPMarketPanel
 
 if TYPE_CHECKING:
     from misaka.db.database import DatabaseBackend
+    from misaka.services.mcp.mcp_market_service import MarketMCPServer
     from misaka.state import AppState
+
+logger = logging.getLogger(__name__)
 
 
 class PluginsPage(ft.Column):
@@ -50,6 +55,12 @@ class PluginsPage(ft.Column):
         self._mcp_configs: dict[str, Any] = {}
         self._mcp_config_sources: dict[str, Path] = {}
         self._server_list: ft.ListView | None = None
+        self._current_tab = "local"
+        self._local_content: ft.Control | None = None
+        self._market_panel: MCPMarketPanel | None = None
+        self._tab_content_container: ft.Container | None = None
+        self._tab_selector: ft.SegmentedButton | None = None
+        self._local_header_actions: ft.Row | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -66,8 +77,21 @@ class PluginsPage(ft.Column):
         server_container = self._build_server_container()
         config_info = self._build_config_info()
 
+        self._local_content = ft.Column(
+            controls=[make_divider(), server_container, config_info],
+            spacing=0,
+            expand=True,
+        )
+        self._market_panel = MCPMarketPanel(
+            self.state,
+            on_install=self._install_market_server,
+        )
+        self._tab_content_container = ft.Container(
+            content=self._local_content,
+            expand=True,
+        )
         inner = ft.Column(
-            controls=[header, make_divider(), server_container, config_info],
+            controls=[header, self._tab_content_container],
             spacing=0,
             expand=True,
         )
@@ -104,6 +128,41 @@ class PluginsPage(ft.Column):
 
     def _build_header(self) -> ft.Container:
         """Build page header with title and add button."""
+        self._tab_selector = ft.SegmentedButton(
+            selected=[self._current_tab],
+            allow_multiple_selection=False,
+            on_change=self._on_tab_change,
+            segments=[
+                ft.Segment(
+                    value="local",
+                    label=ft.Text(t("plugins.tab_local")),
+                    icon=ft.Icon(ft.Icons.SETTINGS_INPUT_COMPONENT),
+                ),
+                ft.Segment(
+                    value="market",
+                    label=ft.Text(t("plugins.tab_market")),
+                    icon=ft.Icon(ft.Icons.STORE_OUTLINED),
+                ),
+            ],
+            style=ft.ButtonStyle(
+                padding=ft.Padding.symmetric(horizontal=16, vertical=6),
+            ),
+        )
+        self._local_header_actions = ft.Row(
+            controls=[
+                make_icon_button(
+                    ft.Icons.REFRESH,
+                    tooltip=t("plugins.refresh_servers"),
+                    on_click=self._refresh_mcp_servers,
+                ),
+                make_button(
+                    t("plugins.add_server"),
+                    icon=ft.Icons.ADD,
+                    on_click=self._show_add_dialog,
+                ),
+            ],
+            spacing=8,
+        )
         return ft.Container(
             content=ft.Row(
                 controls=[
@@ -135,22 +194,30 @@ class PluginsPage(ft.Column):
                         spacing=2,
                         expand=True,
                     ),
-                    make_icon_button(
-                        ft.Icons.REFRESH,
-                        tooltip=t("plugins.refresh_servers"),
-                        on_click=self._refresh_mcp_servers,
-                    ),
-                    make_button(
-                        t("plugins.add_server"),
-                        icon=ft.Icons.ADD,
-                        on_click=self._show_add_dialog,
-                    ),
+                    self._tab_selector,
+                    self._local_header_actions,
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=16,
             ),
             padding=ft.Padding.only(bottom=20),
         )
+
+    def _on_tab_change(self, e: ft.ControlEvent) -> None:
+        if not self._tab_selector:
+            return
+        selected_values = self._tab_selector.selected
+        selected = (selected_values[0] if selected_values else "local").strip()
+        if selected not in {"local", "market"}:
+            return
+        self._current_tab = selected
+        if self._tab_content_container:
+            self._tab_content_container.content = (
+                self._local_content if selected == "local" else self._market_panel
+            )
+        if self._local_header_actions:
+            self._local_header_actions.visible = selected == "local"
+        self.state.update()
 
     def _build_server_container(self) -> ft.Container:
         """Build server list container. Expands to fill remaining space; list scrolls internally."""
@@ -803,6 +870,35 @@ class PluginsPage(ft.Column):
 
         self._refresh_server_list()
         return True
+
+    def _install_market_server(
+        self,
+        server_name: str,
+        server: MarketMCPServer,
+        config: dict[str, Any],
+    ) -> tuple[bool, str]:
+        """Persist a registry entry through the existing MCP config workflow."""
+        if server_name in self._mcp_configs:
+            return False, t("plugins.market_already_installed", name=server.display_name)
+
+        target_path = Path.home() / ".claude.json"
+        self._mcp_configs[server_name] = config
+        self._mcp_config_sources[server_name] = target_path
+        if not self._save_and_verify_mcp_config(server_name):
+            self._mcp_configs.pop(server_name, None)
+            self._mcp_config_sources.pop(server_name, None)
+            return False, t("plugins.market_install_failed", error=t("plugins.save_failed"))
+
+        mcp_service = self.state.get_service("mcp_service")
+        if mcp_service is not None:
+            try:
+                session = self.state.current_session
+                working_directory = session.working_directory if session else None
+                servers = mcp_service.load_mcp_servers(working_directory=working_directory)
+                self.state.mcp_servers_sdk = mcp_service.to_sdk_format(servers)
+            except Exception as exc:
+                logger.warning("MCP config was installed but runtime refresh failed: %s", exc)
+        return True, t("plugins.market_installed", name=server.display_name)
 
     def _reload_config(self, e: ft.ControlEvent) -> None:
         """Reload MCP config from files and refresh the server list UI."""

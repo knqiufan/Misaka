@@ -82,3 +82,5 @@ jobs:
           tests/unit/test_env_check_ui.py
           tests/unit/test_update_check_service.py
           tests/unit/test_platform.py
+          tests/unit/test_mcp_market_service.py
+          tests/unit/test_skill_market_service.py

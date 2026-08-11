@@ -1,34 +1,44 @@
-"""
-Skill market service — search and install skills from online registries.
-
-Uses the Skyll public API (https://api.skyll.app) which aggregates skills
-from skills.sh, community registries, and GitHub repositories.
-"""
+"""Search skills.sh and install skills with its official CLI."""
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import os
+import re
+import shutil
 from dataclasses import dataclass, field
-from pathlib import Path
 from urllib.error import URLError
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
+
+from misaka.config import get_expanded_path
+from misaka.utils.platform import (
+    build_background_subprocess_kwargs,
+    wrap_windows_script_command,
+)
 
 logger = logging.getLogger(__name__)
 
-_SKYLL_BASE_URL = "https://api.skyll.app"
+_SKILLS_API_BASE_URL = "https://skills.sh/api"
 _HTTP_TIMEOUT = 15
+_INSTALL_TIMEOUT = 300
+_SAFE_SOURCE_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$"
+)
+_SAFE_SKILL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 @dataclass
 class MarketSkill:
-    """A skill entry returned from the online market."""
+    """A skill entry returned by the online directory."""
 
     id: str
     name: str
     description: str
-    source: str  # e.g. "vercel-labs/agent-skills"
+    source: str
     install_count: int = 0
     relevance_score: float = 0.0
     content: str = ""
@@ -37,7 +47,7 @@ class MarketSkill:
 
 @dataclass
 class MarketSearchResult:
-    """Result of a market search query."""
+    """Result of a skills.sh search query."""
 
     query: str
     skills: list[MarketSkill]
@@ -45,182 +55,205 @@ class MarketSearchResult:
     error: str | None = None
 
 
-class SkillMarketService:
-    """Service for searching and installing skills from online registries."""
+@dataclass(frozen=True)
+class SkillInstallResult:
+    """Result of a non-interactive skills CLI installation."""
 
-    def __init__(self, base_url: str = _SKYLL_BASE_URL) -> None:
+    skill_name: str
+    success: bool
+    message: str
+    command: tuple[str, ...] = ()
+    returncode: int | None = None
+
+
+class SkillMarketService:
+    """Search skills.sh and install complete skill packages for Claude Code."""
+
+    def __init__(self, base_url: str = _SKILLS_API_BASE_URL) -> None:
         self._base_url = base_url.rstrip("/")
 
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
-
     async def search(self, query: str, limit: int = 20) -> MarketSearchResult:
-        """Search the online skill registry.
-
-        Args:
-            query: Search text.
-            limit: Maximum number of results (1-50).
-
-        Returns:
-            A :class:`MarketSearchResult` with matching skills.
-        """
-        if not query or not query.strip():
+        """Search the skills.sh directory."""
+        normalized_query = query.strip()
+        if len(normalized_query) < 2:
             return MarketSearchResult(query=query, skills=[], total=0)
 
         limit = max(1, min(50, limit))
-        url = f"{self._base_url}/search?q={_url_encode(query)}&limit={limit}"
-
+        url = f"{self._base_url}/search?{urlencode({'q': normalized_query})}"
         try:
-            loop = asyncio.get_running_loop()
             data = await asyncio.wait_for(
-                loop.run_in_executor(None, self._http_get_json, url),
+                asyncio.to_thread(self._http_get_json, url),
                 timeout=_HTTP_TIMEOUT + 5,
             )
         except asyncio.TimeoutError:
-            logger.warning("Market search timed out for query %r", query)
-            return MarketSearchResult(
-                query=query, skills=[], total=0, error="timeout",
-            )
+            logger.warning("Skill market search timed out for %r", query)
+            return MarketSearchResult(query=query, skills=[], error="timeout")
         except Exception as exc:
-            logger.warning("Market search failed: %s", exc)
-            return MarketSearchResult(
-                query=query, skills=[], total=0, error=str(exc),
-            )
+            logger.warning("Skill market search failed: %s", exc)
+            return MarketSearchResult(query=query, skills=[], error=str(exc))
 
-        skills = [self._parse_skill(item) for item in data.get("skills", [])]
+        raw_skills = data.get("skills") or []
+        skills = [
+            self._parse_skill(item)
+            for item in raw_skills[:limit]
+            if isinstance(item, dict)
+        ]
+        total = data.get("count", len(raw_skills))
         return MarketSearchResult(
-            query=query,
+            query=normalized_query,
             skills=skills,
-            total=data.get("count", len(skills)),
+            total=total if isinstance(total, int) else len(skills),
         )
 
-    async def get_skill_content(
-        self, source: str, skill_id: str,
-    ) -> str | None:
-        """Fetch the full SKILL.md content for a specific skill.
+    async def get_skill_content(self, source: str, skill_id: str) -> str | None:
+        """Return content only when the directory supplies a direct raw URL.
 
-        Args:
-            source: The source identifier (e.g. "vercel-labs/agent-skills").
-            skill_id: The skill ID.
-
-        Returns:
-            The SKILL.md content as a string, or None on failure.
+        skills.sh intentionally delegates package resolution to its CLI. Most search
+        responses do not expose raw content, so preview absence must not block install.
         """
-        url = f"{self._base_url}/skills/{_url_encode(source)}/{_url_encode(skill_id)}"
+        del source, skill_id
+        return None
 
+    async def install_skill(self, skill: MarketSkill) -> SkillInstallResult:
+        """Install a complete skill package globally for Claude Code."""
+        if not _SAFE_SOURCE_RE.fullmatch(skill.source) or not _SAFE_SKILL_ID_RE.fullmatch(
+            skill.id
+        ):
+            return SkillInstallResult(
+                skill.name,
+                False,
+                "The marketplace entry has an invalid repository or skill ID.",
+            )
+
+        expanded_path = get_expanded_path()
+        npx_path = shutil.which("npx", path=expanded_path)
+        if not npx_path:
+            message = "npx was not found. Install Node.js or install this skill manually."
+            return SkillInstallResult(skill.name, False, message)
+
+        command = wrap_windows_script_command(
+            npx_path,
+            [
+                "-y",
+                "skills",
+                "add",
+                skill.source,
+                "--skill",
+                skill.id,
+                "-g",
+                "-a",
+                "claude-code",
+                "-y",
+            ],
+        )
+        env = os.environ.copy()
+        env["PATH"] = expanded_path
+        env.setdefault("CI", "1")
+
+        proc: asyncio.subprocess.Process | None = None
         try:
-            loop = asyncio.get_running_loop()
-            data = await asyncio.wait_for(
-                loop.run_in_executor(None, self._http_get_json, url),
-                timeout=_HTTP_TIMEOUT + 5,
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+                **build_background_subprocess_kwargs(),
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=_INSTALL_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.kill()
+                with contextlib.suppress(Exception):
+                    await proc.wait()
+                raise
+        except asyncio.TimeoutError:
+            return SkillInstallResult(
+                skill.name,
+                False,
+                "Skill installation timed out",
+                tuple(command),
             )
         except Exception as exc:
-            logger.warning("Failed to fetch skill content: %s", exc)
-            return None
+            logger.warning("Skill installation failed: %s", exc)
+            return SkillInstallResult(
+                skill.name,
+                False,
+                f"Failed to start the skills installer: {exc}",
+                tuple(command),
+            )
 
-        return data.get("content") or data.get("skill", {}).get("content")
+        if proc.returncode != 0:
+            detail = (stderr or stdout).decode(errors="replace").strip()
+            detail = detail[-2000:] if detail else "Unknown installer error"
+            logger.warning("Skill installation failed (rc=%s): %s", proc.returncode, detail)
+            return SkillInstallResult(
+                skill.name,
+                False,
+                detail,
+                tuple(command),
+                proc.returncode,
+            )
 
-    async def install_skill(
-        self, skill: MarketSkill, content: str | None = None,
-    ) -> Path | None:
-        """Install a market skill to the local skills directory.
-
-        Downloads the SKILL.md content and writes it to
-        ``~/.claude/skills/<skill_id>/SKILL.md``.
-
-        Args:
-            skill: The market skill to install.
-            content: Pre-fetched content. If None, will be fetched.
-
-        Returns:
-            The path to the installed SKILL.md, or None on failure.
-        """
-        if not content:
-            content = skill.content or None
-        if not content:
-            content = await self.get_skill_content(skill.source, skill.id)
-
-        if not content:
-            logger.warning("No content available for skill %r", skill.id)
-            return None
-
-        safe_id = _sanitize_dir_name(skill.id)
-        if not safe_id:
-            safe_id = _sanitize_dir_name(skill.name) or "skill"
-
-        skills_root = Path.home() / ".claude" / "skills"
-        skill_dir = skills_root / safe_id
-        skill_dir.mkdir(parents=True, exist_ok=True)
-
-        skill_file = skill_dir / "SKILL.md"
-        try:
-            full_content = self._build_skill_content(skill, content)
-            skill_file.write_text(full_content, encoding="utf-8")
-            logger.info("Installed market skill %r to %s", skill.id, skill_file)
-            return skill_file
-        except OSError as exc:
-            logger.error("Failed to write skill file %s: %s", skill_file, exc)
-            return None
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _build_skill_content(skill: MarketSkill, content: str) -> str:
-        """Prepend YAML front-matter if not already present."""
-        stripped = content.lstrip("\n")
-        if stripped.startswith("---"):
-            return content
-
-        lines = [
-            "---",
-            f"name: {skill.name}",
-        ]
-        if skill.description:
-            lines.append(f"description: {skill.description}")
-        lines.append(f"source: {skill.source}")
-        lines.extend(["---", "", content])
-        return "\n".join(lines)
+        return SkillInstallResult(
+            skill.name,
+            True,
+            f"{skill.name} installed successfully",
+            tuple(command),
+            proc.returncode,
+        )
 
     @staticmethod
     def _http_get_json(url: str) -> dict:
-        """Synchronous HTTP GET returning parsed JSON (run in executor)."""
-        req = Request(url, headers={
-            "Accept": "application/json",
-            "User-Agent": "Misaka/1.0",
-        })
+        request = Request(
+            url,
+            headers={"Accept": "application/json", "User-Agent": "Misaka/1.0"},
+        )
         try:
-            with urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
-                return json.loads(resp.read())
+            with urlopen(request, timeout=_HTTP_TIMEOUT) as response:
+                data = json.loads(response.read())
         except (URLError, json.JSONDecodeError, OSError) as exc:
             raise RuntimeError(f"HTTP request failed: {exc}") from exc
+        if not isinstance(data, dict):
+            raise RuntimeError("skills.sh returned an invalid response")
+        return data
 
     @staticmethod
     def _parse_skill(data: dict) -> MarketSkill:
-        """Parse a skill dict from the API response."""
+        source = str(data.get("source") or "")
+        skill_id = str(data.get("skillId") or data.get("id") or "")
+        full_id = str(data.get("id") or "")
+        refs = dict(data["refs"]) if isinstance(data.get("refs"), dict) else {}
+        if source and skill_id:
+            refs.setdefault(
+                "skills.sh",
+                f"https://skills.sh/{quote(source, safe='/')}/{quote(skill_id, safe='')}",
+            )
+        if source.count("/") == 1:
+            refs.setdefault("github", f"https://github.com/{source}")
         return MarketSkill(
-            id=data.get("id", ""),
-            name=data.get("name") or data.get("id", ""),
-            description=data.get("description", ""),
-            source=data.get("source", ""),
-            install_count=data.get("install_count", 0),
-            relevance_score=data.get("relevance_score", 0.0),
-            content=data.get("content", ""),
-            refs=data.get("refs") or {},
+            id=skill_id,
+            name=str(data.get("name") or data.get("title") or skill_id or full_id),
+            description=str(data.get("description") or ""),
+            source=source,
+            install_count=int(data.get("installs") or data.get("install_count") or 0),
+            relevance_score=float(data.get("relevance_score") or 0.0),
+            content=str(data.get("content") or data.get("raw_content") or ""),
+            refs={str(key): str(value) for key, value in refs.items() if value},
         )
 
 
-def _url_encode(s: str) -> str:
-    """Minimal URL encoding for query parameters."""
-    from urllib.parse import quote
-    return quote(s, safe="")
+def _url_encode(value: str) -> str:
+    """Compatibility helper retained for callers and unit tests."""
+    return quote(value, safe="")
 
 
 def _sanitize_dir_name(name: str) -> str:
-    """Sanitize a string for use as a directory name."""
-    import re
+    """Compatibility helper for existing local package naming tests."""
     sanitized = name.lower().replace(" ", "-")
     sanitized = re.sub(r"[^a-z0-9\-]", "", sanitized)
     sanitized = re.sub(r"-{2,}", "-", sanitized)

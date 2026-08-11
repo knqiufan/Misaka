@@ -1,18 +1,17 @@
-"""
-Tests for the SkillMarketService.
-"""
+"""Tests for the skills.sh marketplace service."""
 
 from __future__ import annotations
 
+import asyncio
 import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from misaka.services.skills.skill_market_service import (
     MarketSearchResult,
     MarketSkill,
+    SkillInstallResult,
     SkillMarketService,
     _sanitize_dir_name,
     _url_encode,
@@ -32,8 +31,6 @@ def sample_skill() -> MarketSkill:
         description="Performance optimization guidelines for React",
         source="vercel-labs/agent-skills",
         install_count=1250,
-        relevance_score=85.5,
-        content="# React Best Practices\n\nOptimize your React apps.",
         refs={"github": "https://github.com/vercel-labs/agent-skills"},
     )
 
@@ -45,372 +42,335 @@ def sample_api_response() -> dict:
         "count": 2,
         "skills": [
             {
-                "id": "react-best-practices",
+                "id": "vercel-labs/agent-skills/react-best-practices",
+                "skillId": "react-best-practices",
                 "name": "React Best Practices",
                 "description": "React optimization",
                 "source": "vercel-labs/agent-skills",
-                "install_count": 1250,
-                "relevance_score": 85.5,
-                "content": "# React Best Practices",
-                "refs": {"github": "https://github.com/vercel-labs/agent-skills"},
+                "installs": 1250,
             },
             {
-                "id": "react-testing",
+                "id": "community/react-skills/react-testing",
+                "skillId": "react-testing",
                 "name": "React Testing",
                 "description": "Testing React components",
                 "source": "community/react-skills",
-                "install_count": 500,
-                "relevance_score": 72.0,
-                "content": "",
-                "refs": {},
+                "installs": 500,
             },
         ],
     }
 
 
-class TestUrlEncode:
+class TestHelpers:
+    def test_url_encode(self) -> None:
+        assert _url_encode("react + next.js") == "react%20%2B%20next.js"
 
-    def test_basic_encoding(self) -> None:
-        assert _url_encode("hello world") == "hello%20world"
-
-    def test_special_characters(self) -> None:
-        assert _url_encode("react+next.js") == "react%2Bnext.js"
-
-    def test_empty_string(self) -> None:
-        assert _url_encode("") == ""
-
-    def test_already_safe(self) -> None:
-        assert _url_encode("hello") == "hello"
-
-
-class TestSanitizeDirName:
-
-    def test_basic_name(self) -> None:
-        assert _sanitize_dir_name("My Skill") == "my-skill"
-
-    def test_special_characters(self) -> None:
-        assert _sanitize_dir_name("react@best/practices!") == "reactbestpractices"
-
-    def test_consecutive_hyphens(self) -> None:
-        assert _sanitize_dir_name("my--skill---name") == "my-skill-name"
-
-    def test_leading_trailing_hyphens(self) -> None:
-        assert _sanitize_dir_name("-my-skill-") == "my-skill"
-
-    def test_empty_after_sanitize(self) -> None:
-        assert _sanitize_dir_name("!!!") == ""
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("My Skill", "my-skill"),
+            ("react@best/practices!", "reactbestpractices"),
+            ("my--skill---name", "my-skill-name"),
+            ("!!!", ""),
+        ],
+    )
+    def test_sanitize_dir_name(self, value: str, expected: str) -> None:
+        assert _sanitize_dir_name(value) == expected
 
 
-class TestMarketSkill:
-
-    def test_dataclass_fields(self, sample_skill: MarketSkill) -> None:
-        assert sample_skill.id == "react-best-practices"
-        assert sample_skill.name == "React Best Practices"
-        assert sample_skill.install_count == 1250
-        assert sample_skill.source == "vercel-labs/agent-skills"
-        assert "github" in sample_skill.refs
-
-    def test_defaults(self) -> None:
+class TestDataclasses:
+    def test_market_skill_defaults(self) -> None:
         skill = MarketSkill(id="test", name="Test", description="", source="src")
         assert skill.install_count == 0
-        assert skill.relevance_score == 0.0
         assert skill.content == ""
         assert skill.refs == {}
 
-
-class TestMarketSearchResult:
-
-    def test_success_result(self) -> None:
-        result = MarketSearchResult(
-            query="react",
-            skills=[],
-            total=0,
-        )
-        assert result.error is None
-        assert result.total == 0
-
-    def test_error_result(self) -> None:
-        result = MarketSearchResult(
-            query="react",
-            skills=[],
-            total=0,
-            error="timeout",
-        )
+    def test_search_error(self) -> None:
+        result = MarketSearchResult("react", [], error="timeout")
         assert result.error == "timeout"
 
+    def test_install_result_is_structured(self) -> None:
+        result = SkillInstallResult("Test", True, "done", ("npx",), 0)
+        assert result.success is True
+        assert result.command == ("npx",)
 
-class TestParseSkill:
 
-    def test_parse_full_response(self) -> None:
-        data = {
-            "id": "test-skill",
-            "name": "Test Skill",
+class TestParsing:
+    def test_parse_skills_sh_response(self) -> None:
+        raw = {
+            "id": "vercel-labs/agent-skills/react-best-practices",
+            "skillId": "react-best-practices",
+            "name": "React Best Practices",
             "description": "A test",
-            "source": "user/repo",
-            "install_count": 100,
-            "relevance_score": 50.0,
-            "content": "# Content",
-            "refs": {"github": "https://github.com/user/repo"},
+            "source": "vercel-labs/agent-skills",
+            "installs": 1234,
         }
-        skill = SkillMarketService._parse_skill(data)
-        assert skill.id == "test-skill"
-        assert skill.name == "Test Skill"
-        assert skill.install_count == 100
+        skill = SkillMarketService._parse_skill(raw)
+        assert skill.id == "react-best-practices"
+        assert skill.install_count == 1234
+        assert skill.refs["github"] == "https://github.com/vercel-labs/agent-skills"
+        assert skill.refs["skills.sh"].endswith("/react-best-practices")
+
+    def test_parse_legacy_fields_and_does_not_mutate_refs(self) -> None:
+        refs = {"docs": "https://example.test"}
+        raw = {
+            "id": "my-skill",
+            "source": "owner/repo",
+            "install_count": 9,
+            "refs": refs,
+        }
+        skill = SkillMarketService._parse_skill(raw)
+        assert skill.name == "my-skill"
+        assert skill.install_count == 9
+        assert refs == {"docs": "https://example.test"}
 
     def test_parse_minimal_response(self) -> None:
         skill = SkillMarketService._parse_skill({})
         assert skill.id == ""
         assert skill.name == ""
-        assert skill.install_count == 0
-
-    def test_parse_name_fallback_to_id(self) -> None:
-        skill = SkillMarketService._parse_skill({"id": "my-skill"})
-        assert skill.name == "my-skill"
-
-
-class TestBuildSkillContent:
-
-    def test_adds_front_matter(self, sample_skill: MarketSkill) -> None:
-        content = "# My Skill\nDoes things."
-        result = SkillMarketService._build_skill_content(sample_skill, content)
-        assert result.startswith("---\n")
-        assert "name: React Best Practices" in result
-        assert "description: Performance optimization" in result
-        assert "source: vercel-labs/agent-skills" in result
-        assert content in result
-
-    def test_preserves_existing_front_matter(self, sample_skill: MarketSkill) -> None:
-        content = "---\nname: Existing\n---\n# Content"
-        result = SkillMarketService._build_skill_content(sample_skill, content)
-        assert result == content
-
-    def test_no_description(self) -> None:
-        skill = MarketSkill(id="s", name="S", description="", source="src")
-        content = "# Content"
-        result = SkillMarketService._build_skill_content(skill, content)
-        assert "description:" not in result
 
 
 class TestHttpGetJson:
-
     def test_success(self) -> None:
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({"key": "value"}).encode()
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-
+        response = MagicMock()
+        response.read.return_value = json.dumps({"key": "value"}).encode()
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
         with patch(
             "misaka.services.skills.skill_market_service.urlopen",
-            return_value=mock_response,
+            return_value=response,
         ):
-            result = SkillMarketService._http_get_json("https://example.com/api")
-            assert result == {"key": "value"}
+            assert SkillMarketService._http_get_json("https://example.test") == {
+                "key": "value"
+            }
 
-    def test_network_failure(self) -> None:
-        from urllib.error import URLError
-
+    @pytest.mark.parametrize("payload", [b"not json", b"[]"])
+    def test_invalid_response(self, payload: bytes) -> None:
+        response = MagicMock()
+        response.read.return_value = payload
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
         with patch(
             "misaka.services.skills.skill_market_service.urlopen",
-            side_effect=URLError("fail"),
-        ):
-            with pytest.raises(RuntimeError, match="HTTP request failed"):
-                SkillMarketService._http_get_json("https://example.com/api")
-
-    def test_invalid_json(self) -> None:
-        mock_response = MagicMock()
-        mock_response.read.return_value = b"not json"
-        mock_response.__enter__ = MagicMock(return_value=mock_response)
-        mock_response.__exit__ = MagicMock(return_value=False)
-
-        with patch(
-            "misaka.services.skills.skill_market_service.urlopen",
-            return_value=mock_response,
-        ):
-            with pytest.raises(RuntimeError, match="HTTP request failed"):
-                SkillMarketService._http_get_json("https://example.com/api")
+            return_value=response,
+        ), pytest.raises(RuntimeError):
+            SkillMarketService._http_get_json("https://example.test")
 
 
 class TestSearch:
-
     async def test_search_success(
-        self, service: SkillMarketService, sample_api_response: dict,
+        self,
+        service: SkillMarketService,
+        sample_api_response: dict,
     ) -> None:
         with patch.object(
-            service, "_http_get_json", return_value=sample_api_response,
-        ):
-            result = await service.search("react", limit=10)
-            assert result.error is None
-            assert len(result.skills) == 2
-            assert result.skills[0].id == "react-best-practices"
-            assert result.total == 2
+            service,
+            "_http_get_json",
+            return_value=sample_api_response,
+        ) as http_get:
+            result = await service.search(" react ", limit=1)
+        assert result.error is None
+        assert result.query == "react"
+        assert result.total == 2
+        assert [skill.id for skill in result.skills] == ["react-best-practices"]
+        assert http_get.call_args.args[0].endswith("/search?q=react")
 
-    async def test_search_empty_query(self, service: SkillMarketService) -> None:
-        result = await service.search("", limit=10)
+    @pytest.mark.parametrize("query", ["", " ", "a"])
+    async def test_short_query_skips_network(
+        self,
+        service: SkillMarketService,
+        query: str,
+    ) -> None:
+        with patch.object(service, "_http_get_json") as http_get:
+            result = await service.search(query)
         assert result.skills == []
-        assert result.total == 0
+        http_get.assert_not_called()
 
-    async def test_search_whitespace_query(self, service: SkillMarketService) -> None:
-        result = await service.search("   ", limit=10)
-        assert result.skills == []
+    async def test_limit_is_clamped(
+        self,
+        service: SkillMarketService,
+        sample_api_response: dict,
+    ) -> None:
+        with patch.object(service, "_http_get_json", return_value=sample_api_response):
+            result = await service.search("react", limit=-5)
+        assert len(result.skills) == 1
 
-    async def test_search_timeout(self, service: SkillMarketService) -> None:
-        import asyncio
+    async def test_timeout(self, service: SkillMarketService) -> None:
+        with patch.object(service, "_http_get_json", side_effect=asyncio.TimeoutError):
+            result = await service.search("react")
+        assert result.error == "timeout"
+
+    async def test_network_error(self, service: SkillMarketService) -> None:
         with patch.object(
-            service, "_http_get_json", side_effect=asyncio.TimeoutError,
+            service,
+            "_http_get_json",
+            side_effect=RuntimeError("connection refused"),
         ):
             result = await service.search("react")
-            assert result.error == "timeout"
-            assert result.skills == []
-
-    async def test_search_network_error(self, service: SkillMarketService) -> None:
-        with patch.object(
-            service, "_http_get_json", side_effect=RuntimeError("connection refused"),
-        ):
-            result = await service.search("react")
-            assert result.error is not None
-            assert result.skills == []
-
-    async def test_search_limit_clamped(
-        self, service: SkillMarketService, sample_api_response: dict,
-    ) -> None:
-        with patch.object(
-            service, "_http_get_json", return_value=sample_api_response,
-        ) as mock_http:
-            await service.search("react", limit=100)
-            call_url = mock_http.call_args[0][0]
-            assert "limit=50" in call_url
-
-    async def test_search_limit_minimum(
-        self, service: SkillMarketService, sample_api_response: dict,
-    ) -> None:
-        with patch.object(
-            service, "_http_get_json", return_value=sample_api_response,
-        ) as mock_http:
-            await service.search("react", limit=-5)
-            call_url = mock_http.call_args[0][0]
-            assert "limit=1" in call_url
+        assert result.error == "connection refused"
 
 
-class TestGetSkillContent:
-
-    async def test_success(self, service: SkillMarketService) -> None:
-        api_response = {"content": "# Skill Content\nDoes things."}
-        with patch.object(service, "_http_get_json", return_value=api_response):
-            content = await service.get_skill_content("user/repo", "my-skill")
-            assert content == "# Skill Content\nDoes things."
-
-    async def test_nested_response(self, service: SkillMarketService) -> None:
-        api_response = {"skill": {"content": "# Nested Content"}}
-        with patch.object(service, "_http_get_json", return_value=api_response):
-            content = await service.get_skill_content("user/repo", "my-skill")
-            assert content == "# Nested Content"
-
-    async def test_failure(self, service: SkillMarketService) -> None:
-        with patch.object(
-            service, "_http_get_json", side_effect=RuntimeError("fail"),
-        ):
-            content = await service.get_skill_content("user/repo", "my-skill")
-            assert content is None
+def _process(returncode: int = 0, stdout: bytes = b"ok", stderr: bytes = b""):
+    process = MagicMock()
+    process.returncode = returncode
+    process.communicate = AsyncMock(return_value=(stdout, stderr))
+    process.wait = AsyncMock(return_value=returncode)
+    return process
 
 
 class TestInstallSkill:
-
-    async def test_install_success(
-        self, service: SkillMarketService, sample_skill: MarketSkill, tmp_path: Path,
+    @pytest.mark.parametrize(
+        "skill",
+        [
+            MarketSkill("", "Broken", "", ""),
+            MarketSkill("--all", "Broken", "", "owner/repo"),
+            MarketSkill("safe", "Broken", "", "--help"),
+        ],
+    )
+    async def test_rejects_invalid_market_entry(
+        self,
+        service: SkillMarketService,
+        skill: MarketSkill,
     ) -> None:
-        with patch("pathlib.Path.home", return_value=tmp_path):
+        result = await service.install_skill(skill)
+        assert result.success is False
+        assert "invalid" in result.message
+
+    async def test_missing_npx(
+        self,
+        service: SkillMarketService,
+        sample_skill: MarketSkill,
+    ) -> None:
+        with patch(
+            "misaka.services.skills.skill_market_service.get_expanded_path",
+            return_value="PATH",
+        ), patch(
+            "misaka.services.skills.skill_market_service.shutil.which",
+            return_value=None,
+        ):
             result = await service.install_skill(sample_skill)
-            assert result is not None
-            assert result.exists()
-            assert result.name == "SKILL.md"
-            content = result.read_text(encoding="utf-8")
-            assert "React Best Practices" in content
-            assert "# React Best Practices" in content
+        assert result.success is False
+        assert "Node.js" in result.message
 
-    async def test_install_with_preexisting_content(
-        self, service: SkillMarketService, sample_skill: MarketSkill, tmp_path: Path,
+    async def test_runs_official_cli_non_interactively(
+        self,
+        service: SkillMarketService,
+        sample_skill: MarketSkill,
     ) -> None:
-        with patch("pathlib.Path.home", return_value=tmp_path):
-            result = await service.install_skill(
-                sample_skill, content="# Custom Content",
-            )
-            assert result is not None
-            content = result.read_text(encoding="utf-8")
-            assert "# Custom Content" in content
-
-    async def test_install_no_content(
-        self, service: SkillMarketService, tmp_path: Path,
-    ) -> None:
-        skill = MarketSkill(
-            id="empty-skill",
-            name="Empty",
-            description="No content",
-            source="test/repo",
-        )
-        with patch.object(service, "get_skill_content", return_value=None):
-            result = await service.install_skill(skill)
-            assert result is None
-
-    async def test_install_fetches_content_when_missing(
-        self, service: SkillMarketService, tmp_path: Path,
-    ) -> None:
-        skill = MarketSkill(
-            id="fetch-skill",
-            name="Fetch Skill",
-            description="Needs fetch",
-            source="test/repo",
-        )
-        with patch("pathlib.Path.home", return_value=tmp_path), \
-             patch.object(
-                 service, "get_skill_content",
-                 return_value="# Fetched Content",
-             ):
-            result = await service.install_skill(skill)
-            assert result is not None
-            content = result.read_text(encoding="utf-8")
-            assert "# Fetched Content" in content
-
-    async def test_install_sanitizes_directory_name(
-        self, service: SkillMarketService, tmp_path: Path,
-    ) -> None:
-        skill = MarketSkill(
-            id="My Skill!!!",
-            name="My Skill",
-            description="Test",
-            source="test/repo",
-            content="# Content",
-        )
-        with patch("pathlib.Path.home", return_value=tmp_path):
-            result = await service.install_skill(skill)
-            assert result is not None
-            assert "my-skill" in str(result.parent.name)
-
-    async def test_install_overwrites_existing(
-        self, service: SkillMarketService, sample_skill: MarketSkill, tmp_path: Path,
-    ) -> None:
-        skills_dir = tmp_path / ".claude" / "skills" / "react-best-practices"
-        skills_dir.mkdir(parents=True)
-        old_file = skills_dir / "SKILL.md"
-        old_file.write_text("old content", encoding="utf-8")
-
-        with patch("pathlib.Path.home", return_value=tmp_path):
+        process = _process()
+        with patch(
+            "misaka.services.skills.skill_market_service.get_expanded_path",
+            return_value="EXPANDED_PATH",
+        ), patch(
+            "misaka.services.skills.skill_market_service.shutil.which",
+            return_value="/bin/npx",
+        ), patch(
+            "misaka.services.skills.skill_market_service.wrap_windows_script_command",
+            side_effect=lambda path, args: [path, *args],
+        ), patch(
+            "misaka.services.skills.skill_market_service.build_background_subprocess_kwargs",
+            return_value={"creationflags": 1},
+        ), patch(
+            "asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ) as create_process:
             result = await service.install_skill(sample_skill)
-            assert result is not None
-            content = result.read_text(encoding="utf-8")
-            assert "old content" not in content
-            assert "React Best Practices" in content
+
+        assert result.success is True
+        assert result.returncode == 0
+        command = create_process.call_args.args
+        assert command == (
+            "/bin/npx",
+            "-y",
+            "skills",
+            "add",
+            "vercel-labs/agent-skills",
+            "--skill",
+            "react-best-practices",
+            "-g",
+            "-a",
+            "claude-code",
+            "-y",
+        )
+        kwargs = create_process.call_args.kwargs
+        assert kwargs["stdin"] is asyncio.subprocess.DEVNULL
+        assert kwargs["env"]["PATH"] == "EXPANDED_PATH"
+        assert kwargs["env"]["CI"] == "1"
+        assert kwargs["creationflags"] == 1
+
+    async def test_reports_cli_error(
+        self,
+        service: SkillMarketService,
+        sample_skill: MarketSkill,
+    ) -> None:
+        process = _process(returncode=2, stderr=b"package not found")
+        with patch(
+            "misaka.services.skills.skill_market_service.get_expanded_path",
+            return_value="PATH",
+        ), patch(
+            "misaka.services.skills.skill_market_service.shutil.which",
+            return_value="npx",
+        ), patch(
+            "asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ):
+            result = await service.install_skill(sample_skill)
+        assert result.success is False
+        assert result.returncode == 2
+        assert result.message == "package not found"
+
+    async def test_kills_timed_out_installer(
+        self,
+        service: SkillMarketService,
+        sample_skill: MarketSkill,
+    ) -> None:
+        process = _process()
+        process.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
+        with patch(
+            "misaka.services.skills.skill_market_service.get_expanded_path",
+            return_value="PATH",
+        ), patch(
+            "misaka.services.skills.skill_market_service.shutil.which",
+            return_value="npx",
+        ), patch(
+            "asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=process,
+        ):
+            result = await service.install_skill(sample_skill)
+        assert result.success is False
+        assert "timed out" in result.message
+        process.kill.assert_called_once()
+        process.wait.assert_awaited_once()
+
+    async def test_reports_start_failure(
+        self,
+        service: SkillMarketService,
+        sample_skill: MarketSkill,
+    ) -> None:
+        with patch(
+            "misaka.services.skills.skill_market_service.get_expanded_path",
+            return_value="PATH",
+        ), patch(
+            "misaka.services.skills.skill_market_service.shutil.which",
+            return_value="npx",
+        ), patch(
+            "asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            side_effect=OSError("blocked"),
+        ):
+            result = await service.install_skill(sample_skill)
+        assert result.success is False
+        assert "blocked" in result.message
 
 
 class TestServiceInit:
-
     def test_default_base_url(self) -> None:
-        svc = SkillMarketService()
-        assert svc._base_url == "https://api.skyll.app"
+        assert SkillMarketService()._base_url == "https://skills.sh/api"
 
-    def test_custom_base_url(self) -> None:
-        svc = SkillMarketService(base_url="https://custom.api.dev/")
-        assert svc._base_url == "https://custom.api.dev"
-
-    def test_trailing_slash_stripped(self) -> None:
-        svc = SkillMarketService(base_url="https://api.example.com///")
-        assert svc._base_url == "https://api.example.com"
+    def test_custom_base_url_strips_slashes(self) -> None:
+        assert SkillMarketService("https://example.test///")._base_url == (
+            "https://example.test"
+        )

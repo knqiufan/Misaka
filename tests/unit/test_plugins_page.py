@@ -3,11 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
-
-import flet as ft
+from unittest.mock import MagicMock, patch
 
 from misaka.i18n import init, set_locale, t
+from misaka.services.mcp.mcp_market_service import MarketMCPServer
 from misaka.ui.pages.plugins_page import PluginsPage
 
 
@@ -31,7 +30,10 @@ class DummyPage:
         self.update_calls += 1
 
 
-def test_save_and_verify_mcp_config_writes_back_to_original_source(monkeypatch, tmp_path: Path) -> None:
+def test_save_and_verify_mcp_config_writes_back_to_original_source(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     init("en")
     page = make_page(monkeypatch)
     settings_dir = tmp_path / ".claude"
@@ -68,7 +70,10 @@ def test_save_and_verify_mcp_config_writes_back_to_original_source(monkeypatch, 
     assert saved["mcpServers"]["remote-api"]["headers"]["Authorization"] == "Bearer new-token"
 
 
-def test_save_and_verify_mcp_config_fails_when_reloaded_config_differs(monkeypatch, tmp_path: Path) -> None:
+def test_save_and_verify_mcp_config_fails_when_reloaded_config_differs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     init("en")
     page = make_page(monkeypatch)
     claude_json = tmp_path / ".claude.json"
@@ -165,3 +170,91 @@ def test_plugins_translations_include_header_count_label() -> None:
     set_locale("en")
 
     assert t("plugins.header_count", count=2) == "2 Headers"
+
+
+def test_market_install_persists_config_and_refreshes_runtime(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    init("en")
+    mcp_service = MagicMock()
+    mcp_service.load_mcp_servers.return_value = {"example": object()}
+    mcp_service.to_sdk_format.return_value = {"example": {"type": "http"}}
+    state = SimpleNamespace(
+        update=lambda: None,
+        current_session=None,
+        mcp_servers_sdk={},
+        get_service=lambda name: mcp_service if name == "mcp_service" else None,
+    )
+    monkeypatch.setattr(PluginsPage, "_build_ui", lambda self: None)
+    page = PluginsPage(state=state, db=None)
+    server = MarketMCPServer(
+        name="io.github.owner/example",
+        title="Example MCP",
+        description="Example",
+        version="1.0.0",
+    )
+    config = {
+        "type": "http",
+        "url": "https://example.test/mcp",
+        "headers": {"Authorization": "Bearer token"},
+    }
+
+    with patch("pathlib.Path.home", return_value=tmp_path):
+        success, message = page._install_market_server("example", server, config)
+
+    assert success is True
+    assert "installed" in message.lower()
+    saved = json.loads((tmp_path / ".claude.json").read_text(encoding="utf-8"))
+    assert saved["mcpServers"]["example"] == config
+    mcp_service.load_mcp_servers.assert_called_once_with(working_directory=None)
+    assert state.mcp_servers_sdk == {"example": {"type": "http"}}
+
+
+def test_market_install_rejects_duplicate_without_overwriting(monkeypatch) -> None:
+    init("en")
+    page = make_page(monkeypatch)
+    page._mcp_configs = {"example": {"type": "stdio", "command": "existing"}}
+    server = MarketMCPServer(
+        name="io.github.owner/example",
+        title="Example MCP",
+        description="Example",
+        version="1.0.0",
+    )
+
+    success, message = page._install_market_server(
+        "example",
+        server,
+        {"type": "http", "url": "https://new.example.test/mcp"},
+    )
+
+    assert success is False
+    assert "already" in message.lower()
+    assert page._mcp_configs["example"]["command"] == "existing"
+
+
+def test_plugins_page_builds_and_switches_to_market_tab(tmp_path: Path) -> None:
+    init("en")
+    services = {
+        "mcp_market_service": MagicMock(),
+        "mcp_service": MagicMock(),
+    }
+    state = SimpleNamespace(
+        update=lambda: None,
+        current_session=None,
+        mcp_servers_sdk={},
+        get_service=lambda name: services.get(name),
+    )
+    with patch("pathlib.Path.home", return_value=tmp_path):
+        page = PluginsPage(state=state, db=None)
+
+    assert page._market_panel is not None
+    assert page._tab_selector is not None
+    page._tab_selector.selected = ["market"]
+    page._on_tab_change(SimpleNamespace())
+
+    assert page._current_tab == "market"
+    assert page._tab_content_container is not None
+    assert page._tab_content_container.content is page._market_panel
+    assert page._local_header_actions is not None
+    assert page._local_header_actions.visible is False
