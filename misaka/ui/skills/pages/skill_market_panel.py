@@ -1,12 +1,13 @@
 """Skill market panel — online skill browser and installer.
 
 Provides search, browsing, preview, and one-click install of skills
-from the skills.sh ecosystem via the Skyll public API.
+from the skills.sh ecosystem and its official CLI.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import flet as ft
@@ -30,9 +31,14 @@ logger = logging.getLogger(__name__)
 class SkillMarketPanel(ft.Column):
     """Online skill market browser panel."""
 
-    def __init__(self, state: AppState) -> None:
+    def __init__(
+        self,
+        state: AppState,
+        on_installed: Callable[[], None] | None = None,
+    ) -> None:
         super().__init__(spacing=0, expand=True)
         self.state = state
+        self._on_installed = on_installed
         self._results: list[MarketSkill] = []
         self._selected_skill: MarketSkill | None = None
         self._is_searching = False
@@ -261,17 +267,7 @@ class SkillMarketPanel(ft.Column):
                             max_lines=1,
                             overflow=ft.TextOverflow.ELLIPSIS,
                         ),
-                        ft.Row(
-                            controls=[
-                                ft.Text(install_text, size=9, opacity=0.4),
-                                ft.Text(
-                                    f"⭐ {skill.relevance_score:.0f}",
-                                    size=9,
-                                    opacity=0.4,
-                                ),
-                            ],
-                            spacing=8,
-                        ),
+                        ft.Text(install_text, size=9, opacity=0.4),
                     ],
                     spacing=2,
                     expand=True,
@@ -331,15 +327,10 @@ class SkillMarketPanel(ft.Column):
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-        score_text = f"{skill.relevance_score:.1f}"
-
         meta_row = ft.Row(
             controls=[
                 ft.Icon(ft.Icons.DOWNLOAD, size=14, opacity=0.5),
                 ft.Text(install_text, size=12, opacity=0.5),
-                ft.Container(width=12),
-                ft.Icon(ft.Icons.STAR_ROUNDED, size=14, color="#f59e0b"),
-                ft.Text(score_text, size=12, opacity=0.5),
             ],
             spacing=6,
         )
@@ -422,10 +413,10 @@ class SkillMarketPanel(ft.Column):
                 self._do_search(query)
 
     def _on_load_popular(self, e: ft.ControlEvent) -> None:
-        self._search_query = "popular"
+        self._search_query = "best practices"
         if self._search_field:
-            self._search_field.value = "popular"
-        self._do_search("popular")
+            self._search_field.value = "best practices"
+        self._do_search("best practices")
 
     def _do_search(self, query: str) -> None:
         if self._is_searching:
@@ -481,44 +472,8 @@ class SkillMarketPanel(ft.Column):
     def _on_select_skill(self, skill: MarketSkill) -> None:
         self._selected_skill = skill
         self._rebuild_result_list()
-
-        if skill.content:
-            self._preview_container.content = self._build_skill_preview(skill)
-            self.state.update()
-        else:
-            self._preview_container.content = ft.Column(
-                controls=[
-                    ft.ProgressRing(width=24, height=24, stroke_width=2),
-                    ft.Text(t("common.loading"), size=13, opacity=0.5),
-                ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                alignment=ft.MainAxisAlignment.CENTER,
-                expand=True,
-            )
-            self.state.update()
-            self._fetch_and_show_content(skill)
-
-    def _fetch_and_show_content(self, skill: MarketSkill) -> None:
-        page = self.page
-        if not page:
-            return
-        svc = self._get_market_service()
-        if not svc:
-            return
-
-        async def _fetch() -> None:
-            content = await svc.get_skill_content(skill.source, skill.id)
-            if content:
-                skill.content = content
-            if (
-                self._selected_skill
-                and self._selected_skill.id == skill.id
-                and self._selected_skill.source == skill.source
-            ):
-                self._preview_container.content = self._build_skill_preview(skill)
-                self.state.update()
-
-        page.run_task(_fetch)
+        self._preview_container.content = self._build_skill_preview(skill)
+        self.state.update()
 
     def _on_install_skill(self, e: ft.ControlEvent, skill: MarketSkill) -> None:
         page = e.page
@@ -533,9 +488,14 @@ class SkillMarketPanel(ft.Column):
 
         async def _install() -> None:
             try:
-                result = await svc.install_skill(skill, content=skill.content or None)
+                result = await svc.install_skill(skill)
                 self._is_installing = False
-                if result:
+                if result.success:
+                    if self._on_installed:
+                        try:
+                            self._on_installed()
+                        except Exception as exc:
+                            logger.warning("Skill installed but list refresh failed: %s", exc)
                     self._show_snackbar(
                         page,
                         t("extensions.market_installed", name=skill.name),
@@ -543,7 +503,7 @@ class SkillMarketPanel(ft.Column):
                 else:
                     self._show_snackbar(
                         page,
-                        t("extensions.market_install_failed", error="No content"),
+                        t("extensions.market_install_failed", error=result.message),
                     )
             except Exception as exc:
                 self._is_installing = False

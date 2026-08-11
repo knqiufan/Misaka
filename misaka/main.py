@@ -38,6 +38,7 @@ from misaka.services.dashboard.dashboard_service import DashboardService
 from misaka.services.file.file_service import FileService
 from misaka.services.file.update_check_service import UpdateCheckService
 from misaka.services.images.image_service import ImageService
+from misaka.services.mcp.mcp_market_service import MCPMarketService
 from misaka.services.mcp.mcp_service import MCPService
 from misaka.services.notification.notification_service import NotificationService
 from misaka.services.session.session_import_service import SessionImportService
@@ -155,6 +156,7 @@ class ServiceContainer:
         self.file_service = FileService()
         self.image_service = ImageService()
         self.mcp_service = MCPService()
+        self.mcp_market_service = MCPMarketService()
         self.claude_service = ClaudeService(db, self.permission_service)
 
         # New services

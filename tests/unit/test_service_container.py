@@ -23,6 +23,8 @@ class TestServiceContainer:
         assert container.router_config_service is not None
         assert container.task_service is not None
         assert container.mcp_service is not None
+        assert container.mcp_market_service is not None
+        assert container.skill_market_service is not None
         assert container.claude_service is not None
 
     async def test_close_closes_database(self, db: DatabaseBackend) -> None:

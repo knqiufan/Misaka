@@ -145,7 +145,10 @@ class ExtensionsPage(ft.Column):
             vertical_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
-        self._market_panel = SkillMarketPanel(self.state)
+        self._market_panel = SkillMarketPanel(
+            self.state,
+            on_installed=self._handle_market_skill_installed,
+        )
 
         self._tab_content_container = ft.Container(
             content=self._local_content,
@@ -289,6 +292,11 @@ class ExtensionsPage(ft.Column):
         if self._local_header_actions:
             self._local_header_actions.visible = selected == "local"
         self.state.update()
+
+    def _handle_market_skill_installed(self) -> None:
+        """Refresh the existing local discovery list after market installation."""
+        self._load_skills()
+        self._refresh_skill_list()
 
     def _build_left_panel(self, search_field: ft.TextField) -> ft.Container:
         """Build left panel with search and skill list, styled as card."""
