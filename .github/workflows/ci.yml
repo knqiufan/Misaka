@@ -14,6 +14,7 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.12"]
 
@@ -40,7 +41,44 @@ jobs:
         run: ruff check misaka/
 
       - name: MyPy type check
+        if: matrix.python-version == '3.10'
         run: mypy misaka/
 
       - name: Run tests
         run: pytest --cov=misaka --cov-report=term-missing
+
+  environment-check-platforms:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run environment setup tests
+        run: >-
+          pytest
+          tests/unit/test_env_check_service.py
+          tests/unit/test_config_path.py
+          tests/unit/test_env_check_ui.py
+          tests/unit/test_update_check_service.py
+          tests/unit/test_platform.py

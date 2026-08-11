@@ -1,20 +1,19 @@
-"""
-Tests for the EnvCheckService.
-"""
+"""Tests for cross-platform environment detection and installation."""
 
 from __future__ import annotations
 
 import asyncio
-import subprocess
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from misaka.services.skills.env_check_service import (
     EnvCheckService,
     EnvironmentCheckResult,
+    InstallResult,
     ToolStatus,
     _get_install_info,
+    _get_install_spec,
 )
 
 
@@ -23,495 +22,469 @@ def service() -> EnvCheckService:
     return EnvCheckService()
 
 
-class TestToolStatus:
+def _process(
+    *,
+    stdout: bytes = b"",
+    stderr: bytes = b"",
+    returncode: int = 0,
+    communicate_error: Exception | None = None,
+) -> MagicMock:
+    proc = MagicMock()
+    if communicate_error is None:
+        proc.communicate = AsyncMock(return_value=(stdout, stderr))
+    else:
+        proc.communicate = AsyncMock(side_effect=communicate_error)
+    proc.wait = AsyncMock(return_value=returncode)
+    proc.kill = MagicMock()
+    proc.returncode = returncode
+    return proc
 
-    def test_tool_status_dataclass(self) -> None:
-        status = ToolStatus(
-            name="Node.js",
-            command="node",
-            version="20.11.1",
-            is_installed=True,
-            install_url="https://nodejs.org",
-            install_command="brew install node",
-        )
-        assert status.name == "Node.js"
+
+class TestDataModels:
+    def test_tool_status(self) -> None:
+        status = ToolStatus("Node.js", "node", "24.1.0", True, "url", "command")
         assert status.is_installed is True
-        assert status.version == "20.11.1"
+        assert status.version == "24.1.0"
 
-
-class TestEnvironmentCheckResult:
-
-    def test_all_installed_true(self) -> None:
-        tools = [
-            ToolStatus("A", "a", "1.0", True, "", ""),
-            ToolStatus("B", "b", "2.0", True, "", ""),
-        ]
-        result = EnvironmentCheckResult(
-            tools=tools, all_installed=True, checked_at="2026-01-01T00:00:00"
-        )
+    def test_environment_result(self) -> None:
+        result = EnvironmentCheckResult([], True, "2026-01-01T00:00:00Z")
         assert result.all_installed is True
 
-    def test_all_installed_false(self) -> None:
-        tools = [
-            ToolStatus("A", "a", "1.0", True, "", ""),
-            ToolStatus("B", "b", None, False, "", ""),
-        ]
-        result = EnvironmentCheckResult(
-            tools=tools, all_installed=False, checked_at="2026-01-01T00:00:00"
+    def test_install_result(self) -> None:
+        result = InstallResult("Git", False, "failed", "git install", 1)
+        assert result.success is False
+        assert result.returncode == 1
+
+
+class TestInstallSpecs:
+    @pytest.mark.parametrize(
+        ("tool_name", "package_id"),
+        [
+            ("Claude Code CLI", "Anthropic.ClaudeCode"),
+            ("Node.js", "OpenJS.NodeJS.LTS"),
+            ("Python", "Python.Python.3.13"),
+            ("Git", "Git.Git"),
+        ],
+    )
+    def test_windows_specs_are_exact_and_non_interactive(
+        self,
+        tool_name: str,
+        package_id: str,
+    ) -> None:
+        spec = _get_install_spec(tool_name, "windows")
+        assert spec is not None
+        step = spec.steps[0]
+        assert step[:4] == ("winget", "install", "--id", package_id)
+        assert "--exact" in step
+        assert "--source" in step
+        assert "--accept-source-agreements" in step
+        assert "--accept-package-agreements" in step
+        assert "--disable-interactivity" in step
+
+    @pytest.mark.parametrize(
+        ("tool_name", "expected"),
+        [
+            ("Claude Code CLI", ("brew", "install", "--cask", "claude-code")),
+            ("Node.js", ("brew", "install", "node")),
+            ("Python", ("brew", "install", "python")),
+            ("Git", ("brew", "install", "git")),
+        ],
+    )
+    def test_macos_specs_use_homebrew(
+        self,
+        tool_name: str,
+        expected: tuple[str, ...],
+    ) -> None:
+        spec = _get_install_spec(tool_name, "macos")
+        assert spec is not None
+        assert spec.steps == (expected,)
+
+    @pytest.mark.parametrize(
+        ("tool_name", "package"),
+        [("Node.js", "nodejs"), ("Python", "python3"), ("Git", "git")],
+    )
+    def test_linux_specs_use_apt_get(self, tool_name: str, package: str) -> None:
+        spec = _get_install_spec(tool_name, "linux")
+        assert spec is not None
+        assert spec.steps == (
+            ("apt-get", "update"),
+            ("apt-get", "install", "-y", package),
         )
+        assert spec.requires_elevation is True
+
+    def test_linux_claude_uses_official_native_installer(self) -> None:
+        spec = _get_install_spec("Claude Code CLI", "linux")
+        assert spec is not None
+        assert "https://claude.ai/install.sh" in spec.steps[0][-1]
+        assert spec.required_commands == ("bash", "curl")
+
+    def test_unknown_tool_has_no_spec(self) -> None:
+        assert _get_install_spec("Unknown", "windows") is None
+        assert _get_install_info("Unknown") == ("", "")
+
+
+class TestDetection:
+    async def test_check_tool_found(self, service: EnvCheckService) -> None:
+        with patch(
+            "misaka.services.skills.env_check_service.shutil.which",
+            return_value="/usr/bin/node",
+        ), patch.object(service, "_get_version", return_value="24.1.0"):
+            result = await service.check_tool("node")
+        assert result.name == "Node.js"
+        assert result.is_installed is True
+        assert result.version == "24.1.0"
+
+    async def test_check_tool_not_found(self, service: EnvCheckService) -> None:
+        with patch(
+            "misaka.services.skills.env_check_service.shutil.which",
+            return_value=None,
+        ):
+            result = await service.check_tool("node")
+        assert result.is_installed is False
+
+    async def test_python_falls_back_to_second_command(self, service: EnvCheckService) -> None:
+        def which(command: str, path: str | None = None) -> str | None:
+            return "/usr/bin/python" if command == "python" else None
+
+        with patch(
+            "misaka.services.skills.env_check_service.shutil.which",
+            side_effect=which,
+        ), patch.object(service, "_get_version", return_value="3.13.1"):
+            result = await service._check_tool_multi(
+                "Python",
+                ["python3", "python"],
+                "--version",
+            )
+        assert result.command == "python"
+        assert result.is_installed is True
+
+    async def test_claude_requires_parseable_version(self, service: EnvCheckService) -> None:
+        with patch(
+            "misaka.utils.platform.find_claude_binary",
+            return_value="/usr/bin/claude",
+        ), patch(
+            "misaka.services.skills.env_check_service.shutil.which",
+            return_value=None,
+        ), patch.object(
+            service,
+            "_get_version",
+            return_value=None,
+        ), patch.object(
+            service,
+            "_get_version_lenient",
+            return_value=None,
+        ):
+            result = await service._check_tool_multi(
+                "Claude Code CLI",
+                ["claude"],
+                "--version",
+            )
+        assert result.is_installed is False
+        assert result.version is None
+
+    async def test_claude_lenient_version_is_accepted(self, service: EnvCheckService) -> None:
+        with patch(
+            "misaka.utils.platform.find_claude_binary",
+            return_value="/usr/bin/claude",
+        ), patch.object(
+            service,
+            "_get_version",
+            return_value=None,
+        ), patch.object(
+            service,
+            "_get_version_lenient",
+            return_value="2.1.204",
+        ):
+            result = await service._check_tool_multi(
+                "Claude Code CLI",
+                ["claude"],
+                "--version",
+            )
+        assert result.is_installed is True
+        assert result.version == "2.1.204"
+
+    async def test_check_all_preserves_tool_name_on_exception(
+        self,
+        service: EnvCheckService,
+    ) -> None:
+        async def check(name: str, commands: list[str], flag: str) -> ToolStatus:
+            if name == "Node.js":
+                raise RuntimeError("boom")
+            return ToolStatus(name, commands[0], "1.0.0", True, "", "")
+
+        with patch.object(service, "_check_tool_multi", side_effect=check):
+            result = await service.check_all()
+
+        assert [tool.name for tool in result.tools] == [
+            "Claude Code CLI",
+            "Node.js",
+            "Python",
+            "Git",
+        ]
+        node = result.tools[1]
+        assert node.is_installed is False
+        assert node.install_command
         assert result.all_installed is False
 
 
-class TestGetInstallInfo:
-
-    def test_claude_cli_install_info(self) -> None:
-        cmd, url = _get_install_info("Claude Code CLI")
-        assert "npm install -g" in cmd
-        assert "claude-code" in cmd
-        assert url != ""
-
-    def test_nodejs_install_info(self) -> None:
-        cmd, url = _get_install_info("Node.js")
-        assert cmd != ""
-        assert "nodejs.org" in url
-
-    def test_python_install_info(self) -> None:
-        cmd, url = _get_install_info("Python")
-        assert cmd != ""
-        assert "python.org" in url
-
-    def test_git_install_info(self) -> None:
-        cmd, url = _get_install_info("Git")
-        assert cmd != ""
-        assert "git-scm.com" in url
-
-    def test_unknown_tool_returns_empty(self) -> None:
-        cmd, url = _get_install_info("UnknownTool")
-        assert cmd == ""
-        assert url == ""
-
-
-class TestEnvCheckService:
-
-    async def test_check_tool_found(self, service: EnvCheckService) -> None:
-        """check_tool returns is_installed=True when binary exists and responds."""
-        with patch("shutil.which", return_value="/usr/bin/node"), \
-             patch.object(service, "_get_version", return_value="20.11.1"):
-            result = await service.check_tool("node", "--version")
-            assert result.is_installed is True
-            assert result.version == "20.11.1"
-
-    async def test_check_tool_not_found(self, service: EnvCheckService) -> None:
-        """check_tool returns is_installed=False when binary is missing."""
-        with patch("shutil.which", return_value=None):
-            result = await service.check_tool("nonexistent")
-            assert result.is_installed is False
-            assert result.version is None
-
-    async def test_check_tool_found_but_version_fails(self, service: EnvCheckService) -> None:
-        """check_tool returns is_installed=False when version check fails."""
-        with patch("shutil.which", return_value="/usr/bin/node"), \
-             patch.object(service, "_get_version", return_value=None):
-            result = await service.check_tool("node", "--version")
-            assert result.is_installed is False
-
-    async def test_check_all_returns_four_tools(self, service: EnvCheckService) -> None:
-        """check_all should return results for all 4 tools."""
-        mock_status = ToolStatus(
-            name="test", command="test", version="1.0",
-            is_installed=True, install_url="", install_command="",
-        )
-        with patch.object(service, "_check_tool_multi", return_value=mock_status):
-            result = await service.check_all()
-            assert len(result.tools) == 4
-            assert result.all_installed is True
-            assert result.checked_at != ""
-
-    async def test_check_all_with_missing_tool(self, service: EnvCheckService) -> None:
-        """check_all sets all_installed=False when any tool is missing."""
-        installed = ToolStatus(
-            name="test", command="test", version="1.0",
-            is_installed=True, install_url="", install_command="",
-        )
-        not_installed = ToolStatus(
-            name="missing", command="missing", version=None,
-            is_installed=False, install_url="", install_command="",
-        )
-
-        call_count = 0
-
-        async def mock_check(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            return not_installed if call_count == 2 else installed
-
-        with patch.object(service, "_check_tool_multi", side_effect=mock_check):
-            result = await service.check_all()
-            assert result.all_installed is False
-
-    async def test_check_all_handles_exception(self, service: EnvCheckService) -> None:
-        """check_all should handle exceptions from individual tool checks."""
-        async def mock_check(*args, **kwargs):
-            raise RuntimeError("test error")
-
-        with patch.object(service, "_check_tool_multi", side_effect=mock_check):
-            result = await service.check_all()
-            assert len(result.tools) == 4
-            assert result.all_installed is False
-
-    async def test_get_version_parses_standard_output(self, service: EnvCheckService) -> None:
-        """_get_version should parse version from standard output."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"v20.11.1\n", b"")
-        mock_proc.returncode = 0
-
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            version = await service._get_version("/usr/bin/node", "--version")
-            assert version == "20.11.1"
-
-    async def test_get_version_parses_git_output(self, service: EnvCheckService) -> None:
-        """_get_version should parse version from git-style output."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"git version 2.43.0\n", b"")
-        mock_proc.returncode = 0
-
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            version = await service._get_version("/usr/bin/git", "--version")
-            assert version == "2.43.0"
-
-    async def test_get_version_returns_none_on_failure(self, service: EnvCheckService) -> None:
-        """_get_version should return None when the command fails."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"", b"error")
-        mock_proc.returncode = 1
-
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            version = await service._get_version("/usr/bin/nonexistent", "--version")
-            assert version is None
-
-    async def test_get_version_returns_none_on_timeout(self, service: EnvCheckService) -> None:
-        """_get_version should return None on timeout."""
-        with patch("asyncio.create_subprocess_exec", side_effect=asyncio.TimeoutError()):
-            version = await service._get_version("/usr/bin/slow", "--version")
-            assert version is None
-
-    async def test_get_version_reads_stderr_fallback(self, service: EnvCheckService) -> None:
-        """_get_version should read stderr when stdout is empty."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"", b"Python 3.12.1\n")
-        mock_proc.returncode = 0
-
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            version = await service._get_version("/usr/bin/python3", "--version")
-            assert version == "3.12.1"
-
-    async def test_install_tool_success(self, service: EnvCheckService) -> None:
-        """install_tool should use shared hidden subprocess helpers."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"installed\n", b"")
-        mock_proc.returncode = 0
-
-        progress_messages: list[str] = []
-
-        with patch(
-            "misaka.services.skills.env_check_service.IS_WINDOWS", True
-        ), patch(
-            "shutil.which",
-            return_value="C:\\Windows\\System32\\winget.exe",
-        ) as mock_which, patch(
-            "misaka.services.skills.env_check_service.wrap_windows_script_command",
-            return_value=[
-                "C:\\Windows\\System32\\winget.exe",
-                "install",
-                "OpenJS.NodeJS.LTS",
-            ],
-        ) as mock_wrap, patch(
-            "misaka.services.skills.env_check_service.build_background_subprocess_kwargs",
-            return_value={"creationflags": 1, "startupinfo": "hidden"},
-        ) as mock_kwargs, patch(
-            "asyncio.create_subprocess_exec", return_value=mock_proc
-        ) as mock_exec:
-            result = await service.install_tool(
-                "Node.js", on_progress=progress_messages.append
-            )
-            assert result is True
-            assert any("successfully" in m for m in progress_messages)
-            mock_which.assert_called_once()
-            mock_wrap.assert_called_once_with(
-                "C:\\Windows\\System32\\winget.exe",
-                ["install", "OpenJS.NodeJS.LTS"],
-            )
-            mock_kwargs.assert_called_once_with()
-            mock_exec.assert_called_once_with(
-                "C:\\Windows\\System32\\winget.exe",
-                "install",
-                "OpenJS.NodeJS.LTS",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                creationflags=1,
-                startupinfo="hidden",
-            )
-
-    async def test_install_tool_resolves_npm_cmd_for_claude_cli(
-        self, service: EnvCheckService
+class TestVersionCapture:
+    @pytest.mark.parametrize(
+        ("stdout", "stderr", "expected"),
+        [
+            (b"v24.1.0\n", b"", "24.1.0"),
+            (b"git version 2.52.0\n", b"", "2.52.0"),
+            (b"", b"Python 3.13.1\n", "3.13.1"),
+            (b"2.1.204 (Claude Code)\n", b"", "2.1.204"),
+        ],
+    )
+    async def test_parses_supported_outputs(
+        self,
+        service: EnvCheckService,
+        stdout: bytes,
+        stderr: bytes,
+        expected: str,
     ) -> None:
-        """install_tool should resolve npm to npm.cmd before launching."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"installed\n", b"")
-        mock_proc.returncode = 0
+        proc = _process(stdout=stdout, stderr=stderr)
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            assert await service._get_version("/usr/bin/tool", "--version") == expected
 
-        with patch(
-            "shutil.which",
-            return_value="C:\\nvm4w\\nodejs\\npm.cmd",
-        ) as mock_which, patch(
-            "misaka.services.skills.env_check_service.wrap_windows_script_command",
-            return_value=[
-                "cmd.exe",
-                "/d",
-                "/s",
-                "/c",
-                '"C:\\nvm4w\\nodejs\\npm.cmd" install -g @anthropic-ai/claude-code',
-            ],
-        ) as mock_wrap, patch(
-            "asyncio.create_subprocess_exec", return_value=mock_proc
-        ) as mock_exec:
-            result = await service.install_tool("Claude Code CLI")
-            assert result is True
-            mock_which.assert_called_once_with("npm", path=ANY)
-            mock_wrap.assert_called_once_with(
-                "C:\\nvm4w\\nodejs\\npm.cmd",
-                ["install", "-g", "@anthropic-ai/claude-code"],
-            )
-            mock_exec.assert_called_once()
+    async def test_strict_rejects_nonzero_exit(self, service: EnvCheckService) -> None:
+        proc = _process(stdout=b"2.1.204\n", returncode=1)
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            assert await service._get_version("/usr/bin/claude", "--version") is None
 
-    async def test_install_tool_failure(self, service: EnvCheckService) -> None:
-        """install_tool should return False on installation failure."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"", b"permission denied\n")
-        mock_proc.returncode = 1
-
-        with patch(
-            "shutil.which",
-            return_value="C:\\Windows\\System32\\winget.exe",
-        ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            result = await service.install_tool("Node.js")
-            assert result is False
-
-    async def test_install_tool_unknown_returns_false(self, service: EnvCheckService) -> None:
-        """install_tool should return False for unknown tools."""
-        result = await service.install_tool("UnknownTool")
-        assert result is False
-
-    async def test_install_tool_missing_launcher_returns_false(
-        self, service: EnvCheckService
-    ) -> None:
-        """install_tool should fail early when launcher cannot be resolved."""
-        progress_messages: list[str] = []
-
-        with patch("shutil.which", return_value=None):
-            result = await service.install_tool(
-                "Claude Code CLI",
-                on_progress=progress_messages.append,
-            )
-            assert result is False
-            assert any("required command not found: npm" in m for m in progress_messages)
-
-    async def test_install_tool_timeout(self, service: EnvCheckService) -> None:
-        """install_tool should return False on timeout."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.side_effect = asyncio.TimeoutError()
-
-        progress_messages: list[str] = []
-
-        with patch(
-            "shutil.which",
-            return_value="C:\\Windows\\System32\\winget.exe",
-        ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            result = await service.install_tool(
-                "Node.js", on_progress=progress_messages.append
-            )
-            assert result is False
-            assert any("timed out" in m for m in progress_messages)
-
-    async def test_install_tool_os_error(self, service: EnvCheckService) -> None:
-        """install_tool should return False on OSError (e.g., command not found)."""
-        progress_messages: list[str] = []
-
-        with patch(
-            "shutil.which",
-            return_value="C:\\Program Files\\Git\\cmd\\git.exe",
-        ), patch("asyncio.create_subprocess_exec", side_effect=OSError("not found")):
-            result = await service.install_tool(
-                "Git", on_progress=progress_messages.append
-            )
-            assert result is False
-            assert any("failed" in m.lower() for m in progress_messages)
-
-    async def test_get_version_no_version_in_output(self, service: EnvCheckService) -> None:
-        """_get_version should return None when output has no version pattern."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"some random output\n", b"")
-        mock_proc.returncode = 0
-
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            version = await service._get_version("/usr/bin/tool", "--version")
-            assert version is None
-
-    async def test_get_version_os_error(self, service: EnvCheckService) -> None:
-        """_get_version should return None on OSError."""
-        with patch("asyncio.create_subprocess_exec", side_effect=OSError("No such file")):
-            version = await service._get_version("/nonexistent/path", "--version")
-            assert version is None
-
-    async def test_get_version_windows_cmd_wrapper(self, service: EnvCheckService) -> None:
-        """_get_version should delegate .cmd wrappers to the shared command helper."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"v18.0.0\n", b"")
-        mock_proc.returncode = 0
-
-        with patch(
-            "misaka.services.skills.env_check_service.wrap_windows_script_command",
-            return_value=["cmd.exe", "/d", "/s", "/c", '"C:/npm/node.cmd" --version'],
-        ) as mock_wrap, patch(
-            "misaka.services.skills.env_check_service.build_background_subprocess_kwargs",
-            return_value={"creationflags": 1, "startupinfo": "hidden"},
-        ) as mock_kwargs, patch(
-            "asyncio.create_subprocess_exec", return_value=mock_proc
-        ) as mock_exec:
-            version = await service._get_version("C:\\npm\\node.cmd", "--version")
-            assert version == "18.0.0"
-            mock_wrap.assert_called_once_with("C:\\npm\\node.cmd", ["--version"])
-            mock_kwargs.assert_called_once_with()
-            mock_exec.assert_called_once_with(
-                "cmd.exe",
-                "/d",
-                "/s",
-                "/c",
-                '"C:/npm/node.cmd" --version',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                creationflags=1,
-                startupinfo="hidden",
-            )
-
-    async def test_check_tool_multi_uses_first_found(self, service: EnvCheckService) -> None:
-        """_check_tool_multi should use the first working command."""
-        call_count = 0
-
-        def mock_which(cmd, path=None):
-            nonlocal call_count
-            call_count += 1
-            # python3 not found, python found
-            if cmd == "python3":
-                return None
-            return "/usr/bin/python"
-
-        with patch("shutil.which", side_effect=mock_which), \
-             patch.object(service, "_get_version", return_value="3.12.1"):
-            result = await service._check_tool_multi(
-                "Python", ["python3", "python"], "--version"
-            )
-            assert result.is_installed is True
-            assert result.command == "python"
-
-    async def test_check_tool_multi_all_missing(self, service: EnvCheckService) -> None:
-        """_check_tool_multi should return not installed when all commands missing."""
-        with patch("shutil.which", return_value=None):
-            result = await service._check_tool_multi(
-                "Python", ["python3", "python"], "--version"
-            )
-            assert result.is_installed is False
-            assert result.command == "python3"  # Returns first command as default
-
-    async def test_install_tool_no_progress_callback(self, service: EnvCheckService) -> None:
-        """install_tool should work without a progress callback."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"ok\n", b"")
-        mock_proc.returncode = 0
-
-        with patch(
-            "shutil.which",
-            return_value="C:\\Program Files\\Git\\cmd\\git.exe",
-        ), patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            result = await service.install_tool("Git", on_progress=None)
-            assert result is True
-
-    async def test_get_version_lenient_ignores_nonzero_exit(
-        self, service: EnvCheckService,
-    ) -> None:
-        """_get_version_lenient should parse version even with non-zero exit code."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"2.1.97 (Claude Code)\n", b"")
-        mock_proc.returncode = 1
-
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+    async def test_lenient_accepts_nonzero_exit(self, service: EnvCheckService) -> None:
+        proc = _process(stdout=b"2.1.204\n", returncode=1)
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
             version = await service._get_version_lenient("/usr/bin/claude", "--version")
-            assert version == "2.1.97"
+        assert version == "2.1.204"
 
-    async def test_get_version_lenient_returns_none_on_no_match(
-        self, service: EnvCheckService,
-    ) -> None:
-        """_get_version_lenient returns None when no version pattern found."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"no version here\n", b"")
-        mock_proc.returncode = 1
+    async def test_timeout_terminates_process(self, service: EnvCheckService) -> None:
+        proc = _process(communicate_error=asyncio.TimeoutError())
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            version = await service._get_version("/usr/bin/slow", "--version")
+        assert version is None
+        proc.kill.assert_called_once_with()
+        proc.wait.assert_awaited_once_with()
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            version = await service._get_version_lenient("/usr/bin/tool", "--version")
-            assert version is None
 
-    async def test_get_version_lenient_returns_none_on_timeout(
-        self, service: EnvCheckService,
-    ) -> None:
-        """_get_version_lenient returns None on timeout."""
-        with patch("asyncio.create_subprocess_exec", side_effect=asyncio.TimeoutError()):
-            version = await service._get_version_lenient("/usr/bin/slow", "--version")
-            assert version is None
-
-    async def test_check_tool_multi_claude_fallback_to_lenient(
-        self, service: EnvCheckService,
-    ) -> None:
-        """Claude CLI check falls back to lenient version when strict fails."""
-        with patch(
-            "misaka.utils.platform.find_claude_binary",
-            return_value="/usr/bin/claude",
-        ), patch.object(
-            service, "_get_version", return_value=None,
-        ), patch.object(
-            service, "_get_version_lenient", return_value="2.1.97",
+class TestInstallation:
+    @pytest.fixture(autouse=True)
+    def successful_verification(self, service: EnvCheckService):
+        with patch.object(
+            service,
+            "_verify_installed_tool",
+            new=AsyncMock(return_value=True),
         ):
-            result = await service._check_tool_multi(
-                "Claude Code CLI", ["claude"], "--version",
-            )
-            assert result.is_installed is True
-            assert result.version == "2.1.97"
+            yield
 
-    async def test_check_tool_multi_claude_installed_no_version(
-        self, service: EnvCheckService,
+    async def test_windows_install_uses_non_interactive_winget(
+        self,
+        service: EnvCheckService,
     ) -> None:
-        """Claude CLI is_installed=True even when both version methods return None."""
+        proc = _process(stdout=b"installed\n")
+        progress: list[str] = []
         with patch(
-            "misaka.utils.platform.find_claude_binary",
-            return_value="/usr/bin/claude",
+            "misaka.services.skills.env_check_service._current_platform",
+            return_value="windows",
         ), patch.object(
-            service, "_get_version", return_value=None,
-        ), patch.object(
-            service, "_get_version_lenient", return_value=None,
-        ):
-            result = await service._check_tool_multi(
-                "Claude Code CLI", ["claude"], "--version",
-            )
-            assert result.is_installed is True
-            assert result.version is None
+            service,
+            "_resolve_install_executable",
+            return_value=r"C:\Windows\winget.exe",
+        ), patch(
+            "asyncio.create_subprocess_exec",
+            return_value=proc,
+        ) as create_process:
+            result = await service.install_tool("Node.js", progress.append)
 
-    async def test_get_version_parses_claude_output(
-        self, service: EnvCheckService,
+        assert result.success is True
+        assert "--accept-source-agreements" in result.command
+        assert "--disable-interactivity" in result.command
+        create_process.assert_awaited_once()
+        command = create_process.await_args.args
+        assert command[:4] == (
+            r"C:\Windows\winget.exe",
+            "install",
+            "--id",
+            "OpenJS.NodeJS.LTS",
+        )
+        assert create_process.await_args.kwargs["stdin"] == asyncio.subprocess.DEVNULL
+        assert create_process.await_args.kwargs["env"] is not None
+        assert any("successfully" in message for message in progress)
+
+    async def test_macos_install_uses_brew(self, service: EnvCheckService) -> None:
+        proc = _process()
+        with patch(
+            "misaka.services.skills.env_check_service._current_platform",
+            return_value="macos",
+        ), patch.object(
+            service,
+            "_resolve_install_executable",
+            return_value="/opt/homebrew/bin/brew",
+        ), patch("asyncio.create_subprocess_exec", return_value=proc) as create_process:
+            result = await service.install_tool("Git")
+
+        assert result.success is True
+        assert create_process.await_args.args == ("/opt/homebrew/bin/brew", "install", "git")
+
+    async def test_linux_apt_runs_update_then_install_as_root(
+        self,
+        service: EnvCheckService,
     ) -> None:
-        """_get_version should parse Claude Code CLI output format."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"2.1.97 (Claude Code)\n", b"")
-        mock_proc.returncode = 0
+        processes = [_process(), _process()]
+        with patch(
+            "misaka.services.skills.env_check_service._current_platform",
+            return_value="linux",
+        ), patch.object(
+            service,
+            "_resolve_install_executable",
+            return_value="/usr/bin/apt-get",
+        ), patch.object(
+            service,
+            "_is_root",
+            return_value=True,
+        ), patch(
+            "asyncio.create_subprocess_exec",
+            side_effect=processes,
+        ) as create_process:
+            result = await service.install_tool("Git")
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            version = await service._get_version("/usr/bin/claude", "--version")
-            assert version == "2.1.97"
+        assert result.success is True
+        assert create_process.await_args_list[0].args[:2] == ("/usr/bin/apt-get", "update")
+        assert create_process.await_args_list[1].args[:4] == (
+            "/usr/bin/apt-get",
+            "install",
+            "-y",
+            "git",
+        )
+
+    async def test_linux_apt_uses_noninteractive_elevation(
+        self,
+        service: EnvCheckService,
+    ) -> None:
+        proc = _process()
+        with patch(
+            "misaka.services.skills.env_check_service._current_platform",
+            return_value="linux",
+        ), patch.object(
+            service,
+            "_resolve_install_executable",
+            return_value="/usr/bin/apt-get",
+        ), patch.object(service, "_is_root", return_value=False), patch.object(
+            service,
+            "_resolve_elevation_command",
+            return_value=["/usr/bin/sudo", "--non-interactive"],
+        ), patch("asyncio.create_subprocess_exec", return_value=proc) as create_process:
+            result = await service.install_tool("Python")
+
+        assert result.success is True
+        assert create_process.await_args_list[0].args[:4] == (
+            "/usr/bin/sudo",
+            "--non-interactive",
+            "/usr/bin/apt-get",
+            "update",
+        )
+
+    async def test_missing_launcher_returns_actionable_error(
+        self,
+        service: EnvCheckService,
+    ) -> None:
+        with patch(
+            "misaka.services.skills.env_check_service._current_platform",
+            return_value="macos",
+        ), patch.object(service, "_resolve_install_executable", return_value=None):
+            result = await service.install_tool("Node.js")
+        assert result.success is False
+        assert "brew" in result.message
+        assert "nodejs.org" in result.message
+
+    async def test_failure_returns_stderr_and_code(self, service: EnvCheckService) -> None:
+        proc = _process(stderr=b"permission denied\n", returncode=1)
+        with patch.object(
+            service,
+            "_resolve_install_executable",
+            return_value=r"C:\Windows\winget.exe",
+        ), patch("asyncio.create_subprocess_exec", return_value=proc):
+            result = await service.install_tool("Git")
+        assert result.success is False
+        assert result.returncode == 1
+        assert "permission denied" in result.message
+
+    async def test_zero_exit_still_requires_detectable_tool(
+        self,
+        service: EnvCheckService,
+    ) -> None:
+        proc = _process()
+        with patch.object(
+            service,
+            "_resolve_install_executable",
+            return_value=r"C:\Windows\winget.exe",
+        ), patch.object(
+            service,
+            "_verify_installed_tool",
+            new=AsyncMock(return_value=False),
+        ), patch("asyncio.create_subprocess_exec", return_value=proc):
+            result = await service.install_tool("Git")
+
+        assert result.success is False
+        assert result.returncode == 0
+        assert "could not be detected" in result.message
+
+    async def test_progress_callback_failure_does_not_abort_install(
+        self,
+        service: EnvCheckService,
+    ) -> None:
+        proc = _process()
+        progress = MagicMock(side_effect=RuntimeError("detached UI"))
+        with patch.object(
+            service,
+            "_resolve_install_executable",
+            return_value=r"C:\Windows\winget.exe",
+        ), patch("asyncio.create_subprocess_exec", return_value=proc):
+            result = await service.install_tool("Git", progress)
+
+        assert result.success is True
+
+    async def test_timeout_kills_process(self, service: EnvCheckService) -> None:
+        proc = _process(communicate_error=asyncio.TimeoutError())
+        with patch.object(
+            service,
+            "_resolve_install_executable",
+            return_value=r"C:\Windows\winget.exe",
+        ), patch("asyncio.create_subprocess_exec", return_value=proc):
+            result = await service.install_tool("Git")
+        assert result.success is False
+        assert "timed out" in result.message
+        proc.kill.assert_called_once_with()
+        proc.wait.assert_awaited_once_with()
+
+    async def test_unknown_tool_returns_failure(self, service: EnvCheckService) -> None:
+        result = await service.install_tool("Unknown")
+        assert result.success is False
+        assert result.command == ""
+
+    async def test_subprocess_receives_hidden_window_kwargs(
+        self,
+        service: EnvCheckService,
+    ) -> None:
+        proc = _process()
+        with patch(
+            "misaka.services.skills.env_check_service._current_platform",
+            return_value="windows",
+        ), patch.object(
+            service,
+            "_resolve_install_executable",
+            return_value=r"C:\Windows\winget.exe",
+        ), patch(
+            "misaka.services.skills.env_check_service.build_background_subprocess_kwargs",
+            return_value={"creationflags": 1, "startupinfo": "hidden"},
+        ), patch("asyncio.create_subprocess_exec", return_value=proc) as create_process:
+            await service.install_tool("Git")
+        create_process.assert_awaited_once()
+        kwargs = create_process.await_args.kwargs
+        assert kwargs["stdin"] == asyncio.subprocess.DEVNULL
+        assert kwargs["stdout"] == asyncio.subprocess.PIPE
+        assert kwargs["stderr"] == asyncio.subprocess.PIPE
+        assert kwargs["env"] is not None
+        assert kwargs["creationflags"] == 1
+        assert kwargs["startupinfo"] == "hidden"
