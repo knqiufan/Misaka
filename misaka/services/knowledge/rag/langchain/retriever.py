@@ -6,7 +6,9 @@ import asyncio
 import hashlib
 import logging
 import re
-from collections import defaultdict
+import threading
+from collections import OrderedDict, defaultdict
+from typing import Any
 
 from misaka.services.knowledge.rag.abstractions import (
     ChunkData,
@@ -41,6 +43,8 @@ class LCHybridRetriever(Retriever):
         self._vector_store = vector_store
         self._bm25_weight = bm25_weight
         self._vector_weight = vector_weight
+        self._bm25_cache: OrderedDict[str, tuple[list[ChunkData], Any]] = OrderedDict()
+        self._bm25_cache_lock = threading.RLock()
 
     async def retrieve(
         self,
@@ -61,7 +65,7 @@ class LCHybridRetriever(Retriever):
             return vec_results[:top_k]
 
         bm25_results = await asyncio.to_thread(
-            self._bm25_search, query, chunks_for_bm25, top_k * 2,
+            self._cached_bm25_search, table_name, query, chunks_for_bm25, top_k * 2,
         )
         return self._rrf_fusion(vec_results, bm25_results, top_k)
 
@@ -83,24 +87,38 @@ class LCHybridRetriever(Retriever):
         bm25 = BM25Okapi(tokenized_corpus)
         scores = bm25.get_scores(tokenized_query)
 
-        scored = sorted(
-            enumerate(scores),
-            key=lambda x: x[1],
-            reverse=True,
-        )[:top_k]
+        return _results_from_bm25_scores(chunks, scores, top_k)
 
-        results: list[RetrievalResult] = []
-        for idx, score in scored:
-            if score <= 0:
-                continue
-            chunk = chunks[idx]
-            results.append(RetrievalResult(
-                chunk_id=_chunk_id(chunk),
-                content=chunk.content,
-                score=float(score),
-                metadata=dict(chunk.metadata),
-            ))
-        return results
+    def _cached_bm25_search(
+        self,
+        table_name: str,
+        query: str,
+        chunks: list[ChunkData],
+        top_k: int,
+    ) -> list[RetrievalResult]:
+        """Reuse the immutable active-index BM25 corpus across queries."""
+        from rank_bm25 import BM25Okapi
+
+        with self._bm25_cache_lock:
+            cached = self._bm25_cache.get(table_name)
+            if cached is None or cached[0] is not chunks:
+                bm25 = BM25Okapi([_tokenize(chunk.content) for chunk in chunks])
+                self._bm25_cache[table_name] = (chunks, bm25)
+                self._bm25_cache.move_to_end(table_name)
+                if len(self._bm25_cache) > 16:
+                    self._bm25_cache.popitem(last=False)
+            else:
+                bm25 = cached[1]
+                self._bm25_cache.move_to_end(table_name)
+
+            scores = bm25.get_scores(_tokenize(query))
+
+        return _results_from_bm25_scores(chunks, scores, top_k)
+
+    def clear_bm25_cache(self, table_name: str) -> None:
+        """Forget a retired table's cached corpus."""
+        with self._bm25_cache_lock:
+            self._bm25_cache.pop(table_name, None)
 
     # ------------------------------------------------------------------
     # Reciprocal Rank Fusion
@@ -147,6 +165,26 @@ def _chunk_id(chunk: ChunkData) -> str:
     document_id = str(chunk.metadata.get("document_id", "")).strip() or "unknown-document"
     content_hash = hashlib.sha256(chunk.content.encode("utf-8")).hexdigest()[:16]
     return f"{document_id}:chunk:{chunk.index}:{content_hash}"
+
+
+def _results_from_bm25_scores(
+    chunks: list[ChunkData],
+    scores,  # noqa: ANN001 - numpy is an optional dependency detail
+    top_k: int,
+) -> list[RetrievalResult]:
+    scored = sorted(enumerate(scores), key=lambda item: item[1], reverse=True)[:top_k]
+    results: list[RetrievalResult] = []
+    for index, score in scored:
+        if score <= 0:
+            continue
+        chunk = chunks[index]
+        results.append(RetrievalResult(
+            chunk_id=_chunk_id(chunk),
+            content=chunk.content,
+            score=float(score),
+            metadata=dict(chunk.metadata),
+        ))
+    return results
 
 
 def _unique_results(results: list[RetrievalResult]) -> list[RetrievalResult]:

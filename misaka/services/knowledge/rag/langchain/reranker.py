@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 import httpx
 
@@ -58,17 +59,31 @@ class LCReranker(Reranker):
             data = resp.json()
 
         reranked: list[RetrievalResult] = []
+        seen_indices: set[int] = set()
         for item in data.get("results", []):
-            idx = item["index"]
-            if idx >= len(results):
+            if not isinstance(item, dict):
                 continue
+            idx = item.get("index")
+            if not isinstance(idx, int) or isinstance(idx, bool):
+                continue
+            if idx < 0 or idx >= len(results) or idx in seen_indices:
+                continue
+            try:
+                score = float(item.get("relevance_score", 0.0))
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(score):
+                continue
+            seen_indices.add(idx)
             original = results[idx]
             reranked.append(RetrievalResult(
                 chunk_id=original.chunk_id,
                 content=original.content,
-                score=float(item.get("relevance_score", 0.0)),
+                score=score,
                 metadata=original.metadata,
             ))
 
+        if not reranked:
+            raise ValueError("Reranker returned no valid result indices")
         reranked.sort(key=lambda r: r.score, reverse=True)
         return reranked

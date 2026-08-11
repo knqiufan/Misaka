@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING
 
 import flet as ft
 
+from misaka.db.models import KnowledgeBase
 from misaka.i18n import t
+from misaka.services.knowledge.kb_validation import (
+    KnowledgeBaseConfigError,
+    validate_knowledge_base_config,
+)
 from misaka.ui.common.theme import (
     make_button,
     make_dropdown,
@@ -157,13 +162,32 @@ def show_kb_create_dialog(
         embed_info = _parse_model_key(embed_dd.value)
         rerank_info = _parse_model_key(rerank_dd.value) if rerank_dd.value else None
 
-        kwargs = {
-            "chunk_size": _safe_int(chunk_size_field.value, 512),
-            "chunk_overlap": _safe_int(chunk_overlap_field.value, 64),
-            "top_k": _safe_int(top_k_field.value, 5),
-            "similarity_threshold": _safe_float(threshold_field.value, 0.0),
-            "reranker_top_k": _safe_int(reranker_top_k_field.value, 3),
+        numeric_fields = {
+            "chunk_size": (chunk_size_field, int),
+            "chunk_overlap": (chunk_overlap_field, int),
+            "top_k": (top_k_field, int),
+            "similarity_threshold": (threshold_field, float),
+            "reranker_top_k": (reranker_top_k_field, int),
         }
+        kwargs = {}
+        parse_errors = {}
+        for key, (field, parser) in numeric_fields.items():
+            try:
+                kwargs[key] = parser((field.value or "").strip())
+            except (TypeError, ValueError):
+                parse_errors[key] = "Enter a valid number."
+        if parse_errors:
+            for key, (field, _) in numeric_fields.items():
+                field.error_text = parse_errors.get(key)
+                field.update()
+            return
+        try:
+            validate_knowledge_base_config(KnowledgeBase(id="validation", name=name, **kwargs))
+        except KnowledgeBaseConfigError as exc:
+            for key, (field, _) in numeric_fields.items():
+                field.error_text = exc.errors.get(key)
+                field.update()
+            return
 
         embedding_changed = (
             is_edit

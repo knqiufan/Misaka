@@ -6,7 +6,11 @@ import asyncio
 import logging
 from pathlib import Path
 
-from misaka.services.knowledge.rag.abstractions import DocumentParser, ParsedDocument
+from misaka.services.knowledge.rag.abstractions import (
+    DocumentParser,
+    ParsedDocument,
+    ParsedDocumentSegment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +43,20 @@ class LCDocumentParser(DocumentParser):
         full_text = "\n\n".join(doc.page_content for doc in lc_docs)
         metadata = {**lc_docs[0].metadata, "source": file_path, "file_type": file_type}
         page_breaks = self._extract_page_breaks(lc_docs)
+        segments = [
+            ParsedDocumentSegment(
+                text=doc.page_content,
+                metadata={**doc.metadata, "source": file_path, "file_type": file_type},
+            )
+            for doc in lc_docs
+            if doc.page_content.strip()
+        ]
 
         return ParsedDocument(
             text=full_text,
             metadata=metadata,
             page_breaks=page_breaks,
+            segments=segments,
         )
 
     def supported_types(self) -> list[str]:
@@ -127,21 +140,21 @@ class _OpenpyxlLoader:
         try:
             for sheet_name in wb.sheetnames:
                 ws = wb[sheet_name]
-                rows = list(ws.iter_rows(values_only=True))
-                if not rows:
-                    continue
-
                 lines: list[str] = []
-                for row in rows:
+                row_count = 0
+                for row in ws.iter_rows(values_only=True):
                     line = "\t".join(str(cell) if cell is not None else "" for cell in row)
                     lines.append(line)
+                    row_count += 1
+                if not lines:
+                    continue
 
                 documents.append(Document(
                     page_content="\n".join(lines),
                     metadata={
                         "source": self._file_path,
                         "sheet": sheet_name,
-                        "row_count": len(rows),
+                        "row_count": row_count,
                     },
                 ))
         finally:

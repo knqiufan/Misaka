@@ -134,7 +134,7 @@ class KBSelector(ft.Container):
             self._safe_update(self._items_column)
             return
 
-        selected = self._get_selected_ids()
+        selected = set(self._get_selected_ids())
         items = [self._build_kb_item(kb, kb["id"] in selected) for kb in self._kb_list]
         self._items_column.controls = items
         self._safe_update(self._items_column)
@@ -193,11 +193,12 @@ class KBSelector(ft.Container):
     def _get_session_id(self) -> str:
         return self.state.current_session_id or "__global__"
 
-    def _get_selected_ids(self) -> set[str]:
+    def _get_selected_ids(self) -> list[str]:
         sid = self._get_session_id()
         if self.state.kb:
-            return set(self.state.kb.selected_kb_ids.get(sid, []))
-        return set()
+            # Preserve selection order: it determines stable RAG merge order.
+            return list(dict.fromkeys(self.state.kb.selected_kb_ids.get(sid, [])))
+        return []
 
     def _set_selected_ids(self, ids: list[str]) -> None:
         sid = self._get_session_id()
@@ -207,19 +208,20 @@ class KBSelector(ft.Container):
     def _handle_toggle(self, kb_id: str, e: ft.ControlEvent) -> None:
         selected = self._get_selected_ids()
         if e.data == "true":
-            selected.add(kb_id)
+            if kb_id not in selected:
+                selected.append(kb_id)
         else:
-            selected.discard(kb_id)
-        self._set_selected_ids(list(selected))
+            selected = [selected_id for selected_id in selected if selected_id != kb_id]
+        self._set_selected_ids(selected)
         self._notify_change()
 
     def _handle_toggle_all(self, e: ft.ControlEvent) -> None:
         selected = self._get_selected_ids()
-        all_ids = {kb["id"] for kb in self._kb_list}
-        if selected >= all_ids:
+        all_ids = [kb["id"] for kb in self._kb_list]
+        if set(selected) >= set(all_ids):
             self._set_selected_ids([])
         else:
-            self._set_selected_ids(list(all_ids))
+            self._set_selected_ids(all_ids)
         self._render_items()
         self._notify_change()
 

@@ -58,6 +58,11 @@ class LCSqliteVecStore(VectorStore):
         chunks: list[ChunkData],
         embeddings: list[list[float]],
     ) -> None:
+        if len(chunks) != len(embeddings):
+            raise ValueError(
+                "Chunk/vector count mismatch: "
+                f"received {len(chunks)} chunks and {len(embeddings)} embeddings"
+            )
         if not chunks:
             return
         with self._lock:
@@ -188,7 +193,7 @@ class LCSqliteVecStore(VectorStore):
     ) -> None:
         rows = [
             (LCSqliteVecStore._get_chunk_id(c), _serialize_f32(emb))
-            for c, emb in zip(chunks, embeddings, strict=False)
+            for c, emb in zip(chunks, embeddings, strict=True)
         ]
         conn.executemany(
             f"INSERT INTO [{table_name}](chunk_id, embedding) VALUES (?, ?)",

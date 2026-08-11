@@ -48,6 +48,11 @@ class SeekDBVectorStore(VectorStore):
         chunks: list[ChunkData],
         embeddings: list[list[float]],
     ) -> None:
+        if len(chunks) != len(embeddings):
+            raise ValueError(
+                "Chunk/vector count mismatch: "
+                f"received {len(chunks)} chunks and {len(embeddings)} embeddings"
+            )
         if not chunks:
             return
         collection = self._get_collection(table_name)

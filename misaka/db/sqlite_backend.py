@@ -723,6 +723,9 @@ class SQLiteBackend(DatabaseBackend):
     # ----- Knowledge Bases -----
 
     def create_knowledge_base(self, kb: KnowledgeBase) -> None:
+        from misaka.services.knowledge.kb_validation import validate_knowledge_base_config
+
+        validate_knowledge_base_config(kb)
         conn = self._get_conn()
         conn.execute(
             """INSERT INTO knowledge_bases
@@ -732,8 +735,10 @@ class SQLiteBackend(DatabaseBackend):
                 chunk_size, chunk_overlap,
                 top_k, similarity_threshold, reranker_top_k,
                 document_count, chunk_count,
-                 status, active_index_version, active_index_fingerprint, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 status, active_index_version, active_index_fingerprint,
+                 active_vector_table_name, active_vector_backend_fingerprint,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 kb.id, kb.name, kb.description,
                 kb.embedding_model_id, kb.embedding_router_config_id, kb.embedding_dimensions,
@@ -742,6 +747,7 @@ class SQLiteBackend(DatabaseBackend):
                 kb.top_k, kb.similarity_threshold, kb.reranker_top_k,
                 kb.document_count, kb.chunk_count,
                 kb.status, kb.active_index_version, kb.active_index_fingerprint,
+                kb.active_vector_table_name, kb.active_vector_backend_fingerprint,
                 kb.created_at or _now(), kb.updated_at or _now(),
             ),
         )
@@ -764,6 +770,11 @@ class SQLiteBackend(DatabaseBackend):
     def update_knowledge_base(self, kb_id: str, **kwargs: Any) -> None:
         if not kwargs:
             return
+        existing = self.get_knowledge_base(kb_id)
+        if existing is not None:
+            from misaka.services.knowledge.kb_validation import validate_knowledge_base_changes
+
+            validate_knowledge_base_changes(existing, kwargs)
         conn = self._get_conn()
         allowed = {
             "name", "description",
@@ -772,7 +783,8 @@ class SQLiteBackend(DatabaseBackend):
             "chunk_size", "chunk_overlap",
             "top_k", "similarity_threshold", "reranker_top_k",
             "document_count", "chunk_count", "status", "active_index_version",
-            "active_index_fingerprint",
+            "active_index_fingerprint", "active_vector_table_name",
+            "active_vector_backend_fingerprint",
         }
         sets: list[str] = ["updated_at = ?"]
         params: list[Any] = [_now()]
@@ -829,6 +841,70 @@ class SQLiteBackend(DatabaseBackend):
             (kb_id,),
         ).fetchall()
         return [row_to_kb_document(r) for r in rows]
+
+    def get_kb_documents_page(
+        self, kb_id: str, offset: int, limit: int, query: str = "",
+    ) -> list[KBDocument]:
+        safe_limit = max(1, min(limit, 500))
+        safe_offset = max(0, offset)
+        conn = self._get_conn()
+        columns = """id, knowledge_base_id, file_name, file_type, file_size,
+                     file_hash, storage_path, '' AS content_text,
+                     content_length, chunk_count, status, error_message,
+                     created_at, updated_at"""
+        if query:
+            rows = conn.execute(
+                f"""SELECT {columns} FROM kb_documents
+                   WHERE knowledge_base_id = ? AND lower(file_name) LIKE ?
+                   ORDER BY created_at DESC LIMIT ? OFFSET ?""",
+                (kb_id, f"%{query.lower()}%", safe_limit, safe_offset),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"""SELECT {columns} FROM kb_documents WHERE knowledge_base_id = ?
+                   ORDER BY created_at DESC LIMIT ? OFFSET ?""",
+                (kb_id, safe_limit, safe_offset),
+            ).fetchall()
+        return [row_to_kb_document(row) for row in rows]
+
+    def count_kb_documents(self, kb_id: str, query: str = "") -> int:
+        conn = self._get_conn()
+        if query:
+            row = conn.execute(
+                """SELECT COUNT(*) FROM kb_documents
+                   WHERE knowledge_base_id = ? AND lower(file_name) LIKE ?""",
+                (kb_id, f"%{query.lower()}%"),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM kb_documents WHERE knowledge_base_id = ?",
+                (kb_id,),
+            ).fetchone()
+        return int(row[0]) if row else 0
+
+    def get_kb_document_metadata(self, doc_id: str) -> KBDocument | None:
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT id, knowledge_base_id, file_name, file_type, file_size,
+                      file_hash, storage_path, '' AS content_text,
+                      content_length, chunk_count, status, error_message,
+                      created_at, updated_at
+                 FROM kb_documents WHERE id = ?""",
+            (doc_id,),
+        ).fetchone()
+        return row_to_kb_document(row) if row else None
+
+    def get_kb_document_content_slice(self, doc_id: str, offset: int, limit: int) -> str:
+        safe_offset = max(0, offset)
+        safe_limit = max(0, min(limit, 1_000_000))
+        if not safe_limit:
+            return ""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT substr(content_text, ?, ?) FROM kb_documents WHERE id = ?",
+            (safe_offset + 1, safe_limit, doc_id),
+        ).fetchone()
+        return str(row[0] or "") if row else ""
 
     def update_kb_document(self, doc_id: str, **kwargs: Any) -> None:
         if not kwargs:
@@ -928,6 +1004,8 @@ class SQLiteBackend(DatabaseBackend):
         document_updates: dict[str, dict[str, Any]],
         dimensions: int,
         index_fingerprint: str,
+        vector_table_name: str,
+        vector_backend_fingerprint: str,
     ) -> None:
         """Publish a complete staged index with its matching DB metadata.
 
@@ -978,12 +1056,15 @@ class SQLiteBackend(DatabaseBackend):
             conn.execute(
                 """UPDATE knowledge_bases
                    SET active_index_version = ?, active_index_fingerprint = ?,
+                       active_vector_table_name = ?,
+                       active_vector_backend_fingerprint = ?,
                        embedding_dimensions = ?,
                        document_count = ?, chunk_count = ?, status = 'active',
                        updated_at = ?
                    WHERE id = ?""",
                 (
-                    index_version, index_fingerprint, dimensions,
+                    index_version, index_fingerprint,
+                    vector_table_name, vector_backend_fingerprint, dimensions,
                     document_count, len(chunks), now, kb_id,
                 ),
             )
@@ -1044,7 +1125,13 @@ class SQLiteBackend(DatabaseBackend):
         self._maybe_commit()
 
     def create_kb_cleanup_job(
-        self, kb_id: str, index_version: str, operation: str, error_message: str,
+        self,
+        kb_id: str,
+        index_version: str,
+        operation: str,
+        error_message: str,
+        vector_table_name: str = "",
+        backend_fingerprint: str = "",
     ) -> str:
         job_id = _generate_id()
         conn = self._get_conn()
@@ -1052,9 +1139,13 @@ class SQLiteBackend(DatabaseBackend):
         conn.execute(
             """INSERT INTO kb_cleanup_jobs
                (id, knowledge_base_id, index_version, operation, status,
-                attempts, error_message, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)""",
-            (job_id, kb_id, index_version, operation, error_message, now, now),
+                attempts, error_message, vector_table_name, backend_fingerprint,
+                created_at, updated_at)
+               VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?, ?)""",
+            (
+                job_id, kb_id, index_version, operation, error_message,
+                vector_table_name, backend_fingerprint, now, now,
+            ),
         )
         self._maybe_commit()
         return job_id
@@ -1074,6 +1165,8 @@ class SQLiteBackend(DatabaseBackend):
                 status=row["status"],
                 attempts=row["attempts"],
                 error_message=row["error_message"],
+                vector_table_name=row["vector_table_name"],
+                backend_fingerprint=row["backend_fingerprint"],
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
             )

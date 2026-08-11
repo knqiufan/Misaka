@@ -392,6 +392,11 @@ class KnowledgeBase:
     # It remains unchanged while a changed KB configuration waits for rebuild.
     active_index_fingerprint: str = ""
 
+    # Exact physical resource and backend that serve the active index. This
+    # makes collision-free table naming and backend-switch cleanup explicit.
+    active_vector_table_name: str = ""
+    active_vector_backend_fingerprint: str = ""
+
     created_at: str = ""
     updated_at: str = ""
 
@@ -455,6 +460,8 @@ class KBCleanupJob:
     status: str = "pending"
     attempts: int = 0
     error_message: str = ""
+    vector_table_name: str = ""
+    backend_fingerprint: str = ""
     created_at: str = ""
     updated_at: str = ""
 
