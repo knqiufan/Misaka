@@ -106,6 +106,7 @@ class SettingKeys:
     CHAT_GROUP_MODE = "chat_group_mode"
     SETUP_WIZARD_COMPLETED = "setup_wizard_completed"
     VECTOR_BACKEND = "vector_backend"
+    VECTOR_BACKEND_FINGERPRINT = "vector_backend_fingerprint"
     VECTOR_BACKEND_PENDING_KBS = "vector_backend_pending_kbs"
 
 

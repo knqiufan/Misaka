@@ -173,8 +173,16 @@ def show_kb_create_dialog(
                 or kb.embedding_router_config_id != embed_info[1]
             )
         )
+        chunking_changed = (
+            is_edit
+            and kb
+            and (
+                kb.chunk_size != kwargs["chunk_size"]
+                or kb.chunk_overlap != kwargs["chunk_overlap"]
+            )
+        )
 
-        if embedding_changed:
+        if embedding_changed or chunking_changed:
             _confirm_rebuild(
                 page, state, kb, kb_svc, embed_info, rerank_info,
                 name, desc_field.value or "", kwargs, on_saved,
@@ -317,8 +325,8 @@ def _confirm_rebuild(
 
     confirm_dlg = ft.AlertDialog(
         modal=True,
-        title=ft.Text(t("kb.embedding_model_changed"), size=16, weight=ft.FontWeight.W_600),
-        content=ft.Text(t("kb.embedding_model_changed_confirm"), size=13),
+        title=ft.Text(t("kb.index_config_changed"), size=16, weight=ft.FontWeight.W_600),
+        content=ft.Text(t("kb.index_config_changed_confirm"), size=13),
         actions=[
             ft.TextButton(t("common.cancel"), on_click=lambda _: page.pop_dialog()),
             ft.ElevatedButton(t("common.confirm"), on_click=_on_confirm),

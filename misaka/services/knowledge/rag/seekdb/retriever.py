@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from misaka.services.knowledge.rag.abstractions import (
     ChunkData,
     RetrievalResult,
@@ -24,14 +26,33 @@ class SeekDBHybridRetriever(Retriever):
         top_k: int = 5,
         chunks_for_bm25: list[ChunkData] | None = None,
     ) -> list[RetrievalResult]:
+        results = await asyncio.to_thread(
+            self._retrieve_sync,
+            query,
+            query_embedding,
+            table_name,
+            top_k,
+        )
+        return self._store.convert_results(results)
+
+    def _retrieve_sync(
+        self,
+        query: str,
+        query_embedding: list[float],
+        table_name: str,
+        top_k: int,
+    ) -> dict:
+        """Run all potentially blocking SeekDB work outside the UI loop."""
         collection = self._store._get_collection(table_name)
         if not query.strip():
-            return self._store.search(table_name, query_embedding, top_k)
+            return collection.query(
+                query_embeddings=query_embedding,
+                n_results=top_k,
+                include=["documents", "metadatas"],
+            )
 
-        results = collection.hybrid_search(
-            query={
-                "where_document": {"$contains": query},
-            },
+        return collection.hybrid_search(
+            query={"where_document": {"$contains": query}},
             knn={
                 "query_embeddings": [query_embedding],
                 "n_results": top_k * 2,
@@ -45,4 +66,3 @@ class SeekDBHybridRetriever(Retriever):
             n_results=top_k,
             include=["documents", "metadatas"],
         )
-        return self._store.convert_results(results)

@@ -732,8 +732,8 @@ class SQLiteBackend(DatabaseBackend):
                 chunk_size, chunk_overlap,
                 top_k, similarity_threshold, reranker_top_k,
                 document_count, chunk_count,
-                 status, active_index_version, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 status, active_index_version, active_index_fingerprint, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 kb.id, kb.name, kb.description,
                 kb.embedding_model_id, kb.embedding_router_config_id, kb.embedding_dimensions,
@@ -741,7 +741,7 @@ class SQLiteBackend(DatabaseBackend):
                 kb.chunk_size, kb.chunk_overlap,
                 kb.top_k, kb.similarity_threshold, kb.reranker_top_k,
                 kb.document_count, kb.chunk_count,
-                kb.status, kb.active_index_version,
+                kb.status, kb.active_index_version, kb.active_index_fingerprint,
                 kb.created_at or _now(), kb.updated_at or _now(),
             ),
         )
@@ -772,6 +772,7 @@ class SQLiteBackend(DatabaseBackend):
             "chunk_size", "chunk_overlap",
             "top_k", "similarity_threshold", "reranker_top_k",
             "document_count", "chunk_count", "status", "active_index_version",
+            "active_index_fingerprint",
         }
         sets: list[str] = ["updated_at = ?"]
         params: list[Any] = [_now()]
@@ -926,6 +927,7 @@ class SQLiteBackend(DatabaseBackend):
         chunks: list[KBChunk],
         document_updates: dict[str, dict[str, Any]],
         dimensions: int,
+        index_fingerprint: str,
     ) -> None:
         """Publish a complete staged index with its matching DB metadata.
 
@@ -975,11 +977,15 @@ class SQLiteBackend(DatabaseBackend):
             document_count = len(document_updates)
             conn.execute(
                 """UPDATE knowledge_bases
-                   SET active_index_version = ?, embedding_dimensions = ?,
+                   SET active_index_version = ?, active_index_fingerprint = ?,
+                       embedding_dimensions = ?,
                        document_count = ?, chunk_count = ?, status = 'active',
                        updated_at = ?
                    WHERE id = ?""",
-                (index_version, dimensions, document_count, len(chunks), now, kb_id),
+                (
+                    index_version, index_fingerprint, dimensions,
+                    document_count, len(chunks), now, kb_id,
+                ),
             )
             conn.commit()
         except Exception:

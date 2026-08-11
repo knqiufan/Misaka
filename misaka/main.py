@@ -9,6 +9,7 @@ dependency injection and graceful shutdown handling.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import multiprocessing
 import os
@@ -61,6 +62,26 @@ def _is_truthy_env(name: str) -> bool:
     """Return True when an env var looks enabled."""
     value = os.environ.get(name, "").strip().lower()
     return value in {"1", "true", "yes", "on"}
+
+
+def _vector_backend_fingerprint(
+    vector_backend: str,
+    seekdb_config: dict[str, object] | None = None,
+) -> str:
+    """Describe the vector target without persisting or hashing credentials."""
+    target: dict[str, object] = {"backend": vector_backend}
+    if vector_backend == "seekdb_remote":
+        config_values = seekdb_config or {}
+        target["remote"] = {
+            "host": str(config_values.get("host", "")).strip().lower(),
+            "port": int(config_values.get("port", 2881)),
+            "user": str(config_values.get("user", "root")).strip() or "root",
+            "database_name": (
+                str(config_values.get("database_name", "misaka_kb")).strip()
+                or "misaka_kb"
+            ),
+        }
+    return json.dumps(target, sort_keys=True, separators=(",", ":"))
 
 
 def _is_frozen() -> bool:
@@ -247,16 +268,20 @@ class ServiceContainer:
     ) -> bool:
         """Persist vector backend settings and rebuild the live RAG pipeline.
 
-        Returns True when the backend itself changed. Remote connection edits
-        rebuild the pipeline but do not invalidate existing indexes.
+        Returns True when the vector target changed. For remote SeekDB, the
+        target includes host, port, user, and database but never the password.
         """
         valid_backends = {"sqlite", "seekdb_embedded", "seekdb_remote"}
         if vector_backend not in valid_backends:
             raise ValueError(f"Unknown vector backend: {vector_backend}")
 
         previous = self.settings_service.get(SettingKeys.VECTOR_BACKEND) or "sqlite"
+        previous_config = self.db.get_seekdb_config() if previous == "seekdb_remote" else None
+        previous_fingerprint = self.settings_service.get(
+            SettingKeys.VECTOR_BACKEND_FINGERPRINT,
+        ) or _vector_backend_fingerprint(previous, previous_config)
         if vector_backend == "seekdb_remote":
-            config_values = seekdb_config or {}
+            config_values = seekdb_config or self.db.get_seekdb_config()
             self.db.save_seekdb_config(
                 host=str(config_values.get("host", "")).strip(),
                 port=int(config_values.get("port", 2881)),
@@ -268,12 +293,15 @@ class ServiceContainer:
                 ),
             )
 
-        changed = previous != vector_backend
+        current_config = self.db.get_seekdb_config() if vector_backend == "seekdb_remote" else None
+        current_fingerprint = _vector_backend_fingerprint(vector_backend, current_config)
+        target_changed = previous_fingerprint != current_fingerprint
         self.settings_service.set(SettingKeys.VECTOR_BACKEND, vector_backend)
-        if changed and hasattr(self, "kb_service"):
+        self.settings_service.set(SettingKeys.VECTOR_BACKEND_FINGERPRINT, current_fingerprint)
+        if target_changed and hasattr(self, "kb_service"):
             self.kb_service.mark_all_indexes_stale()
         self.rebuild_rag()
-        return changed
+        return target_changed
 
     async def close(self) -> None:
         """Release resources held by services."""

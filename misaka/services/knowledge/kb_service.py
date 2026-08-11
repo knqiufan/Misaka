@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from misaka.config import SettingKeys, get_kb_storage_dir
 from misaka.db.models import KnowledgeBase
+from misaka.services.knowledge.index_fingerprint import build_index_fingerprint
 from misaka.services.knowledge.index_manager import KBIndexManager
 from misaka.services.knowledge.job_coordinator import KnowledgeBaseJobCoordinator
 
@@ -77,8 +78,12 @@ class KnowledgeBaseService:
         return kb
 
     def update(self, kb_id: str, **kwargs: Any) -> KnowledgeBase | None:
+        previous = self._db.get_knowledge_base(kb_id)
         self._db.update_knowledge_base(kb_id, **kwargs)
-        return self._db.get_knowledge_base(kb_id)
+        updated = self._db.get_knowledge_base(kb_id)
+        if previous and updated and self._index_inputs_changed(previous, updated):
+            self.mark_indexes_stale([kb_id])
+        return updated
 
     async def delete(self, kb_id: str) -> bool:
         """Delete a KB after cancelling work; retain failed vector cleanup durably."""
@@ -199,11 +204,29 @@ class KnowledgeBaseService:
             for kb in self._db.get_all_knowledge_bases()
             if self._db.get_kb_documents_by_kb(kb.id)
         ]
-        self._save_pending_kb_ids(pending_ids)
+        self.mark_indexes_stale(pending_ids)
+
+    def mark_indexes_stale(self, kb_ids: list[str]) -> None:
+        """Add KBs with source documents to the persistent rebuild queue."""
+        pending_ids = self._load_pending_kb_ids()
+        for kb_id in kb_ids:
+            if self._db.get_kb_documents_by_kb(kb_id):
+                pending_ids.add(kb_id)
+        self._save_pending_kb_ids(sorted(pending_ids))
 
     def is_index_stale(self, kb_id: str) -> bool:
-        """Return whether a KB still needs an index rebuild after switching backend."""
-        return kb_id in self._load_pending_kb_ids()
+        """Return whether a KB needs rebuilding before it may serve chat."""
+        if kb_id in self._load_pending_kb_ids():
+            return True
+        kb = self._db.get_knowledge_base(kb_id)
+        # Legacy indexes created before fingerprints remain usable until a
+        # content-affecting setting changes, at which point ``update`` queues
+        # an explicit rebuild.
+        return bool(
+            kb
+            and kb.active_index_fingerprint
+            and kb.active_index_fingerprint != build_index_fingerprint(kb)
+        )
 
     def mark_index_rebuilt(self, kb_id: str) -> None:
         """Clear a KB from the persistent backend-switch rebuild queue."""
@@ -230,6 +253,11 @@ class KnowledgeBaseService:
             SettingKeys.VECTOR_BACKEND_PENDING_KBS,
             json.dumps(kb_ids),
         )
+
+    @staticmethod
+    def _index_inputs_changed(before: KnowledgeBase, after: KnowledgeBase) -> bool:
+        """Return whether an edit invalidated the active index contents."""
+        return build_index_fingerprint(before) != build_index_fingerprint(after)
 
     async def retry_pending_cleanup(self) -> int:
         """Retry failed remote/local vector cleanup recorded in the outbox."""

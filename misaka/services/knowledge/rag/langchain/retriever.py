@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import re
 from collections import defaultdict
@@ -48,14 +50,19 @@ class LCHybridRetriever(Retriever):
         top_k: int = 5,
         chunks_for_bm25: list[ChunkData] | None = None,
     ) -> list[RetrievalResult]:
-        vec_results = self._vector_store.search(
-            table_name, query_embedding, top_k=top_k * 2,
+        vec_results = await asyncio.to_thread(
+            self._vector_store.search,
+            table_name,
+            query_embedding,
+            top_k=top_k * 2,
         )
 
         if not chunks_for_bm25:
             return vec_results[:top_k]
 
-        bm25_results = self._bm25_search(query, chunks_for_bm25, top_k * 2)
+        bm25_results = await asyncio.to_thread(
+            self._bm25_search, query, chunks_for_bm25, top_k * 2,
+        )
         return self._rrf_fusion(vec_results, bm25_results, top_k)
 
     # ------------------------------------------------------------------
@@ -88,7 +95,7 @@ class LCHybridRetriever(Retriever):
                 continue
             chunk = chunks[idx]
             results.append(RetrievalResult(
-                chunk_id=f"chunk_{chunk.index}",
+                chunk_id=_chunk_id(chunk),
                 content=chunk.content,
                 score=float(score),
                 metadata=dict(chunk.metadata),
@@ -108,11 +115,11 @@ class LCHybridRetriever(Retriever):
         scores: dict[str, float] = defaultdict(float)
         result_map: dict[str, RetrievalResult] = {}
 
-        for rank, r in enumerate(vec_results):
+        for rank, r in enumerate(_unique_results(vec_results)):
             scores[r.chunk_id] += self._vector_weight / (rank + _RRF_K)
             result_map[r.chunk_id] = r
 
-        for rank, r in enumerate(bm25_results):
+        for rank, r in enumerate(_unique_results(bm25_results)):
             scores[r.chunk_id] += self._bm25_weight / (rank + _RRF_K)
             if r.chunk_id not in result_map:
                 result_map[r.chunk_id] = r
@@ -129,6 +136,29 @@ class LCHybridRetriever(Retriever):
                 metadata=original.metadata,
             ))
         return fused
+
+
+def _chunk_id(chunk: ChunkData) -> str:
+    """Resolve the ID shared by BM25, the vector store, and persisted chunks."""
+    value = str(chunk.metadata.get("chunk_db_id", "")).strip()
+    if value:
+        return value
+
+    document_id = str(chunk.metadata.get("document_id", "")).strip() or "unknown-document"
+    content_hash = hashlib.sha256(chunk.content.encode("utf-8")).hexdigest()[:16]
+    return f"{document_id}:chunk:{chunk.index}:{content_hash}"
+
+
+def _unique_results(results: list[RetrievalResult]) -> list[RetrievalResult]:
+    """Keep only the first result per real chunk ID, preserving rank order."""
+    seen: set[str] = set()
+    unique: list[RetrievalResult] = []
+    for result in results:
+        if result.chunk_id in seen:
+            continue
+        seen.add(result.chunk_id)
+        unique.append(result)
+    return unique
 
 
 # ---------------------------------------------------------------------------

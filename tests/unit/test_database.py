@@ -190,7 +190,7 @@ class TestSQLiteBackend:
 
         assert row is None
         assert version is not None
-        assert version[0] == 7
+        assert version[0] == 8
 
     def test_migration_creates_seekdb_config_table(self, tmp_path) -> None:
         conn = sqlite3.connect(tmp_path / "seekdb-migrate.db")
@@ -204,3 +204,16 @@ class TestSQLiteBackend:
         conn.close()
 
         assert row is not None
+
+    def test_migration_adds_active_index_fingerprint(self, tmp_path) -> None:
+        conn = sqlite3.connect(tmp_path / "fingerprint-migrate.db")
+        conn.execute("CREATE TABLE _schema_version (version INTEGER NOT NULL)")
+        conn.execute("INSERT INTO _schema_version (version) VALUES (7)")
+        conn.execute("CREATE TABLE knowledge_bases (id TEXT PRIMARY KEY)")
+
+        run_migrations(conn)
+
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(knowledge_bases)")}
+        conn.close()
+
+        assert "active_index_fingerprint" in columns

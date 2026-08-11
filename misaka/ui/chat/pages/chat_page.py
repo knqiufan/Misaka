@@ -653,6 +653,8 @@ class ChatPage(ft.Stack):
                 )
                 self._notify_rag_failure()
 
+        self._notify_rag_retrieval_outcome(context)
+
         # Cache RAG results if the preprocessor produced any
         search_results = context.get("_rag_results", [])
         if search_results and user_msg and self.state.kb:
@@ -670,6 +672,28 @@ class ChatPage(ft.Stack):
         with contextlib.suppress(Exception):
             self.state.page.open(
                 ft.SnackBar(content=ft.Text(t("chat.rag_retrieval_failed")), open=True),
+            )
+
+    def _notify_rag_retrieval_outcome(self, context: dict[str, Any]) -> None:
+        """Surface RAG timeout and partial-failure diagnostics to the user."""
+        from misaka.i18n import t
+
+        timed_out = bool(context.get("_rag_timed_out"))
+        errors = context.get("_rag_per_kb_errors", {})
+        if not timed_out and not errors:
+            return
+
+        search_results = context.get("_rag_results", [])
+        if timed_out:
+            message = t("chat.rag_retrieval_timed_out")
+        elif search_results:
+            message = t("chat.rag_retrieval_partial_failure")
+        else:
+            message = t("chat.rag_retrieval_failed")
+
+        with contextlib.suppress(Exception):
+            self.state.page.open(
+                ft.SnackBar(content=ft.Text(message), open=True),
             )
 
     def _on_regenerate(self, assistant_message_id: str) -> None:

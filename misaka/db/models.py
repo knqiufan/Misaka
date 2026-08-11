@@ -388,6 +388,10 @@ class KnowledgeBase:
     # earlier databases.
     active_index_version: str = ""
 
+    # Fingerprint of the configuration that produced ``active_index_version``.
+    # It remains unchanged while a changed KB configuration waits for rebuild.
+    active_index_fingerprint: str = ""
+
     created_at: str = ""
     updated_at: str = ""
 
