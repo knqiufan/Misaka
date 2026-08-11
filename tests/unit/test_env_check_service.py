@@ -468,7 +468,10 @@ class TestInstallation:
         service: EnvCheckService,
     ) -> None:
         proc = _process()
-        with patch.object(
+        with patch(
+            "misaka.services.skills.env_check_service._current_platform",
+            return_value="windows",
+        ), patch.object(
             service,
             "_resolve_install_executable",
             return_value=r"C:\Windows\winget.exe",

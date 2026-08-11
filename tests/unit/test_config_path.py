@@ -58,7 +58,8 @@ def test_windows_extra_paths_include_package_manager_locations() -> None:
     ), patch("pathlib.Path.is_dir", return_value=False):
         paths = config.get_extra_path_dirs()
 
-    assert r"C:\Program Files\nodejs" in paths
-    assert r"C:\Program Files\Git\cmd" in paths
-    assert any(path.endswith(r"Microsoft\WindowsApps") for path in paths)
-    assert any(path.endswith(r"Microsoft\WinGet\Links") for path in paths)
+    normalized = [path.replace("\\", "/") for path in paths]
+    assert "C:/Program Files/nodejs" in normalized
+    assert "C:/Program Files/Git/cmd" in normalized
+    assert any(path.endswith("Microsoft/WindowsApps") for path in normalized)
+    assert any(path.endswith("Microsoft/WinGet/Links") for path in normalized)
